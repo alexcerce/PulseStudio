@@ -1,0 +1,6 @@
+build/
+build-dev/
+dist/
+external/
+.vs/
+*.user

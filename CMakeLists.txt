@@ -1,0 +1,65 @@
+cmake_minimum_required(VERSION 3.22)
+
+project(PulseStudio VERSION 0.3.1 LANGUAGES C CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Static MSVC runtime so the .exe runs without the VC++ redistributable.
+if (MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
+set_property(GLOBAL PROPERTY USE_FOLDERS YES)
+
+# JUCE + Tracktion Engine (git submodule-style checkout in external/)
+add_subdirectory(external/tracktion_engine/modules/juce)
+add_subdirectory(external/tracktion_engine/modules)
+
+juce_add_gui_app(PulseStudio
+    PRODUCT_NAME "Pulse Studio"
+    COMPANY_NAME "Pulse"
+    BUNDLE_ID "com.pulse.studio"
+    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/Resources/icon.png"
+    MICROPHONE_PERMISSION_ENABLED TRUE
+    MICROPHONE_PERMISSION_TEXT "Pulse Studio records audio from your audio interface."
+    NEEDS_CURL FALSE
+    NEEDS_WEB_BROWSER FALSE)
+
+juce_generate_juce_header(PulseStudio)
+
+# All app code is header-only and compiled through Main.cpp.
+file(GLOB PULSE_HEADERS CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/Source/*.h)
+target_sources(PulseStudio PRIVATE Source/Main.cpp ${PULSE_HEADERS})
+
+target_compile_definitions(PulseStudio PRIVATE
+    # Audio devices: ASIO for pro interfaces, WASAPI/DirectSound as fallbacks
+    JUCE_ASIO=1
+    JUCE_WASAPI=1
+    JUCE_DIRECTSOUND=1
+    # Plugin hosting
+    JUCE_PLUGINHOST_VST3=1
+    JUCE_PLUGINHOST_AU=0
+    JUCE_PLUGINHOST_LADSPA=0
+    JUCE_MODAL_LOOPS_PERMITTED=1
+    JUCE_STRICT_REFCOUNTEDPOINTER=1
+    JUCE_USE_CURL=0
+    JUCE_WEB_BROWSER=0
+    JUCE_DISPLAY_SPLASH_SCREEN=0
+    JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:PulseStudio,JUCE_PRODUCT_NAME>"
+    JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:PulseStudio,JUCE_VERSION>"
+    TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH=1)
+
+target_link_libraries(PulseStudio PRIVATE
+    tracktion::tracktion_core
+    tracktion::tracktion_engine
+    tracktion::tracktion_graph
+    juce::juce_audio_devices
+    juce::juce_audio_processors
+    juce::juce_audio_utils
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_lto_flags)
+
+if (MSVC)
+    target_compile_options(PulseStudio PRIVATE /bigobj /MP)
+endif()

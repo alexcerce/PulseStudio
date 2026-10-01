@@ -1,0 +1,154 @@
+# Pulse Studio
+
+A native Windows DAW built with C++, [JUCE](https://juce.com) and [Tracktion Engine](https://github.com/Tracktion/tracktion_engine). It hosts VST3 plugins, runs on ASIO audio interfaces and supports Ableton Push 2.
+
+## Install
+
+Run `dist/PulseStudio-0.3.1-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
+
+## Build
+
+You need Visual Studio 2022 Build Tools (C++ workload) and CMake. Then:
+
+```bash
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake --build build --config Release --parallel
+```
+
+The app is built to `build/PulseStudio_artefacts/Release/Pulse Studio.exe`. The first build compiles JUCE and Tracktion Engine, so it takes a few minutes. Later builds only recompile `Source/`.
+
+To build the installer, use [Inno Setup 6](https://jrsoftware.org/isinfo.php):
+
+```bash
+ISCC.exe installer\PulseStudio.iss
+```
+
+The installer is written to `dist/`. Add `/DBuildDir=..\build-dev` to package a different build folder.
+
+## First run
+
+1. **Audio Settings → Audio / MIDI**: pick your interface. Choose **ASIO** for the lowest latency, then set the buffer size.
+2. **Audio Settings → Recording**: set the count-in, MIDI overdub and a per-input recording offset.
+3. **Plugins**: click *Options → Scan for new or updated VST3 plugins*. Scanning runs in a separate process, so a crashing plugin is skipped instead of taking the app down.
+4. Press **Space** to play the demo song.
+
+Projects are saved as `.tracktionedit` files in `Documents/Pulse Studio/`. Presets go in `Documents/Pulse Studio/Presets/`, and bounces in a `Bounces` folder next to the project.
+
+## Features
+
+### Arrangement
+- **Tracks:** instrument, audio and **group** tracks. Select tracks with Ctrl-click, then press Ctrl+G to group them into a submix; ▾ collapses a group.
+- **Selection:** drag on empty lane space for a **rubber band** (Shift adds to the selection), or Ctrl/Shift-click clips. Selected clips move together.
+- **Editing:** cut, copy and paste at the playhead (Ctrl+X/C/V), duplicate (Ctrl+D), **split at the playhead** (Ctrl+E), select all (Ctrl+A).
+- **Loop-range edits:** right-click the ruler to duplicate the region, insert silence, delete time (closing the gap), or bounce the region.
+- **Render:** right-click a track header to **freeze/unfreeze**, **flatten** (replace with audio), or **bounce to a new audio track**. Ctrl+J bounces the selected clips' range.
+- **Automation:** the **A** button opens a lane for any parameter. Click to add points and drag to move them; right-click removes one.
+- **Audio clips:** drag the fade handles; double-click for gain, pitch, fades, reverse and **warp to tempo**.
+- **Takes:** loop-recorded takes appear under right-click → *Takes*.
+
+### Session view (Tab)
+- An Ableton-style clip launcher with scenes and launch quantisation. Clips loop until stopped.
+- **Session recording:** on an armed track, click an empty slot (shown with a red dot) to record a new clip into it. Right-click any empty slot → *Record into this slot*.
+- *Back to arrangement* (or a track's **Arr** button) hands tracks back to the timeline.
+
+### Ableton Push 2
+Plug it in and it connects automatically (hot-plug supported). The Push's area is outlined in red in the session view, and **PUSH** appears next to the CPU meter, whose tooltip shows the current mode.
+
+| Control | Action |
+| --- | --- |
+| **Session** button | 8×8 grid = clips. A pad launches a clip; on an armed track an empty pad records into the slot; otherwise it stops the track. Hold **Delete** + pad deletes a clip. |
+| Scene buttons (right column) | Launch scenes |
+| Upper row | Session: stop the track. Device mode: pick the device |
+| Lower row | Select a track (and route MIDI to it) |
+| Arrows | Move the 8×8 bank (Shift = 8 at a time). Note mode: ←/→ selects the track, ↑/↓ changes octave |
+| **Note** button | Play the selected track: in-key 4ths layout, or a 4×4 **drum layout** for Drum Rack tracks. Velocity, aftertouch and the touch strip (pitch bend) are passed through. |
+| Octave ↑/↓, **Scale** | Octave; cycle the scale (Shift + Scale = root note) |
+| **Device** / **Mix** | Encoders control the selected device's parameters (Page ◀ ▶ changes device), or the bank's volume → pan → send A → send B (press Mix again to cycle) |
+| Tempo / master encoders | Tempo (Shift = fine) / master volume |
+| Play, Record, Metronome, Undo (Shift = redo), Duplicate, Quantize, Tap Tempo, Mute, Solo, Browse, Clip | What you'd expect |
+
+The Push's built-in display isn't driven yet (it needs a separate USB driver layer); everything else runs over MIDI.
+
+### Controllers and MIDI
+- **MIDI Learn:** right-click any knob, fader or pan → *MIDI Learn...*, then move a control on your hardware (Esc cancels). Mappings are saved in the project; an orange dot marks mapped knobs.
+- The selected track automatically receives live input from every connected MIDI controller.
+- **Piano roll** controller lanes: velocity, pitch bend, mod wheel, volume, pan, expression and sustain.
+
+### Sound design
+- **Drum Rack:** from the *+ Inst* menu, the browser or *+ Add device*.
+  - 16 pads; drag samples onto them (several files fill consecutive pads). Click a pad to audition it.
+  - Each pad has its own gain, pan and tune, plus its own **effects chain** (*+ Pad FX*).
+- **Presets:**
+  - **Device presets:** the ☰ button on any device saves and loads its full state (VST3s included).
+  - **Chain presets:** saves and loads the whole device chain. Chain presets also appear in the browser, so you can drag one onto a track.
+- **Macros:** 8 per track. Right-click any device knob → *Map to Macro*; a blue dot marks mapped knobs.
+- **Browser:** files with preview, plus **Sync**. While the song plays, loops are time-stretched to the project tempo and start on the next bar. Tempo is detected from the file's tag, "120bpm" in the name, or the loop length.
+
+### Mixer and routing
+- Faders, pan, meters and mute/solo, plus submix strips for groups.
+- **Return tracks** with post-fader **sends** on every track, and **sidechain** inputs (the **SC** button on devices that support it).
+
+### Export (File → Export audio / stems)
+- WAV, AIFF, FLAC or OGG; 16/24/32-bit float; 44.1–96 kHz.
+- Normalise to a peak or to **LUFS**; whole song or loop range.
+- **Stems:** one file per track and return.
+
+### Safety
+- **Autosave every minute**, with recovery after a crash.
+
+## Shortcuts
+
+| Key | Action |
+| --- | --- |
+| Space | Play/stop |
+| Tab | Arrangement ↔ Session |
+| B | Show/hide browser |
+| R / L / M | Record / Loop / Metronome |
+| Home | Return to start |
+| Ctrl+Z / Ctrl+Y | Undo / redo |
+| Ctrl+S | Save |
+| Ctrl+C / X / V | Copy / cut / paste at the playhead |
+| Ctrl+D | Duplicate the selected clips |
+| Ctrl+E | Split at the playhead |
+| Ctrl+A | Select all clips (all notes in the piano roll) |
+| Ctrl+G | Group the selected tracks |
+| Ctrl+J | Bounce the selected clips' range to a new track |
+| Delete | Delete the selected clips (or notes in the piano roll) |
+| 1 / 2 / 3 | Devices / Mixer / Piano Roll |
+| Ctrl+wheel / Shift+wheel | Zoom / scroll the timeline |
+| Esc | Cancel MIDI Learn |
+
+## Command line
+
+- `--render out.wav` renders the last project offline and exits.
+- `--selftest report.txt` builds a scratch project and runs 50 checks, including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
+
+## Code layout
+
+All app code is header-only in `Source/` and compiled through `Main.cpp`.
+
+| File | Contents |
+| --- | --- |
+| `Main.cpp` | App, window, engine setup, out-of-process plugin scanning, command line |
+| `MainComponent.h` | Project lifecycle, layout, shortcuts, autosave, demo song, dialogs |
+| `TransportBar.h` | Transport, tempo/position, view toggles, file menu, Push status |
+| `ArrangementView.h` | Ruler, track and group rows, clips (fades, multi-select), rubber band, drag & drop |
+| `AutomationLane.h` | Automation lanes |
+| `SessionView.h` | Clip launcher, scenes, session recording |
+| `Push2.h` | Ableton Push 2 controller |
+| `Browser.h` | File browser with synced preview, device list |
+| `PianoRoll.h` | MIDI editor and controller lanes |
+| `DeviceChain.h` | Device rack: device cards, macros, Drum Rack editor, presets |
+| `DrumRack.h`, `Presets.h`, `Macros.h`, `MidiLearn.h` | Sound design and controller features |
+| `EditingOps.h` | Clipboard, split, time edits, bounce/flatten/freeze, grouping |
+| `ExportDialog.h`, `AudioSettings.h` | Export and audio/recording settings |
+| `Mixer.h`, `Routing.h` | Mixer strips, sends/returns |
+| `ClipImport.h`, `ClipProperties.h` | File import, audio clip panel |
+| `PluginWindow.h`, `PluginMenu.h` | Plugin windows, task runner, plugin menu |
+| `SelfTest.h` | `--selftest` |
+| `PulseLookAndFeel.h` | Dark theme |
+
+## Licensing
+
+JUCE (AGPLv3) and Tracktion Engine (GPLv3) are used under their open-source licences, so this project must stay GPL-compatible. Selling a closed-source build would require commercial licences for both.
