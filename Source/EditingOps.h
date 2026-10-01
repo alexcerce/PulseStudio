@@ -160,9 +160,34 @@ namespace EditingOps
     }
 
     /** Renders one track (with its devices, without master FX) over the given range. */
+    /** Warped / reversed audio clips play from a proxy file rendered in the background.
+        Renders started before those exist never finish, so wait for them (pumping messages). */
+    inline bool waitForClipProxies (te::Edit& e, int timeoutMs = 30000)
+    {
+        auto pending = [&e]
+        {
+            for (auto t : te::getAudioTracks (e))
+                for (auto c : t->getClips())
+                    if (auto w = dynamic_cast<te::WaveAudioClip*> (c))
+                        if ((w->getWarpTime() || w->getIsReversed()) && ! w->getPlaybackFile().isValid())
+                            return true;
+            return false;
+        };
+
+        const auto start = Time::getMillisecondCounter();
+        while (pending())
+        {
+            if (Time::getMillisecondCounter() - start > (uint32) timeoutMs)
+                return false;
+            MessageManager::getInstance()->runDispatchLoopUntil (50);
+        }
+        return true;
+    }
+
     inline File renderTrack (te::AudioTrack& track, te::TimeRange range, const String& suffix)
     {
         auto& e = track.edit;
+        waitForClipProxies (e);
         te::Renderer::Parameters p (e);
         p.tracksToDo = te::toBitSet (juce::Array<te::Track*> { &track });
         p.destFile = bounceFolder (e).getNonexistentChildFile (File::createLegalFileName (track.getName() + " " + suffix), ".wav", false);

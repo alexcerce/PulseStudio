@@ -2,12 +2,13 @@
 
 #include "Common.h"
 #include "Routing.h"
+#include "EditingOps.h"
 
 /** Export settings: format, bit depth, sample rate, normalisation, range and stems. */
 class ExportDialog : public Component
 {
 public:
-    explicit ExportDialog (te::Edit& e) : edit (e)
+    explicit ExportDialog (te::Edit& e, std::optional<te::TimeRange> sel = {}) : edit (e), selection (sel)
     {
         auto addRow = [this] (Label& l, ComboBox& c, const String& name, StringArray items, int sel)
         {
@@ -24,6 +25,11 @@ public:
         addRow (rateL, rate, "Sample rate", { "44.1 kHz", "48 kHz", "88.2 kHz", "96 kHz" }, 1);
         addRow (normL, normalise, "Normalise", { "Off", "Peak to -0.3 dB", "Loudness -14 LUFS (streaming)", "Loudness -9 LUFS (loud)" }, 1);
         addRow (rangeL, range, "Range", { "Whole song", "Loop range" }, 1);
+        if (selection.has_value() && ! selection->isEmpty())
+        {
+            range.addItem ("Selected clips (" + EngineHelpers::formatTime (te::toPosition (selection->getLength())) + ")", 3);
+            range.setSelectedId (3, dontSendNotification);
+        }
 
         stems.setButtonText ("Export stems (one file per track and return)");
         masterFx.setButtonText ("Include master bus effects");
@@ -72,6 +78,7 @@ public:
 
 private:
     te::Edit& edit;
+    std::optional<te::TimeRange> selection;
     Label formatL, depthL, rateL, normL, rangeL, status;
     ComboBox format, depth, rate, normalise, range;
     ToggleButton stems, masterFx;
@@ -124,7 +131,11 @@ private:
             default: break;
         }
 
-        if (range.getSelectedId() == 2 && ! edit.getTransport().getLoopRange().isEmpty())
+        if (range.getSelectedId() == 3 && selection.has_value())
+        {
+            p.time = *selection;
+        }
+        else if (range.getSelectedId() == 2 && ! edit.getTransport().getLoopRange().isEmpty())
         {
             p.time = edit.getTransport().getLoopRange();
         }
@@ -162,6 +173,7 @@ private:
     void exportMix (const File& f)
     {
         edit.getTransport().stop (false, false);
+        EditingOps::waitForClipProxies (edit);
         auto p = baseParams();
         p.destFile = f;
         auto result = te::Renderer::renderToFile ("Exporting mixdown", p);
@@ -171,6 +183,7 @@ private:
     void exportStems (const File& folder)
     {
         edit.getTransport().stop (false, false);
+        EditingOps::waitForClipProxies (edit);
         int ok = 0, total = 0;
 
         auto tracks = EngineHelpers::getUserTracks (edit);
@@ -198,12 +211,13 @@ private:
     }
 };
 
-inline void showExportDialog (te::Edit& edit)
+/** Opens the export dialog. A selection range adds a "Selected clips" option (and picks it). */
+inline void showExportDialog (te::Edit& edit, std::optional<te::TimeRange> selection = {})
 {
     DialogWindow::LaunchOptions o;
     o.dialogTitle = "Export";
     o.dialogBackgroundColour = Theme::panel;
     o.useNativeTitleBar = true;
-    o.content.setOwned (new ExportDialog (edit));
+    o.content.setOwned (new ExportDialog (edit, selection));
     o.launchAsync();
 }

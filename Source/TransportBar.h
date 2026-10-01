@@ -9,7 +9,7 @@ class TransportBar : public Component,
 public:
     struct Actions
     {
-        std::function<void()> newProject, openProject, saveProject, saveProjectAs, exportWav,
+        std::function<void()> newProject, openProject, saveProject, saveProjectAs, exportWav, exportSelection, exportMidi,
                               audioSettings, pluginManager, addInstrumentTrack, addAudioTrack,
                               toggleBrowser, toggleSession;
         std::function<bool()> isBrowserShown, isSessionShown;
@@ -101,7 +101,9 @@ public:
             add ("Open Project...", {}, actions.openProject);
             add ("Save", "Ctrl+S", actions.saveProject);
             m.addSeparator();
-            add ("Export audio / stems...", {}, actions.exportWav);
+            add ("Export audio / stems...", "Ctrl+Shift+R", actions.exportWav);
+            add ("Export selection...", "Ctrl+Shift+E", actions.exportSelection);
+            add ("Export MIDI...", "Ctrl+Shift+M", actions.exportMidi);
             m.showMenuAsync (PopupMenu::Options().withTargetComponent (&fileBtn));
         };
         addAndMakeVisible (fileBtn);

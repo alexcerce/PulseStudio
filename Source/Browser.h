@@ -4,6 +4,7 @@
 #include "ClipImport.h"
 #include "PluginMenu.h"
 #include "Presets.h"
+#include "Workflow.h"
 
 //==============================================================================
 /** Plays audio files from the browser through the current output device.
@@ -233,7 +234,8 @@ private:
 /** Draggable list of built-in devices and scanned VST3 plugins. */
 class PluginListBox : public Component,
                       private ListBoxModel,
-                      private ChangeListener
+                      private ChangeListener,
+                      private Timer
 {
 public:
     PluginListBox (EditViewState& e) : evs (e)
@@ -244,6 +246,7 @@ public:
         addAndMakeVisible (list);
         evs.edit.engine.getPluginManager().knownPluginList.addChangeListener (this);
         refresh();
+        startTimer (1500);   // picks up newly saved presets
     }
 
     ~PluginListBox() override { evs.edit.engine.getPluginManager().knownPluginList.removeChangeListener (this); }
@@ -260,6 +263,13 @@ public:
 
         auto types = evs.edit.engine.getPluginManager().knownPluginList.getTypes();
         std::sort (types.begin(), types.end(), [] (auto& a, auto& b) { return a.name.compareIgnoreCase (b.name) < 0; });
+
+        rows.push_back ({ "TRACK PRESETS", {}, true });
+        auto trackPresets = Workflow::trackPresets();
+        for (auto& f : trackPresets)
+            rows.push_back ({ f.getFileNameWithoutExtension(), "plugin:track:" + f.getFullPathName(), false });
+        if (trackPresets.isEmpty())
+            rows.push_back ({ "(right-click a track header > Save track preset)", {}, false });
 
         rows.push_back ({ "CHAIN PRESETS", {}, true });
         auto chains = Presets::chainPresets();
@@ -282,6 +292,7 @@ public:
                 rows.push_back ({ "(none - use Plugins... to scan)", {}, false });
         }
 
+        presetSignature = currentPresetSignature();
         list.updateContent();
         list.repaint();
     }
@@ -323,11 +334,35 @@ private:
     {
         if (row < 0 || row >= (int) rows.size() || rows[(size_t) row].id.isEmpty()) return;
 
+        if (Workflow::isTrackPreset (rows[(size_t) row].id))
+        {
+            evs.edit.getUndoManager().beginNewTransaction ("Load track preset");
+            if (auto t = Workflow::loadTrackPreset (evs.edit, Workflow::trackPresetFile (rows[(size_t) row].id)))
+                evs.selectionManager.selectOnly (t);
+            return;
+        }
+
         if (auto t = EngineHelpers::getSelectedTrack (evs.selectionManager))
             Presets::applyDescription (t, t->pluginList, rows[(size_t) row].id);
     }
 
     void changeListenerCallback (ChangeBroadcaster*) override { refresh(); }
+
+    static String currentPresetSignature()
+    {
+        String sig;
+        for (auto& f : Workflow::trackPresets()) sig << f.getFileName() << ";";
+        for (auto& f : Presets::chainPresets())  sig << f.getFileName() << ";";
+        return sig;
+    }
+
+    void timerCallback() override
+    {
+        if (isShowing() && currentPresetSignature() != presetSignature)
+            refresh();
+    }
+
+    String presetSignature;
 
     EditViewState& evs;
     ListBox list;

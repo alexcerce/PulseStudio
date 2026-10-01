@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "Common.h"
 #include "Routing.h"
@@ -12,6 +12,7 @@
 #include "Browser.h"
 #include "PluginWindow.h"
 #include "StateControls.h"
+#include "Workflow.h"
 
 /** "Pulse Studio.exe --selftest report.txt"
     Builds a scratch project in the temp folder, exercises the editing / routing / device
@@ -368,6 +369,110 @@ namespace SelfTest
                 s->flushPendingUpdates();
             }
             rep.check (measure (*inst).first > -60.0f, "Device works: Sampler");
+        }
+
+        // --- workflow: looping, nudging, MIDI export, track presets, warp markers -------------
+        {
+            auto renderPeak = [&] (te::AudioTrack& t, te::TimeRange r, const String& name)
+            {
+                return peakDb (engine, EditingOps::renderTrack (t, r, name));
+            };
+
+            auto loopTrack = ClipImport::createContentTrack (*edit, "LoopTest", true);
+            te::Clip::Ptr loopClip = loopTrack->insertMIDIClip ("OneBar", { bars (0), bars (1) }, nullptr);
+            auto* lmc = dynamic_cast<te::MidiClip*> (loopClip.get());
+            for (int i = 0; i < 4; ++i)
+                lmc->getSequence().addNote (60, te::BeatPosition::fromBeats (i), te::BeatDuration::fromBeats (0.5), 110, 0, nullptr);
+
+            Workflow::setLooping (*loopClip, true);
+            Workflow::setLengthBeats (*loopClip, 32.0);
+            int placements = 0;
+            Workflow::MidiPlacement place (*lmc);
+            for (auto n : lmc->getSequence().getNotes())
+                place.forEach (n->getStartBeat().inBeats(), n->getLengthBeats().inBeats(), [&] (double, double) { ++placements; });
+            rep.check (loopClip->isLooping() && std::abs (loopClip->getLengthInBeats().inBeats() - 32.0) < 0.01 && placements == 32,
+                       "Loop a 1-bar MIDI clip across 8 bars", String (placements) + " note repeats");
+            rep.check (renderPeak (*loopTrack, { bars (7), bars (8) }, "loop8") > -60.0f, "Looped clip plays in bar 8");
+
+            auto midiFile = dir.getChildFile ("export.mid");
+            Array<te::MidiClip*> exportClips { lmc };
+            const bool exported = Workflow::exportMidi (*edit, exportClips, midiFile);
+            int noteOns = 0, numTracks = 0;
+            {
+                FileInputStream in (midiFile);
+                MidiFile mf;
+                if (exported && in.openedOk() && mf.readFrom (in))
+                {
+                    numTracks = mf.getNumTracks();
+                    for (int t = 0; t < numTracks; ++t)
+                        for (auto e : *mf.getTrack (t))
+                            if (e->message.isNoteOn()) ++noteOns;
+                }
+            }
+            rep.check (exported && numTracks == 2 && noteOns == 32, "Export MIDI file (looped clip unrolled)",
+                       String (numTracks) + " tracks, " + String (noteOns) + " notes");
+
+            te::Clip::Array justLoop;
+            justLoop.add (loopClip.get());
+            Workflow::nudgeClips (justLoop, 1.0);
+            const bool nudged = std::abs (Workflow::clipStartBeat (*loopClip) - 1.0) < 1.0e-6;
+            Workflow::nudgeClips (justLoop, -8.0);
+            rep.check (nudged && std::abs (Workflow::clipStartBeat (*loopClip)) < 1.0e-6, "Nudge clips (clamped at the start)");
+
+            auto moved = Workflow::moveClipsToAdjacentTrack (*edit, justLoop, -1);
+            justLoop.clear();
+            const bool movedUp = moved.size() == 1 && moved[0]->getTrack() != loopTrack;
+            moved = Workflow::moveClipsToAdjacentTrack (*edit, moved, 1);
+            rep.check (movedUp && moved.size() == 1 && moved[0]->getTrack() == loopTrack, "Move clips between tracks");
+            loopClip = moved.isEmpty() ? nullptr : moved[0];
+
+            // track preset round trip with a drum rack (rack types travel with the preset)
+            if (DrumRack::findOnTrack (*drums) != nullptr)
+            {
+                const int tracksBefore = EngineHelpers::getUserTracks (*edit).size();
+                auto preset = Workflow::createTrackPreset (*drums, "DrumPreset");
+                auto copy = Workflow::insertTrackPreset (*edit, preset);
+                auto copyRack = copy != nullptr ? DrumRack::findOnTrack (*copy) : nullptr;
+                auto origRack = DrumRack::findOnTrack (*drums);
+                rep.check (copy != nullptr && EngineHelpers::getUserTracks (*edit).size() == tracksBefore + 1
+                             && copy->getClips().isEmpty() && copyRack != nullptr && copyRack->type != origRack->type
+                             && DrumRack::padName (*copyRack->type, 0) == "kick",
+                           "Track preset round trip (drum rack + samples, no clips)");
+            }
+            else
+            {
+                rep.check (false, "Track preset round trip", "drum track lost its rack");
+            }
+
+            // audio looping and warp markers
+            auto loopWav = writeTestWav (dir.getChildFile ("loop.wav"), 2.0, 330.0);
+            auto audioLoopTrack = ClipImport::createContentTrack (*edit, "AudioLoop", false);
+            te::Clip::Ptr audioLoop = ClipImport::importFile (*audioLoopTrack, *edit, loopWav, te::TimePosition());
+            if (auto alc = dynamic_cast<te::WaveAudioClip*> (audioLoop.get()))
+            {
+                Workflow::setLooping (*alc, true);
+                Workflow::setLengthBeats (*alc, 32.0);
+                rep.check (alc->isLooping() && std::abs (alc->getLengthInBeats().inBeats() - 32.0) < 0.05, "Loop an audio clip");
+                rep.check (renderPeak (*audioLoopTrack, { bars (7), bars (8) }, "audioloop") > -40.0f, "Looped audio plays in bar 8");
+                Workflow::setLooping (*alc, false);
+
+                Workflow::enableWarpMarkers (*alc, true);
+                Workflow::addWarpMarkerAtBeat (*alc, 1.0);
+                auto& wm = alc->getWarpTimeManager();
+                const int markers = wm.getMarkers().size();
+                wm.moveMarker (1, Workflow::editBeatToWarpTime (*alc, 1.5));
+                const auto movedBeat = Workflow::warpTimeToEditBeat (*alc, wm.getMarkers()[1]->warpTime);
+                rep.check (alc->getWarpTime() && alc->getAutoTempo() && markers == 3 && std::abs (movedBeat - 1.5) < 0.01,
+                           "Warp markers (add + move)", String (markers) + " markers, moved to beat " + String (movedBeat, 2));
+                // warping renders a proxy file in the background first
+                rep.check (renderPeak (*audioLoopTrack, { te::TimePosition(), bars (1) }, "warped") > -40.0f, "Warped audio renders");
+            }
+            else
+            {
+                rep.check (false, "Loop an audio clip", "import failed");
+            }
+            audioLoop = nullptr;
+            loopClip = nullptr;
         }
 
         // --- undo -------------------------------------------------------------------------------

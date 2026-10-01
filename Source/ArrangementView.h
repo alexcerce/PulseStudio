@@ -7,6 +7,7 @@
 #include "ClipImport.h"
 #include "EditingOps.h"
 #include "Presets.h"
+#include "Workflow.h"
 
 //==============================================================================
 /** Draws a bar/beat grid between x positions for the given view. */
@@ -31,7 +32,8 @@ inline void drawBeatGrid (Graphics& g, const EditViewState& evs, Rectangle<int> 
 }
 
 //==============================================================================
-class ClipComponent : public Component
+class ClipComponent : public Component,
+                      public SettableTooltipClient
 {
 public:
     ClipComponent (EditViewState& e, te::Clip::Ptr c, std::function<te::AudioTrack* (int screenY)> trackFinder)
@@ -75,6 +77,19 @@ public:
         if (auto ac = dynamic_cast<te::AudioClipBase*> (clip.get()))
             drawFadesAndGain (g, *ac, body, col, header);
 
+        drawLoopBoundaries (g, body);
+
+        if (auto ac = dynamic_cast<te::AudioClipBase*> (clip.get()))
+            if (ac->getWarpTime())
+                drawWarpMarkers (g, *ac, body);
+
+        if (clip->isLooping() && dynamic_cast<te::MidiClip*> (clip.get()) != nullptr)
+        {
+            g.setColour (Colours::black.withAlpha (0.8f));
+            g.setFont (FontOptions (10.5f));
+            g.drawText ("LOOP", header.reduced (5.0f, 0.0f), Justification::centredRight, false);
+        }
+
         g.setColour (selected ? Colours::white : col);
         g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (0.5f), 4.0f, selected ? 1.6f : 1.0f);
     }
@@ -83,6 +98,7 @@ public:
     {
         auto m = modeAt (e.position);
         setMouseCursor (m == Mode::move ? MouseCursor::DraggingHandCursor : MouseCursor::LeftRightResizeCursor);
+        setTooltip (m == Mode::warp ? "Warp marker: drag to move (Alt = no snap), right-click to delete" : String());
     }
 
     void mouseDown (const MouseEvent& e) override
@@ -101,7 +117,11 @@ public:
         else if (! sm.isSelected (clip.get()))      sm.selectOnly (clip.get());
 
         if (e.mods.isPopupMenu())
+        {
+            if (modeAt (e.position) == Mode::warp)
+                return showWarpMarkerMenu();
             return showContextMenu();
+        }
 
         auto pos = clip->getPosition();
         dragStartBeat = EngineHelpers::timeToBeat (evs.edit, pos.getStart());
@@ -119,7 +139,7 @@ public:
             dragFadeOut = ac->getFadeOut();
         }
 
-        const char* names[] = { "Move clip", "Resize clip", "Clip fade in", "Clip fade out", "" };
+        const char* names[] = { "Move clip", "Resize clip", "Clip fade in", "Clip fade out", "Move warp marker", "" };
         evs.edit.getUndoManager().beginNewTransaction (names[(int) mode]);
     }
 
@@ -161,6 +181,15 @@ public:
                     c->setStart (EngineHelpers::beatToTime (evs.edit, start + shift), false, true);
                 break;
             }
+            case Mode::warp:
+                if (auto ac = dynamic_cast<te::AudioClipBase*> (clip.get()))
+                {
+                    auto beat = evs.xToBeat (evs.beatToX (ac->getStartBeat().inBeats()) + e.position.x);
+                    if (! e.mods.isAltDown()) beat = evs.snap (beat);
+                    ac->getWarpTimeManager().moveMarker (warpIndex, Workflow::editBeatToWarpTime (*ac, beat));
+                    repaint();
+                }
+                break;
             case Mode::none:
                 break;
         }
@@ -177,8 +206,18 @@ public:
                 clip->moveTo (*target);
     }
 
-    void mouseDoubleClick (const MouseEvent&) override
+    void mouseDoubleClick (const MouseEvent& e) override
     {
+        if (auto ac = dynamic_cast<te::AudioClipBase*> (clip.get()))
+            if (ac->getWarpTime() && e.position.y >= (float) getHeight() - markerStripHeight)
+            {
+                auto beat = evs.snap (evs.xToBeat (evs.beatToX (ac->getStartBeat().inBeats()) + e.position.x));
+                evs.edit.getUndoManager().beginNewTransaction ("Add warp marker");
+                Workflow::addWarpMarkerAtBeat (*ac, beat);
+                repaint();
+                return;
+            }
+
         if (auto mc = dynamic_cast<te::MidiClip*> (clip.get()))
         {
             if (evs.openPianoRoll)
@@ -191,14 +230,38 @@ public:
     }
 
 private:
-    enum class Mode { move, resize, fadeIn, fadeOut, none };
+    enum class Mode { move, resize, fadeIn, fadeOut, warp, none };
     std::vector<std::pair<te::Clip::Ptr, double>> groupStarts;
+    static constexpr float markerStripHeight = 12.0f;
+    int warpIndex = -1;
 
-    // Fade handles sit just under the clip header; the right edge resizes.
-    Mode modeAt (Point<float> p) const
+    /** Index of the warp marker under x (in the bottom strip), or -1. */
+    int warpMarkerAt (te::AudioClipBase& ac, Point<float> p) const
+    {
+        if (! ac.getWarpTime() || p.y < (float) getHeight() - markerStripHeight)
+            return -1;
+
+        auto& markers = ac.getWarpTimeManager().getMarkers();
+        const auto x0 = evs.beatToX (ac.getStartBeat().inBeats());
+        int best = -1;
+        float bestDist = 6.0f;
+        for (int i = 0; i < markers.size(); ++i)
+        {
+            auto x = evs.beatToX (Workflow::warpTimeToEditBeat (ac, markers[i]->warpTime)) - x0;
+            if (std::abs (x - p.x) < bestDist) { bestDist = std::abs (x - p.x); best = i; }
+        }
+        return best;
+    }
+
+    // Fade handles sit just under the clip header; the right edge resizes; warp markers sit at the bottom.
+    Mode modeAt (Point<float> p)
     {
         if (auto ac = dynamic_cast<te::AudioClipBase*> (clip.get()))
         {
+            warpIndex = warpMarkerAt (*ac, p);
+            if (warpIndex >= 0)
+                return Mode::warp;
+
             auto [inX, outX] = fadeXs (*ac);
             if (p.y >= 15.0f && p.y <= 30.0f)
             {
@@ -271,21 +334,101 @@ private:
         for (auto n : notes) { lo = jmin (lo, n->getNoteNumber()); hi = jmax (hi, n->getNoteNumber()); }
         if (hi - lo < 12) { auto pad = (12 - (hi - lo)) / 2; lo -= pad; hi = lo + 12; }
         const float rowH = (float) area.getHeight() / (float) (hi - lo + 1);
-        const float clipX = evs.timeToX (mc.getPosition().getStart());
+
+        Workflow::MidiPlacement place (mc);
+        const float clipX = evs.beatToX (place.clipStart);
+        const auto ppb = (float) evs.pixelsPerBeat;
 
         g.setColour (col.brighter (0.2f));
         for (auto n : notes)
         {
-            auto t1 = mc.getTimeOfContentBeat (n->getStartBeat());
-            auto t2 = mc.getTimeOfContentBeat (n->getEndBeat());
-            if (t1 >= mc.getPosition().getEnd())
-                continue;
-
-            auto x1 = evs.timeToX (t1) - clipX;
-            auto x2 = jmin (evs.timeToX (t2) - clipX, (float) getWidth());
             auto y = (float) area.getY() + (float) (hi - n->getNoteNumber()) * rowH;
-            g.fillRect (x1, y, jmax (1.5f, x2 - x1 - 1.0f), jmax (1.5f, rowH - 0.5f));
+            place.forEach (n->getStartBeat().inBeats(), n->getLengthBeats().inBeats(), [&] (double s, double len)
+            {
+                auto x1 = evs.beatToX (s) - clipX;
+                g.fillRect (x1, y, jmax (1.5f, (float) len * ppb - 1.0f), jmax (1.5f, rowH - 0.5f));
+            });
         }
+    }
+
+    /** A piece of the clip that plays a linear stretch of the source file. */
+    struct WaveSegment { float x0, x1; double s0, s1; };
+
+    /** Splits the clip into linear pieces (at loop wraps and warp markers) for drawing. */
+    std::vector<WaveSegment> waveSegments (te::AudioClipBase& ac, std::vector<float>* loopXs = nullptr)
+    {
+        std::vector<WaveSegment> out;
+        struct Piece { double p, c, len; };   // clip-relative pos, content pos, length
+        std::vector<Piece> pieces;
+
+        auto split = [&pieces, loopXs] (double off, double clipLen, bool looped, double loopStart, double loopLen,
+                                        const std::function<float (double)>& toX)
+        {
+            if (! looped || loopLen <= 0.0)
+            {
+                pieces.push_back ({ 0.0, off, clipLen });
+                return;
+            }
+            double p = 0.0, c = loopStart + std::fmod (jmax (0.0, off), loopLen);
+            while (p < clipLen - 1.0e-9 && pieces.size() < 512)
+            {
+                auto len = jmin (loopStart + loopLen - c, clipLen - p);
+                pieces.push_back ({ p, c, len });
+                p += len;
+                c = loopStart;
+                if (loopXs != nullptr && p < clipLen) loopXs->push_back (toX (p));
+            }
+        };
+
+        if (ac.getAutoTempo())
+        {
+            const double clipStart = ac.getStartBeat().inBeats();
+            const auto x0 = evs.beatToX (clipStart);
+            auto toX = [this, clipStart, x0] (double p) { return evs.beatToX (clipStart + p) - x0; };
+            split (ac.getOffsetInBeats().inBeats(), ac.getLengthInBeats().inBeats(), ac.isLooping(),
+                   ac.getLoopStartBeats().inBeats(), ac.getLoopLengthBeats().inBeats(), toX);
+
+            const double spb = Workflow::sourceSecondsPerBeat (ac);
+            std::vector<double> cuts;   // warp marker positions in content beats
+            if (ac.getWarpTime())
+                for (auto m : ac.getWarpTimeManager().getMarkers())
+                    cuts.push_back (m->warpTime.inSeconds() / spb);
+
+            auto toSource = [&ac, spb] (double c)
+            {
+                auto w = te::TimePosition::fromSeconds (c * spb);
+                return ac.getWarpTime() ? ac.getWarpTimeManager().warpTimeToSourceTime (w).inSeconds() : w.inSeconds();
+            };
+
+            for (auto& pc : pieces)
+            {
+                std::vector<double> edges { pc.c };
+                for (auto cut : cuts)
+                    if (cut > pc.c && cut < pc.c + pc.len) edges.push_back (cut);
+                edges.push_back (pc.c + pc.len);
+                std::sort (edges.begin(), edges.end());
+
+                for (size_t i = 0; i + 1 < edges.size(); ++i)
+                {
+                    auto a = edges[i], b = edges[i + 1];
+                    out.push_back ({ toX (pc.p + a - pc.c), toX (pc.p + b - pc.c), toSource (a), toSource (b) });
+                }
+            }
+        }
+        else
+        {
+            auto pos = ac.getPosition();
+            const auto start = pos.getStart();
+            const auto x0 = evs.timeToX (start);
+            auto toX = [this, start, x0] (double p) { return evs.timeToX (start + te::TimeDuration::fromSeconds (p)) - x0; };
+            split (pos.getOffset().inSeconds(), pos.getLength().inSeconds(), ac.isLooping(),
+                   ac.getLoopStart().inSeconds(), ac.getLoopLength().inSeconds(), toX);
+
+            const double speed = ac.getSpeedRatio();
+            for (auto& pc : pieces)
+                out.push_back ({ toX (pc.p), toX (pc.p + pc.len), pc.c * speed, (pc.c + pc.len) * speed });
+        }
+        return out;
     }
 
     void drawWave (Graphics& g, Rectangle<int> area, Colour col)
@@ -301,12 +444,162 @@ private:
             return;
         }
 
-        auto pos = wac->getPosition();
-        auto speed = wac->getSpeedRatio();
-        auto t1 = toPosition (pos.getOffset()) * speed;
-        auto t2 = (toPosition (pos.getOffset()) + pos.getLength()) * speed;
         g.setColour (col.brighter (0.3f));
-        thumbnail->drawChannels (g, area, { t1, t2 }, wac->getGain());
+        for (auto& seg : waveSegments (*wac))
+        {
+            auto x0 = (int) std::floor (seg.x0), x1 = (int) std::ceil (seg.x1);
+            if (x1 <= 0 || x0 >= getWidth() || x1 <= x0 || seg.s1 <= seg.s0)
+                continue;
+            thumbnail->drawChannels (g, area.withX (x0).withWidth (x1 - x0),
+                                     { te::TimePosition::fromSeconds (seg.s0), te::TimePosition::fromSeconds (seg.s1) }, wac->getGain());
+        }
+    }
+
+    /** Dashed lines where a looped clip wraps around. */
+    void drawLoopBoundaries (Graphics& g, Rectangle<int> body)
+    {
+        if (! clip->isLooping())
+            return;
+
+        std::vector<float> xs;
+        if (auto mc = dynamic_cast<te::MidiClip*> (clip.get()))
+        {
+            Workflow::MidiPlacement place (*mc);
+            if (place.loopLength > 0.0)
+            {
+                double p = place.loopLength - std::fmod (place.offset, place.loopLength);
+                for (; p < place.clipLength - 1.0e-6 && xs.size() < 512; p += place.loopLength)
+                    xs.push_back (evs.beatToX (place.clipStart + p) - evs.beatToX (place.clipStart));
+            }
+        }
+        else if (auto ac = dynamic_cast<te::AudioClipBase*> (clip.get()))
+        {
+            waveSegments (*ac, &xs);
+        }
+
+        g.setColour (Colours::white.withAlpha (0.45f));
+        const float dash[] = { 3.0f, 3.0f };
+        for (auto x : xs)
+            g.drawDashedLine ({ x, (float) body.getY(), x, (float) body.getBottom() }, dash, 2, 1.0f);
+    }
+
+    void drawWarpMarkers (Graphics& g, te::AudioClipBase& ac, Rectangle<int> body)
+    {
+        const auto x0 = evs.beatToX (ac.getStartBeat().inBeats());
+        const float bottom = (float) getHeight();
+        g.setColour (Colours::black.withAlpha (0.3f));
+        g.fillRect (0.0f, bottom - markerStripHeight, (float) getWidth(), markerStripHeight);
+
+        auto& markers = ac.getWarpTimeManager().getMarkers();
+        for (int i = 0; i < markers.size(); ++i)
+        {
+            auto x = evs.beatToX (Workflow::warpTimeToEditBeat (ac, markers[i]->warpTime)) - x0;
+            if (x < -6.0f || x > (float) getWidth() + 6.0f)
+                continue;
+            const bool active = (mode == Mode::warp && i == warpIndex && isMouseButtonDown());
+            g.setColour (active ? Colours::white : Colour (0xfff5c542));
+            g.drawVerticalLine ((int) x, (float) body.getY(), bottom - markerStripHeight);
+            Path tri;
+            tri.addTriangle (x - 5.0f, bottom - 1.0f, x + 5.0f, bottom - 1.0f, x, bottom - markerStripHeight + 1.0f);
+            g.fillPath (tri);
+        }
+    }
+
+    void showWarpMarkerMenu()
+    {
+        auto ac = dynamic_cast<te::AudioClipBase*> (clip.get());
+        if (ac == nullptr || warpIndex < 0)
+            return;
+
+        PopupMenu m;
+        m.addItem ("Delete warp marker", [c = clip, idx = warpIndex, safe = Component::SafePointer<Component> (this)]
+        {
+            if (auto a = dynamic_cast<te::AudioClipBase*> (c.get()))
+            {
+                a->edit.getUndoManager().beginNewTransaction ("Delete warp marker");
+                a->getWarpTimeManager().removeMarker (idx);
+                if (safe != nullptr) safe->repaint();
+            }
+        });
+        m.showMenuAsync (PopupMenu::Options().withTargetComponent (this));
+    }
+
+    void addLoopItems (PopupMenu& m)
+    {
+        if (! Workflow::canLoop (*clip))
+            return;
+
+        auto c = clip;
+        auto* um = &evs.edit.getUndoManager();
+        const bool looping = clip->isLooping();
+        m.addSeparator();
+        m.addItem ("Loop clip", true, looping, [c, um]
+        {
+            um->beginNewTransaction ("Loop clip");
+            Workflow::setLooping (*c, ! c->isLooping());
+        });
+
+        const int bpb = EngineHelpers::beatsPerBar (evs.edit);
+        const double loopLen = Workflow::loopLengthBeats (*clip);
+        PopupMenu loopLenMenu, clipLenMenu;
+        for (auto beats : { 1.0, 2.0, (double) bpb, bpb * 2.0, bpb * 4.0, bpb * 8.0 })
+        {
+            auto name = beats < bpb ? String ((int) beats) + (beats == 1.0 ? " beat" : " beats")
+                                    : String ((int) (beats / bpb)) + (beats == bpb ? " bar" : " bars");
+            loopLenMenu.addItem (name, true, looping && std::abs (loopLen - beats) < 1.0e-6, [c, beats, um]
+            {
+                um->beginNewTransaction ("Loop length");
+                Workflow::setLoopLengthBeats (*c, beats);
+            });
+        }
+        for (int bars : { 1, 2, 4, 8, 16, 32 })
+            clipLenMenu.addItem (String (bars) + (bars == 1 ? " bar" : " bars"), [c, beats = (double) bars * bpb, um]
+            {
+                um->beginNewTransaction ("Clip length");
+                Workflow::setLengthBeats (*c, beats);
+            });
+        m.addSubMenu ("Loop length", loopLenMenu);
+        m.addSubMenu ("Clip length (repeats the loop)", clipLenMenu);
+    }
+
+    void addWarpItems (PopupMenu& m, te::AudioClipBase& ac)
+    {
+        te::Clip::Ptr c = &ac;
+        auto* um = &evs.edit.getUndoManager();
+        Component::SafePointer<Component> safe (this);
+        const bool on = ac.getWarpTime();
+        auto withClip = [c] (auto fn) { return [c, fn] { if (auto a = dynamic_cast<te::AudioClipBase*> (c.get())) fn (*a); }; };
+        auto repaintSelf = [safe] { if (safe != nullptr) safe->repaint(); };
+
+        m.addItem ("Warp markers", true, on, withClip ([um, on] (te::AudioClipBase& a)
+        {
+            um->beginNewTransaction ("Warp markers");
+            Workflow::enableWarpMarkers (a, ! on);
+        }));
+
+        if (! on)
+            return;
+
+        m.addItem ("Add warp marker at playhead", withClip ([um, repaintSelf] (te::AudioClipBase& a)
+        {
+            um->beginNewTransaction ("Add warp marker");
+            Workflow::addWarpMarkerAtBeat (a, EngineHelpers::timeToBeat (a.edit, a.edit.getTransport().getPosition()));
+            repaintSelf();
+        }));
+        m.addItem ("Add warp markers at transients", withClip ([um, repaintSelf] (te::AudioClipBase& a)
+        {
+            um->beginNewTransaction ("Warp markers at transients");
+            if (Workflow::addWarpMarkersAtTransients (a) < 0)
+                AlertWindow::showMessageBoxAsync (MessageBoxIconType::InfoIcon, "Warp markers",
+                                                  "Transients are still being analysed. Try again in a moment.");
+            repaintSelf();
+        }));
+        m.addItem ("Clear warp markers", withClip ([um, repaintSelf] (te::AudioClipBase& a)
+        {
+            um->beginNewTransaction ("Clear warp markers");
+            a.getWarpTimeManager().removeAllMarkers();
+            repaintSelf();
+        }));
     }
 
     void showContextMenu()
@@ -337,10 +630,13 @@ private:
         if (auto mc = dynamic_cast<te::MidiClip*> (clip.get()))
             m.addItem ("Open in Piano Roll", [this, mc] { if (evs.openPianoRoll) evs.openPianoRoll (mc); });
 
+        addLoopItems (m);
+
         if (auto wac = dynamic_cast<te::WaveAudioClip*> (clip.get()))
         {
             m.addSeparator();
             m.addItem ("Clip properties...", [this, wac] { showAudioClipPanel (*wac, *this); });
+            addWarpItems (m, *wac);
             m.addItem ("Reverse", true, wac->getIsReversed(), [wac] { wac->setIsReversed (! wac->getIsReversed()); });
             m.addItem ("Remove fades", [wac] { wac->setFadeIn ({}); wac->setFadeOut ({}); });
             m.addItem ("Reset gain", [wac] { wac->setGainDB (0.0f); });
@@ -487,6 +783,14 @@ public:
     void itemDropped (const SourceDetails& d) override
     {
         setDropHighlight (false);
+
+        if (Workflow::isTrackPreset (d.description.toString()))
+        {
+            evs.edit.getUndoManager().beginNewTransaction ("Load track preset");
+            if (auto t = Workflow::loadTrackPreset (evs.edit, Workflow::trackPresetFile (d.description.toString())))
+                evs.selectionManager.selectOnly (t);
+            return;
+        }
 
         if (ClipImport::isPluginDescription (d.description))
         {
@@ -762,6 +1066,26 @@ public:
                 EditingOps::flatten (*t);
             });
             m.addItem ("Bounce to new audio track", [t = track] { EditingOps::bounceToNewTrack (*t); });
+            m.addSeparator();
+            m.addItem ("Save track preset...", [t = track]
+            {
+                Presets::askForName ("Save track preset", t->getName(), [t] (const String& name)
+                {
+                    if (auto at = dynamic_cast<te::AudioTrack*> (t.get()))
+                        if (! Workflow::saveTrackPreset (*at, name))
+                            AlertWindow::showMessageBoxAsync (MessageBoxIconType::WarningIcon, "Track preset", "Couldn't save the preset.");
+                });
+            });
+            m.addItem ("Export MIDI clips...", [t = track]
+            {
+                if (auto at = dynamic_cast<te::AudioTrack*> (t.get()))
+                {
+                    Array<te::MidiClip*> clips;
+                    for (auto c : at->getClips())
+                        if (auto mc = dynamic_cast<te::MidiClip*> (c)) clips.add (mc);
+                    Workflow::chooseAndExportMidi (at->edit, clips, at->getName());
+                }
+            });
             m.addSeparator();
             m.addItem ("Delete track", [this] { evs.edit.deleteTrack (track.get()); });
             m.showMenuAsync (PopupMenu::Options().withTargetComponent (this), [this] (int res)
@@ -1253,6 +1577,33 @@ public:
         playhead.setBounds (r.withTrimmedLeft (headerWidth).withTrimmedRight (viewport.getScrollBarThickness()));
     }
 
+    /** Zooms and scrolls so the beat range fills the visible lanes. */
+    void zoomToBeats (double b0, double b1)
+    {
+        const double w = jmax (100, ruler.getWidth() - 12);
+        b1 = jmax (b1, b0 + 1.0);
+        const double pad = (b1 - b0) * 0.03;
+        evs.pixelsPerBeat = jlimit (2.0, 600.0, w / (b1 - b0 + 2.0 * pad));
+        evs.viewStartBeat = jmax (0.0, b0 - pad);
+        evs.viewChanged.sendChangeMessage();
+    }
+
+    /** Zooms to the selected clips, or the whole song when nothing is selected. */
+    void zoomToFit (bool wholeSong)
+    {
+        auto clips = EditingOps::selectedClips (evs.selectionManager);
+        te::TimeRange r;
+        if (! wholeSong && ! clips.isEmpty())
+            r = EditingOps::rangeOf (clips);
+        else
+            r = { te::TimePosition(), te::TimePosition() + evs.edit.getLength() };
+
+        if (r.getLength() <= te::TimeDuration())
+            r = { te::TimePosition(), EngineHelpers::beatToTime (evs.edit, 16.0) };
+
+        zoomToBeats (EngineHelpers::timeToBeat (evs.edit, r.getStart()), EngineHelpers::timeToBeat (evs.edit, r.getEnd()));
+    }
+
 private:
     static constexpr int rulerHeight = 30;
 
@@ -1308,6 +1659,14 @@ private:
         void itemDropped (const SourceDetails& d) override
         {
             setHighlight (false);
+
+            if (Workflow::isTrackPreset (d.description.toString()))
+            {
+                evs.edit.getUndoManager().beginNewTransaction ("Load track preset");
+                if (auto t = Workflow::loadTrackPreset (evs.edit, Workflow::trackPresetFile (d.description.toString())))
+                    evs.selectionManager.selectOnly (t);
+                return;
+            }
 
             if (ClipImport::isPluginDescription (d.description))
             {

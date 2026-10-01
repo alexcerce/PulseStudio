@@ -13,6 +13,7 @@
 #include "SessionView.h"
 #include "EditingOps.h"
 #include "ExportDialog.h"
+#include "Workflow.h"
 #include "MidiLearn.h"
 #include "DrumRack.h"
 #include "AudioSettings.h"
@@ -110,7 +111,9 @@ public:
     /** Offline-renders the current project (used by the --render command-line option). */
     bool renderTo (const File& f)
     {
-        return edit != nullptr && te::Renderer::renderToFile (*edit, f, false);
+        if (edit == nullptr) return false;
+        EditingOps::waitForClipProxies (*edit);
+        return te::Renderer::renderToFile (*edit, f, false);
     }
 
     bool keyPressed (const KeyPress& k) override
@@ -126,6 +129,9 @@ public:
         const bool shift = k.getModifiers().isShiftDown();
 
         if (k == KeyPress::spaceKey)                       { EngineHelpers::togglePlay (*edit); return true; }
+        if (isCtrlKey (k, 'r') && shift)                   { exportWav(); return true; }
+        if (isCtrlKey (k, 'e') && shift)                   { exportSelection(); return true; }
+        if (isCtrlKey (k, 'm') && shift)                   { exportMidi(); return true; }
         if (isCtrlKey (k, 'z') && ! shift)                 { edit->undo(); return true; }
         if (isCtrlKey (k, 'y') || (isCtrlKey (k, 'z') && shift)) { edit->redo(); return true; }
         if (isCtrlKey (k, 's'))                            { saveProject(); return true; }
@@ -136,6 +142,22 @@ public:
         if (k == KeyPress ('2'))                           { showTab (Tab::mixer); return true; }
         if (k == KeyPress ('3'))                           { showTab (Tab::pianoRoll); return true; }
         if (k == KeyPress::homeKey)                        { tc.setPosition (0s); return true; }
+        if (isCtrlKey (k, 'l'))                            { loopSelection(); return true; }
+        if (CharacterFunctions::toUpperCase ((juce_wchar) k.getKeyCode()) == 'Z' && ! k.getModifiers().isCommandDown() && arrangement != nullptr)
+        {
+            arrangement->zoomToFit (shift);   // Z = selection, Shift+Z = whole song
+            return true;
+        }
+        if ((k.getTextCharacter() == '=' || k.getTextCharacter() == '+') && ! k.getModifiers().isCommandDown())
+        {
+            evs->zoom (1.4, 0);
+            return true;
+        }
+        if (k.getTextCharacter() == '-' && ! k.getModifiers().isCommandDown())
+        {
+            evs->zoom (1.0 / 1.4, 0);
+            return true;
+        }
         if (k == KeyPress::tabKey)                         { toggleSession(); return true; }
         if (k == KeyPress ('b'))                           { toggleBrowser(); return true; }
 
@@ -151,6 +173,31 @@ public:
                 EditingOps::deleteSelected (selectionManager);
                 return true;
             }
+        }
+
+        // arrow keys move the selected clips: left/right by the grid (Shift = 1 bar), up/down between tracks
+        if (! showSession && (k.isKeyCode (KeyPress::leftKey) || k.isKeyCode (KeyPress::rightKey)
+                               || k.isKeyCode (KeyPress::upKey) || k.isKeyCode (KeyPress::downKey)))
+        {
+            auto clips = EditingOps::selectedClips (selectionManager);
+            if (clips.isEmpty())
+                return false;
+
+            if (k.isKeyCode (KeyPress::upKey) || k.isKeyCode (KeyPress::downKey))
+            {
+                um.beginNewTransaction ("Move clips to track");
+                te::SelectableList moved;
+                for (auto c : Workflow::moveClipsToAdjacentTrack (*edit, clips, k.isKeyCode (KeyPress::upKey) ? -1 : 1))
+                    moved.add (c);
+                selectionManager.select (moved);
+                return true;
+            }
+
+            const double grid = shift ? (double) EngineHelpers::beatsPerBar (*edit)
+                                      : (evs->snapBeats > 0.0 ? evs->snapBeats : 0.25);
+            um.beginNewTransaction ("Nudge clips");
+            Workflow::nudgeClips (clips, k.isKeyCode (KeyPress::leftKey) ? -grid : grid);
+            return true;
         }
 
         if (isCtrlKey (k, 'd')) { um.beginNewTransaction ("Duplicate");  EditingOps::duplicate (selectionManager); return true; }
@@ -205,6 +252,8 @@ private:
         a.openProject    = [this] { openProject(); };
         a.saveProject    = [this] { saveProject(); };
         a.exportWav      = [this] { exportWav(); };
+        a.exportSelection = [this] { exportSelection(); };
+        a.exportMidi     = [this] { exportMidi(); };
         a.audioSettings  = [this] { showAudioSettings(); };
         a.pluginManager  = [this] { showPluginManager(); };
         a.addInstrumentTrack = [this] { addTrack (true); };
@@ -584,6 +633,48 @@ private:
                                   saveIfNeeded();
                                   loadEdit (f, false);
                               });
+    }
+
+    /** Sets the loop range to the selected clips and turns looping on. */
+    void loopSelection()
+    {
+        auto clips = EditingOps::selectedClips (selectionManager);
+        if (clips.isEmpty())
+            return;
+        auto& tc = edit->getTransport();
+        tc.setLoopRange (EditingOps::rangeOf (clips));
+        tc.looping = true;
+    }
+
+    void exportSelection()
+    {
+        auto clips = EditingOps::selectedClips (selectionManager);
+        if (clips.isEmpty())
+        {
+            if (edit->getTransport().getLoopRange().isEmpty())
+            {
+                AlertWindow::showMessageBoxAsync (MessageBoxIconType::InfoIcon, "Export selection",
+                                                  "Select some clips (or set a loop range) first.");
+                return;
+            }
+            showExportDialog (*edit, edit->getTransport().getLoopRange());
+            return;
+        }
+        showExportDialog (*edit, EditingOps::rangeOf (clips));
+    }
+
+    /** Exports the selected MIDI clips, or every MIDI clip in the song. */
+    void exportMidi()
+    {
+        Array<te::MidiClip*> clips;
+        for (auto c : EditingOps::selectedClips (selectionManager))
+            if (auto mc = dynamic_cast<te::MidiClip*> (c))
+                clips.add (mc);
+
+        if (clips.isEmpty())
+            clips = Workflow::allMidiClips (*edit);
+
+        Workflow::chooseAndExportMidi (*edit, clips, edit->getName());
     }
 
     void exportWav()

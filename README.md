@@ -4,7 +4,7 @@ A native Windows DAW built with C++, [JUCE](https://juce.com) and [Tracktion Eng
 
 ## Install
 
-Run `dist/PulseStudio-0.3.1-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
+Run `dist/PulseStudio-0.4.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
 
 ## Build
 
@@ -45,6 +45,9 @@ Projects are saved as `.tracktionedit` files in `Documents/Pulse Studio/`. Prese
 - **Automation:** the **A** button opens a lane for any parameter. Click to add points and drag to move them; right-click removes one.
 - **Audio clips:** drag the fade handles; double-click for gain, pitch, fades, reverse and **warp to tempo**.
 - **Takes:** loop-recorded takes appear under right-click → *Takes*.
+- **Keyboard editing:** the arrow keys move the selected clips. ←/→ move by the grid (Shift = 1 bar) and ↑/↓ move them to the track above or below. **Z** zooms to the selection (Shift+Z = whole song), **+**/**−** zoom, and **Ctrl+L** loops the selection.
+- **Clip looping:** right-click a MIDI or audio clip → *Loop clip*, then drag the right edge (or use *Clip length*) to repeat it. For example, loop a 1-bar clip across 8 bars. *Loop length* sets the looped region; dashed lines mark each repeat.
+- **Warp markers** (audio): right-click → *Warp markers*. Double-click the strip at the bottom of the clip to add a marker, drag markers to move audio onto the beat (Alt = no snap), and right-click a marker to delete it. You can also add markers at the playhead or at every detected transient.
 
 ### Session view (Tab)
 - An Ableton-style clip launcher with scenes and launch quantisation. Clips loop until stopped.
@@ -79,6 +82,7 @@ The Push's built-in display isn't driven yet (it needs a separate USB driver lay
   - 16 pads; drag samples onto them (several files fill consecutive pads). Click a pad to audition it.
   - Each pad has its own gain, pan and tune, plus its own **effects chain** (*+ Pad FX*).
 - **Presets:**
+  - **Track presets:** right-click a track header → *Save track preset*. This saves the instrument, effects (Drum Rack samples included) and mixer settings, but no clips. Saved presets appear under *Track presets* in the browser's Devices tab; drag one into the arrangement, or double-click it, to create a new track.
   - **Device presets:** the ☰ button on any device saves and loads its full state (VST3s included).
   - **Chain presets:** saves and loads the whole device chain. Chain presets also appear in the browser, so you can drag one onto a track.
 - **Macros:** 8 per track. Right-click any device knob → *Map to Macro*; a blue dot marks mapped knobs.
@@ -88,10 +92,14 @@ The Push's built-in display isn't driven yet (it needs a separate USB driver lay
 - Faders, pan, meters and mute/solo, plus submix strips for groups.
 - **Return tracks** with post-fader **sends** on every track, and **sidechain** inputs (the **SC** button on devices that support it).
 
-### Export (File → Export audio / stems)
-- WAV, AIFF, FLAC or OGG; 16/24/32-bit float; 44.1–96 kHz.
-- Normalise to a peak or to **LUFS**; whole song or loop range.
-- **Stems:** one file per track and return.
+### Export (File menu)
+- **Export audio / stems** (Ctrl+Shift+R):
+  - WAV, AIFF, FLAC or OGG; 16/24/32-bit float; 44.1–96 kHz.
+  - Normalise to a peak or to **LUFS**.
+  - Range: whole song, loop range or the selected clips.
+  - **Stems:** one file per track and return.
+- **Export selection** (Ctrl+Shift+E): exports just the selected clips' time range (or the loop range).
+- **Export MIDI** (Ctrl+Shift+M): writes the selected MIDI clips, or every MIDI clip, to a `.mid` file. You get one track per Pulse track with the tempo map, and looped clips are written out in full. A track header's right-click menu exports that track's clips.
 
 ### Safety
 - **Autosave every minute**, with recovery after a crash.
@@ -113,6 +121,12 @@ The Push's built-in display isn't driven yet (it needs a separate USB driver lay
 | Ctrl+A | Select all clips (all notes in the piano roll) |
 | Ctrl+G | Group the selected tracks |
 | Ctrl+J | Bounce the selected clips' range to a new track |
+| ← / → | Move the selected clips by the grid (Shift = 1 bar) |
+| ↑ / ↓ | Move the selected clips to the track above / below |
+| Z / Shift+Z | Zoom to the selection / whole song |
+| + / − | Zoom in / out |
+| Ctrl+L | Loop the selected clips |
+| Ctrl+Shift+R / E / M | Export audio / export selection / export MIDI |
 | Delete | Delete the selected clips (or notes in the piano roll) |
 | 1 / 2 / 3 | Devices / Mixer / Piano Roll |
 | Ctrl+wheel / Shift+wheel | Zoom / scroll the timeline |
@@ -121,7 +135,7 @@ The Push's built-in display isn't driven yet (it needs a separate USB driver lay
 ## Command line
 
 - `--render out.wav` renders the last project offline and exits.
-- `--selftest report.txt` builds a scratch project and runs 50 checks, including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--selftest report.txt` builds a scratch project and runs 60 checks, including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
 - `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
 
 ## Code layout
@@ -142,6 +156,7 @@ All app code is header-only in `Source/` and compiled through `Main.cpp`.
 | `DeviceChain.h` | Device rack: device cards, macros, Drum Rack editor, presets |
 | `DrumRack.h`, `Presets.h`, `Macros.h`, `MidiLearn.h` | Sound design and controller features |
 | `EditingOps.h` | Clipboard, split, time edits, bounce/flatten/freeze, grouping |
+| `Workflow.h` | Keyboard nudging, clip looping, warp markers, MIDI export, track presets |
 | `ExportDialog.h`, `AudioSettings.h` | Export and audio/recording settings |
 | `Mixer.h`, `Routing.h` | Mixer strips, sends/returns |
 | `ClipImport.h`, `ClipProperties.h` | File import, audio clip panel |
