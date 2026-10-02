@@ -327,10 +327,11 @@ namespace DeviceEditors
             add ("Gain reduction", std::make_unique<HistoryGraph> ([s] { return s->gainReductionDb.load(); }, 24.0f, "dB", Theme::orange));
         }
         else if (auto s = dynamic_cast<pulse::Limiter*> (&p))
-        {
-            add ("Transfer curve", DeviceDisplays::create (evs, p));
-            add ("Gain reduction", std::make_unique<HistoryGraph> ([s] { return s->gainReductionDb.load(); }, 12.0f, "dB", Theme::orange));
-        }
+            add ("Levels, gain reduction and loudness", std::make_unique<DynamicsUI::LimiterView> (*s));
+        else if (auto s = dynamic_cast<pulse::ProCompressor*> (&p))
+            add ("Levels, gain reduction and transfer curve", std::make_unique<DynamicsUI::CompressorView> (*s));
+        else if (auto s = dynamic_cast<pulse::MultibandDynamics*> (&p))
+            add ("Bands", std::make_unique<DynamicsUI::MultibandView> (*s));
         else if (auto s = dynamic_cast<pulse::AutoFilter*> (&p))
         {
             using A = pulse::AutoFilter;
@@ -352,7 +353,7 @@ namespace DeviceEditors
             add ("Stereo field", std::make_unique<DeviceViews::StereoField> (*u));
         else if (auto c = DeviceDisplays::create (evs, p))
             add (p.getName(), std::move (c));
-        if (auto pp = dynamic_cast<pulse::PulsePlugin*> (&p); pp != nullptr && v.size() < 2 && pp->numParams() > 0 && pp->numParams() <= 48)
+        if (auto pp = dynamic_cast<pulse::PulsePlugin*> (&p); pp != nullptr && v.empty() && pp->numParams() > 0 && pp->numParams() <= 48)
             add ("All parameters", std::make_unique<ParamBars> (*pp));
         return v;
     }

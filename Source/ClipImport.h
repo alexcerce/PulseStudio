@@ -82,6 +82,8 @@ namespace ClipImport
             { "Sampler",      te::SamplerPlugin::xmlTypeName,      true },
             { "EQ Six",       pulse::PulseEQ::xmlTypeName,         false },
             { "Prism EQ",     pulse::PrismEQ::xmlTypeName,         false },
+            { "Pulse Compressor", pulse::ProCompressor::xmlTypeName, false },
+            { "Multiband Dynamics", pulse::MultibandDynamics::xmlTypeName, false },
             { "Glue Compressor", pulse::GlueCompressor::xmlTypeName, false },
             { "Saturator",    pulse::Saturator::xmlTypeName,       false },
             { "Auto Filter",  pulse::AutoFilter::xmlTypeName,      false },

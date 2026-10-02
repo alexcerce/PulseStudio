@@ -5,6 +5,7 @@
 #include "ClipImport.h"
 #include "Graphs.h"
 #include "PrismEQDisplay.h"
+#include "DynamicsDisplay.h"
 
 /** Visual panels shown at the left of Pulse device cards. */
 namespace DeviceDisplays
@@ -1322,13 +1323,9 @@ namespace DeviceDisplays
             return std::make_unique<Graphs::DynamicsGraph> (s->param (G::pThreshold), s->param (G::pRatio), curve, Theme::orange,
                                                             [s] { return s->gainReductionDb.load(); });
         }
-        if (auto s = dynamic_cast<pulse::Limiter*> (&p))
-        {
-            using L = pulse::Limiter;
-            auto curve = [s] (float in) { return jmin (in + s->get (L::pGain), s->get (L::pCeiling)); };
-            return std::make_unique<Graphs::DynamicsGraph> (s->param (L::pCeiling), nullptr, curve, Theme::orange,
-                                                            [s] { return s->gainReductionDb.load(); });
-        }
+        if (auto s = dynamic_cast<pulse::Limiter*> (&p))           return std::make_unique<DynamicsUI::LimiterView> (*s);
+        if (auto s = dynamic_cast<pulse::ProCompressor*> (&p))     return std::make_unique<DynamicsUI::CompressorView> (*s);
+        if (auto s = dynamic_cast<pulse::MultibandDynamics*> (&p)) return std::make_unique<DynamicsUI::MultibandView> (*s);
         if (auto s = dynamic_cast<pulse::Tuner*> (&p))          return std::make_unique<TunerDisplay> (*s);
         if (auto s = dynamic_cast<pulse::Reverb*> (&p))         return std::make_unique<ReverbDisplay> (*s);
         if (auto s = dynamic_cast<pulse::Delay*> (&p))          return std::make_unique<DelayDisplay> (*s);

@@ -3498,6 +3498,126 @@ namespace SelfTest
             edit->deleteTrack (t);
         }
 
+        // --- v0.46: pro dynamics ----------------------------------------------------------------------------
+        {
+            rep.step ("dynamics");
+            const double sr = 48000.0;
+            // runs a stereo signal through an effect; returns the output peak (dB) over the last 0.1 s
+            auto runFx = [&] (te::Plugin& fx, std::function<float (int, double)> sig, double seconds, AudioBuffer<float>* keep = nullptr) -> float
+            {
+                const int block = 480;
+                fx.initialise ({ te::TimePosition(), sr, block });
+                AudioBuffer<float> audio (2, block);
+                float peak = 0;
+                const int blocks = (int) (seconds * sr / block);
+                if (keep != nullptr) keep->setSize (2, blocks * block);
+                for (int k = 0; k < blocks; ++k)
+                {
+                    for (int c = 0; c < 2; ++c)
+                        for (int i = 0; i < block; ++i) audio.setSample (c, i, sig (c, (k * block + i) / sr));
+                    te::MidiMessageArray midi;
+                    te::PluginRenderContext fc (&audio, 0, block, &midi, 0.0, { te::TimePosition::fromSeconds (k * block / sr), te::TimePosition::fromSeconds ((k + 1) * block / sr) },
+                                                true, false, true, false);
+                    fx.applyToBuffer (fc);
+                    if (keep != nullptr) for (int c = 0; c < 2; ++c) keep->copyFrom (c, k * block, audio, c, 0, block);
+                    if (k >= blocks - 10) peak = jmax (peak, audio.getMagnitude (0, block));
+                }
+                fx.deinitialise();
+                return Decibels::gainToDecibels (peak, -200.0f);
+            };
+            auto sine = [] (double hz, float amp) { return [hz, amp] (int, double t) { return amp * (float) std::sin (MathConstants<double>::twoPi * hz * t); }; };
+            auto t = ClipImport::createContentTrack (*edit, "Dyn", false);
+
+            // compressor: -10 dBFS sine, threshold -20, 4:1, hard knee -> about -17.5 dBFS
+            auto cp = edit->getPluginCache().createNewPlugin (pulse::ProCompressor::xmlTypeName, {});
+            t->pluginList.insertPlugin (cp, 0, nullptr);
+            auto* comp = dynamic_cast<pulse::ProCompressor*> (cp.get());
+            using C = pulse::ProCompressor;
+            comp->set (C::pThreshold, -20); comp->set (C::pRatio, 4); comp->set (C::pKnee, 0); comp->set (C::pAttack, 1); comp->set (C::pRelease, 50);
+            const float a10 = Decibels::decibelsToGain (-10.0f);
+            const float out4 = runFx (*comp, sine (1000, a10), 0.6);
+            comp->set (C::pRatio, 100);
+            const float outInf = runFx (*comp, sine (1000, a10), 0.6);
+            comp->set (C::pRatio, 4); comp->set (C::pRange, 3);
+            const float outRange = runFx (*comp, sine (1000, a10), 0.6);
+            comp->set (C::pRange, 60);
+            // sidechain low cut: a 50 Hz tone barely triggers it when the SC cut is at 500 Hz
+            comp->set (C::pScHpf, 500);
+            const float outHpf = runFx (*comp, sine (50, a10), 0.8);
+            comp->set (C::pScHpf, 10);
+            // lookahead reports latency
+            comp->set (C::pLookahead, 5);
+            const double lat = comp->getLatencySeconds();
+            comp->set (C::pLookahead, 0);
+            const bool compOk = std::abs (out4 + 17.5f) < 0.8f && std::abs (outInf + 20.0f) < 0.8f && std::abs (outRange + 13.0f) < 0.6f
+                                && outHpf > -11.5f && std::abs (lat - 0.005) < 1e-6 && std::abs (comp->transfer (-10.0f) + 17.5f) < 0.01f;
+            rep.check (compOk, "Pulse Compressor (ratio, infinity, range, sidechain filter, lookahead latency)",
+                       "4:1 " + String (out4, 1) + ", inf " + String (outInf, 1) + ", range 3 dB " + String (outRange, 1) + ", 50 Hz with SC cut " + String (outHpf, 1));
+
+            // multiband: with nothing compressing, the bands sum back to flat
+            auto mp = edit->getPluginCache().createNewPlugin (pulse::MultibandDynamics::xmlTypeName, {});
+            t->pluginList.insertPlugin (mp, 0, nullptr);
+            auto* mb = dynamic_cast<pulse::MultibandDynamics*> (mp.get());
+            using M = pulse::MultibandDynamics;
+            mb->set (mb->g (M::gBands), 2);   // 4 bands
+            for (int b = 0; b < 4; ++b) mb->set (M::idx (b, M::bThreshold), 0.0f);
+            float worst = 0;
+            String perHz;
+            for (double hz : { 40.0, 120.0, 500.0, 1000.0, 3000.0, 6000.0, 12000.0 })
+            {
+                AudioBuffer<float> kept;
+                runFx (*mb, sine (hz, 0.25f), 0.4, &kept);   // RMS of the last 0.1 s (a sampled peak moves with phase at high frequencies)
+                const int last = (int) (0.1 * sr);
+                const float e = Decibels::gainToDecibels (kept.getRMSLevel (0, kept.getNumSamples() - last, last) * 1.41421f) - Decibels::gainToDecibels (0.25f);
+                perHz << String (roundToInt (hz)) << ":" << String (e, 2) << " ";
+                worst = jmax (worst, std::abs (e));
+            }
+            // band 1 compresses hard: a loud 60 Hz tone drops, a loud 5 kHz tone does not
+            mb->set (M::idx (0, M::bThreshold), -40.0f); mb->set (M::idx (0, M::bRatio), 10.0f);
+            const float low = runFx (*mb, sine (60, 0.5f), 0.6) - Decibels::gainToDecibels (0.5f);
+            const float high = runFx (*mb, sine (5000, 0.5f), 0.6) - Decibels::gainToDecibels (0.5f);
+            rep.check (worst < 0.3f && low < -15.0f && std::abs (high) < 0.5f, "Multiband Dynamics (flat sum, band-only compression)",
+                       "sum error " + String (worst, 2) + " dB (" + perHz.trim() + "), low band " + String (low, 1) + " dB, high " + String (high, 2) + " dB");
+
+            // limiter: a sine with peaks between the samples stays under the ceiling with true peak on
+            auto lp = edit->getPluginCache().createNewPlugin (pulse::Limiter::xmlTypeName, {});
+            t->pluginList.insertPlugin (lp, 0, nullptr);
+            auto* lim = dynamic_cast<pulse::Limiter*> (lp.get());
+            using L = pulse::Limiter;
+            lim->set (L::pGain, 12); lim->set (L::pCeiling, -1); lim->set (L::pTruePeak, 1);
+            AudioBuffer<float> outBuf;
+            auto isp = [] (int, double t) { return 0.5f * (float) std::sin (MathConstants<double>::twoPi * 12000.0 * t + 0.785); };   // fs/4: worst case
+            runFx (*lim, isp, 3.5, &outBuf);
+            pulse::LoudnessAnalyser la;
+            la.prepare (sr);
+            la.process (outBuf.getReadPointer (0, (int) sr), outBuf.getReadPointer (1, (int) sr), outBuf.getNumSamples() - (int) sr);
+            const float tp = la.truePeakDb();
+            const float measured = lim->truePeakDb.load(), st = lim->shortTermLufs.load();
+            rep.check (tp < -0.9f && measured < -0.5f && st > -30.0f && lim->history.write.load() > 0, "Limiter: true-peak ceiling, loudness readouts, history",
+                       "true peak " + String (tp, 2) + " dBTP (limiter reads " + String (measured, 2) + "), short-term " + String (st, 1) + " LUFS");
+
+            // displays build
+            {
+                PulseLookAndFeel laf;
+                LookAndFeel::setDefaultLookAndFeel (&laf);
+                EditViewState evs (*edit, sm);
+                int built = 0;
+                for (auto* p : std::initializer_list<te::Plugin*> { comp, mb, lim })
+                {
+                    DeviceEditors::Editor ed (evs, *dynamic_cast<pulse::PulsePlugin*> (p));
+                    ed.setSize (1100, 760);
+                    auto img = ed.createComponentSnapshot (ed.getLocalBounds());
+                    auto f = dir.getChildFile ("dyn_" + File::createLegalFileName (p->getName()) + ".png");
+                    f.deleteFile();
+                    if (auto os = f.createOutputStream()) { PNGImageFormat png; if (png.writeImageToStream (img, *os)) ++built; }
+                }
+                rep.check (built == 3, "Dynamics editors build");
+                LookAndFeel::setDefaultLookAndFeel (nullptr);
+            }
+            cp = nullptr; mp = nullptr; lp = nullptr;
+            edit->deleteTrack (t);
+        }
+
         // --- sharing: project zip, crash bundle, update check -----------------------------------------
         {
             rep.step ("sharing tools");

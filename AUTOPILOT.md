@@ -71,7 +71,24 @@ when you start, touch it after each step, and delete it when you stop.
    - ~~v0.33 audio editing~~ (done): clip gain envelope, slip edit (Alt-drag content), crossfade editor; groove pool (extract groove)
    - ~~v0.34 content~~ (done): factory presets for Pulse devices, synth drum kits, project templates; wavetable draw editor
    - ~~v0.35 sharing~~ (done): export project as a single zip, crash report bundle, update checker (URL configurable)
-5. Then **think of more improvements** and do them in a cycle: polish, reliability, performance, UI clarity,
+5. **Owner request 3 (2026-10-02), do in this order:**
+   - v0.46 pro dynamics like Prism EQ: Pulse Compressor (detailed display: level history, gain reduction, draggable
+     transfer curve, character modes clean / punchy / vintage, sidechain filter, lookahead), Multiband dynamics (up to
+     4 draggable bands over the Prism analyser), Limiter upgrade (waveform + GR history, loudness, true peak).
+   - v0.47 flagship Wavetable: drag-and-drop modulation onto any knob, mod matrix, 4 drawable LFOs, warp modes,
+     dual filter with routing, built-in FX, 50+ presets.
+   - v0.48 recording: count-in, punch in/out, loop recording stacking takes, better metronome sounds, input meter
+     with clip warning on armed tracks, latency-compensated monitoring.
+   - v0.49 arranger: section track (Intro / Verse / Chorus ...) to move / copy / delete whole sections; session
+     follow actions.
+   - v0.50 export: MP3 / FLAC / OGG (only with codecs already in JUCE - no downloads), streaming loudness target,
+     MIDI file export.
+   - v0.51 drop audit: check EVERY drop target / insert path makes sense (no instruments on returns or the master,
+     no MIDI effects where there is no instrument, audio files onto instrument tracks, devices onto groups ...);
+     refuse with a clear message instead.
+   - Then continue the cycle (item 6) with features the owner would like. If a usage limit stops the work, the
+     scheduled task resumes it later.
+6. Then **think of more improvements** and do them in a cycle: polish, reliability, performance, UI clarity,
    missing DAW features (e.g. sidechain UI improvements, audio quantize, tuner/spectrum devices, MIDI
    learn for Push encoders, better browser search/tags, recent projects, auto-update of README docs).
    Pick the most valuable next item, add it to this queue, implement it, test it, commit.
@@ -143,3 +160,6 @@ when you start, touch it after each step, and delete it when you stop.
   (The 0.43.0 installer in dist was rebuilt by mistake from the 0.44 code; the 0.44.0 one is current.)
 - 2026-10-02: v0.45.0 sandboxed plugins open in the Pulse device editor (parameter groups of 16, plugin window button),
   A/B and your own presets in every device editor. The v0.42 "do all of these" list is done. 201 checks pass.
+- 2026-10-02: v0.46.0 Dynamics.h: Pulse Compressor (5 characters, lookahead, SC filters / listen / external key), Multiband
+  Dynamics (LR4 crossovers, flat sum, compress / expand / upward), Limiter moved here and upgraded (true peak, styles,
+  link, LUFS + true peak readouts, level history); DynamicsDisplay.h views; 16 presets. 207 checks pass.

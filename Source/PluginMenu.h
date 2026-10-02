@@ -72,6 +72,8 @@ namespace PluginMenu
 
         addBuiltIn<pulse::PulseEQ> (effects, edit, cb);
         addBuiltIn<pulse::PrismEQ> (effects, edit, cb);
+        addBuiltIn<pulse::ProCompressor> (effects, edit, cb);
+        addBuiltIn<pulse::MultibandDynamics> (effects, edit, cb);
         addBuiltIn<pulse::GlueCompressor> (effects, edit, cb);
         addBuiltIn<pulse::Saturator> (effects, edit, cb);
         addBuiltIn<pulse::AutoFilter> (effects, edit, cb);

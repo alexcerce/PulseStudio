@@ -240,6 +240,32 @@ namespace FactoryPresetsMore
                                          { "b2freq", 100 }, { "b2q", 12 }, { "b3type", 5 } } } } },
 
             //----------------------------------------------------------------------------------
+            // Pulse Compressor: character 0 clean, 1 punchy, 2 vintage, 3 opto, 4 bus
+            { "pulseCompressor", {
+                { "Vocal Leveler (opto)", { { "threshold", -24 }, { "ratio", 3 }, { "knee", 10 }, { "attack", 10 }, { "release", 300 }, { "character", 3 }, { "automakeup", 1 } } },
+                { "Drum Punch", { { "threshold", -20 }, { "ratio", 4 }, { "knee", 4 }, { "attack", 25 }, { "release", 80 }, { "character", 1 }, { "makeup", 3 } } },
+                { "Bus Glue", { { "threshold", -14 }, { "ratio", 2 }, { "knee", 8 }, { "attack", 30 }, { "release", 200 }, { "autorelease", 1 }, { "character", 4 }, { "makeup", 1.5f } } },
+                { "Vintage Bass", { { "threshold", -22 }, { "ratio", 5 }, { "knee", 6 }, { "attack", 8 }, { "release", 120 }, { "character", 2 }, { "makeup", 4 } } },
+                { "Parallel Smash", { { "threshold", -40 }, { "ratio", 20 }, { "knee", 0 }, { "attack", 1 }, { "release", 60 }, { "character", 1 }, { "makeup", 18 }, { "mix", 0.3f } } },
+                { "Transparent Peak Control", { { "threshold", -10 }, { "ratio", 8 }, { "knee", 2 }, { "attack", 0.5f }, { "release", 60 }, { "lookahead", 2 }, { "character", 0 } } },
+                { "Sidechain Duck (kick key)", { { "threshold", -30 }, { "ratio", 6 }, { "knee", 6 }, { "attack", 1 }, { "release", 140 }, { "schpf", 10 }, { "sclpf", 200 } } },
+                { "De-Esser (listen to the SC)", { { "threshold", -30 }, { "ratio", 4 }, { "attack", 1 }, { "release", 60 }, { "schpf", 5000 }, { "range", 8 } } } } },
+            // Multiband: modes 0 compress, 1 expand, 2 upward; bands 0 = 2, 1 = 3, 2 = 4 bands
+            { "pulseMultiband", {
+                { "Master Glue (4 bands)", { { "bands", 2 }, { "x1", 120 }, { "x2", 1000 }, { "x3", 6000 }, { "m1thresh", -20 }, { "m1ratio", 2 }, { "m2thresh", -22 }, { "m2ratio", 1.8f },
+                                             { "m3thresh", -24 }, { "m3ratio", 1.8f }, { "m4thresh", -26 }, { "m4ratio", 2 } } },
+                { "Tame the Lows", { { "bands", 0 }, { "x1", 150 }, { "m1thresh", -24 }, { "m1ratio", 4 }, { "m1attack", 20 }, { "m1release", 150 }, { "m2on", 0 } } },
+                { "De-Harsh 2-5 kHz", { { "bands", 1 }, { "x1", 2000 }, { "x2", 5000 }, { "m1on", 0 }, { "m2thresh", -28 }, { "m2ratio", 4 }, { "m2attack", 2 }, { "m3on", 0 } } },
+                { "Upward Detail", { { "bands", 1 }, { "x1", 200 }, { "x2", 4000 }, { "m1on", 0 }, { "m2mode", 2 }, { "m2thresh", -35 }, { "m2ratio", 2 },
+                                     { "m3mode", 2 }, { "m3thresh", -40 }, { "m3ratio", 2 } } },
+                { "Noise Gate Lows (expand)", { { "bands", 0 }, { "x1", 200 }, { "m1mode", 1 }, { "m1thresh", -45 }, { "m1ratio", 3 }, { "m2on", 0 } } } } },
+            // Limiter: style 0 transparent, 1 punchy, 2 loud
+            { "pulseLimiter", {
+                { "Streaming -14 LUFS start", { { "gain", 4 }, { "ceiling", -1 }, { "truepeak", 1 }, { "style", 0 } } },
+                { "Punchy Master", { { "gain", 6 }, { "ceiling", -0.5f }, { "truepeak", 1 }, { "style", 1 } } },
+                { "Loud Club Master", { { "gain", 9 }, { "ceiling", -0.2f }, { "truepeak", 1 }, { "style", 2 } } } } },
+
+            //----------------------------------------------------------------------------------
             // MIDI effects
             // Arp rate 0 1/4, 1 1/8, 2 1/8T, 3 1/16, 4 1/16T, 5 1/32; mode 0 up, 1 down, 2 up/down, 3 as played, 4 random, 5 chord
             { "pulseArp", {
