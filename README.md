@@ -2,6 +2,8 @@
 
 A native Windows DAW built with C++, [JUCE](https://juce.com) and [Tracktion Engine](https://github.com/Tracktion/tracktion_engine). It hosts VST3 plugins, runs on ASIO audio interfaces and supports Ableton Push 2.
 
+![Arrangement and mixer](docs/screenshots/arrangement-mixer.png)
+
 ## Install
 
 Run `dist/PulseStudio-0.28.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
