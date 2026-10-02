@@ -53,6 +53,9 @@ public:
         timerCallback();   // show the value straight away
     }
 
+    /** A shorter label than the parameter's name (e.g. "Freq" inside a "Band 3" section). */
+    void setLabel (const String& t) { name.setText (t, dontSendNotification); }
+
     void resized() override
     {
         auto r = getLocalBounds();

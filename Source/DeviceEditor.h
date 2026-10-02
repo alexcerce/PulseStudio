@@ -338,6 +338,8 @@ namespace DeviceEditors
             add ("LFO", std::make_unique<DeviceDisplays::AutoFilterDisplay> (*s));
             add ("Envelope follower", env ({ { s->param (A::pAttack), nullptr, nullptr, s->param (A::pRelease), Theme::accent, "FOLLOWER" } }));
         }
+        else if (auto q = dynamic_cast<pulse::PrismEQ*> (&p))
+            add ("Prism EQ", std::make_unique<PrismUI::View> (evs, *q, true));
         else if (auto fx = dynamic_cast<pulse::PulseMidiEffect*> (&p))
             add ("What it does to a phrase", std::make_unique<DeviceViews::MidiFxPreview> (*fx));
         else if (auto vc = dynamic_cast<pulse::Vocoder*> (&p))
@@ -442,6 +444,13 @@ namespace DeviceEditors
 
             // graphs: a grid of up to 3 columns (2 x 2 for four), about half the window - more when
             // the controls need less room
+            if (dynamic_cast<pulse::PrismEQ*> (plugin) != nullptr && ! graphs.empty())   // its own full editor
+            {
+                for (auto* t : graphTitles) t->setVisible (false);
+                viewport.setVisible (false);
+                graphs[0]->setBounds (r);
+                return;
+            }
             if (! graphs.empty())
             {
                 const int n = (int) graphs.size();

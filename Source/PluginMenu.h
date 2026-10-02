@@ -71,6 +71,7 @@ namespace PluginMenu
         addBuiltIn<te::SamplerPlugin> (instruments, edit, cb);
 
         addBuiltIn<pulse::PulseEQ> (effects, edit, cb);
+        addBuiltIn<pulse::PrismEQ> (effects, edit, cb);
         addBuiltIn<pulse::GlueCompressor> (effects, edit, cb);
         addBuiltIn<pulse::Saturator> (effects, edit, cb);
         addBuiltIn<pulse::AutoFilter> (effects, edit, cb);

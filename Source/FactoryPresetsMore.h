@@ -208,6 +208,38 @@ namespace FactoryPresetsMore
                 { "Drum Bus Peak Catch", { { "gain", 3 }, { "ceiling", -3 }, { "auto", 0 }, { "release", 60 } } } } },
 
             //----------------------------------------------------------------------------------
+            // Prism EQ: types 0 bell, 1 low shelf, 2 high shelf, 3 low cut, 4 high cut, 5 notch, 6 band pass,
+            // 7 tilt shelf, 8 all pass, 9 flat tilt; slope 0..8 = 6, 12, 18, 24, 30, 36, 48, 72, 96 dB/oct;
+            // place 0 stereo, 1 L, 2 R, 3 mid, 4 side; movement 1 LFO, 2 envelope; sync 1 1/16 .. 7 4 bars
+            { "pulsePrismEQ", {
+                { "Vocal Clarity", { { "b1on", 1 }, { "b1type", 3 }, { "b1freq", 90 }, { "b1slope", 3 }, { "b3on", 1 }, { "b3freq", 300 }, { "b3gain", -3 }, { "b3q", 1.2f },
+                                     { "b4on", 1 }, { "b4freq", 3200 }, { "b4gain", 2.5f }, { "b4q", 0.9f }, { "b6on", 1 }, { "b6type", 2 }, { "b6freq", 11000 }, { "b6gain", 3 } } },
+                { "Dynamic De-Esser", { { "b3on", 0 }, { "b4on", 0 }, { "b5on", 1 }, { "b5type", 0 }, { "b5freq", 6500 }, { "b5q", 3 }, { "b5gain", 0 }, { "b5dyn", 1 },
+                                        { "b5range", -9 }, { "b5thresh", -32 }, { "b5attack", 1 }, { "b5release", 60 } } },
+                { "Kick Punch", { { "b1on", 1 }, { "b1type", 3 }, { "b1freq", 28 }, { "b1slope", 6 }, { "b2on", 1 }, { "b2type", 0 }, { "b2freq", 60 }, { "b2gain", 4 }, { "b2q", 1.4f },
+                                  { "b3on", 1 }, { "b3freq", 320 }, { "b3gain", -5 }, { "b3q", 2 }, { "b4on", 1 }, { "b4freq", 4000 }, { "b4gain", 3 }, { "b4q", 1.5f } } },
+                { "Bass Tamer (dynamic)", { { "b3on", 1 }, { "b3type", 1 }, { "b3freq", 120 }, { "b3gain", 0 }, { "b3dyn", 1 }, { "b3range", -6 }, { "b3thresh", -24 },
+                                            { "b3attack", 10 }, { "b3release", 150 }, { "b4on", 0 } } },
+                { "Mid/Side Air", { { "b3on", 0 }, { "b4on", 0 }, { "b1on", 1 }, { "b1type", 3 }, { "b1freq", 140 }, { "b1place", 4 }, { "b1slope", 1 },
+                                    { "b6on", 1 }, { "b6type", 2 }, { "b6freq", 9000 }, { "b6gain", 3.5f }, { "b6place", 4 } } },
+                { "Brighter Tilt", { { "b3on", 0 }, { "b4on", 0 }, { "b2on", 1 }, { "b2type", 9 }, { "b2freq", 1000 }, { "b2gain", 3 } } },
+                { "Warmer Tilt", { { "b3on", 0 }, { "b4on", 0 }, { "b2on", 1 }, { "b2type", 9 }, { "b2freq", 1000 }, { "b2gain", -3 } } },
+                { "Telephone", { { "b3on", 0 }, { "b4on", 0 }, { "b1on", 1 }, { "b1type", 3 }, { "b1freq", 450 }, { "b1slope", 3 }, { "b6on", 1 }, { "b6type", 4 }, { "b6freq", 3200 },
+                                 { "b6slope", 3 }, { "b2on", 1 }, { "b2freq", 1500 }, { "b2gain", 6 }, { "b2q", 1.2f } } },
+                { "Wah Sweep (LFO)", { { "b3on", 1 }, { "b3type", 0 }, { "b3freq", 900 }, { "b3gain", 12 }, { "b3q", 4 }, { "b3modsrc", 1 }, { "b3modsync", 3 }, { "b3modfreq", 1.6f }, { "b4on", 0 } } },
+                { "Auto-Wah (envelope)", { { "b3on", 1 }, { "b3type", 0 }, { "b3freq", 500 }, { "b3gain", 10 }, { "b3q", 3 }, { "b3modsrc", 2 }, { "b3modfreq", 2.5f },
+                                           { "b3attack", 3 }, { "b3release", 150 }, { "b4on", 0 } } },
+                { "Phaser Notches", { { "b3on", 1 }, { "b3type", 5 }, { "b3freq", 600 }, { "b3q", 3 }, { "b3modsrc", 1 }, { "b3modrate", 0.3f }, { "b3modfreq", 1.5f },
+                                      { "b4on", 1 }, { "b4type", 5 }, { "b4freq", 1800 }, { "b4q", 3 }, { "b4modsrc", 1 }, { "b4modrate", 0.3f }, { "b4modfreq", 1.5f } } },
+                { "Rhythmic Filter (1/8 square)", { { "b3on", 0 }, { "b4on", 0 }, { "b6on", 1 }, { "b6type", 4 }, { "b6freq", 1500 }, { "b6slope", 3 }, { "b6q", 2 },
+                                                    { "b6modsrc", 1 }, { "b6modshape", 3 }, { "b6modsync", 2 }, { "b6modfreq", 2 } } },
+                { "Resonant Low Cut 48", { { "b3on", 0 }, { "b4on", 0 }, { "b1on", 1 }, { "b1type", 3 }, { "b1freq", 120 }, { "b1slope", 6 }, { "b1q", 3 } } },
+                { "Master Polish", { { "b1on", 1 }, { "b1type", 3 }, { "b1freq", 22 }, { "b1slope", 5 }, { "b2on", 1 }, { "b2type", 1 }, { "b2freq", 70 }, { "b2gain", 1 },
+                                     { "b3on", 1 }, { "b3freq", 400 }, { "b3gain", -1 }, { "b3q", 0.8f }, { "b4on", 0 }, { "b6on", 1 }, { "b6type", 2 }, { "b6freq", 12000 }, { "b6gain", 1.5f } } },
+                { "Hum Remover 50 Hz", { { "b3on", 0 }, { "b4on", 0 }, { "b1on", 1 }, { "b1type", 5 }, { "b1freq", 50 }, { "b1q", 12 }, { "b2on", 1 }, { "b2type", 5 },
+                                         { "b2freq", 100 }, { "b2q", 12 }, { "b3type", 5 } } } } },
+
+            //----------------------------------------------------------------------------------
             // MIDI effects
             // Arp rate 0 1/4, 1 1/8, 2 1/8T, 3 1/16, 4 1/16T, 5 1/32; mode 0 up, 1 down, 2 up/down, 3 as played, 4 random, 5 chord
             { "pulseArp", {

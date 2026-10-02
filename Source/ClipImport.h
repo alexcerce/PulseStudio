@@ -79,6 +79,7 @@ namespace ClipImport
             { "4OSC Synth",   te::FourOscPlugin::xmlTypeName,      true },
             { "Sampler",      te::SamplerPlugin::xmlTypeName,      true },
             { "EQ Six",       pulse::PulseEQ::xmlTypeName,         false },
+            { "Prism EQ",     pulse::PrismEQ::xmlTypeName,         false },
             { "Glue Compressor", pulse::GlueCompressor::xmlTypeName, false },
             { "Saturator",    pulse::Saturator::xmlTypeName,       false },
             { "Auto Filter",  pulse::AutoFilter::xmlTypeName,      false },

@@ -42,6 +42,7 @@
 #include "DeviceEditor.h"
 #include "BusLanes.h"
 #include "Upgrade.h"
+#include "PrismEQDisplay.h"
 
 /** "Pulse Studio.exe --selftest report.txt"
     Builds a scratch project in the temp folder, exercises the editing / routing / device
@@ -3148,6 +3149,156 @@ namespace SelfTest
             Theme::apply (0);
             rep.check ((int) Theme::all().size() >= 15 && weak.isEmpty() && remapped, "Colour themes (readable text in every theme, live switch)",
                        String ((int) Theme::all().size()) + " themes" + (weak.isEmpty() ? String() : ", weak contrast: " + weak.joinIntoString (", ")));
+        }
+
+        // --- v0.42: Prism EQ -------------------------------------------------------------------------------
+        {
+            rep.step ("Prism EQ");
+            using EQ = pulse::PrismEQ;
+            const double sr = 48000.0;
+            auto at = [&] (int type, double f, double gain, double q, int slope, double probe)
+            {
+                EQ::Design d;
+                EQ::design (d, type, sr, f, gain, q, slope);
+                return Decibels::gainToDecibels (d.magnitude (probe, sr), -200.0);
+            };
+            auto near = [] (double a, double b, double tol) { return std::abs (a - b) <= tol; };
+            StringArray bad;
+            auto expect = [&] (bool ok, const String& what) { if (! ok) bad.add (what); };
+            expect (near (at (EQ::bell, 1000, 6, 1, 0, 1000), 6, 0.05), "bell +6 at f");
+            expect (near (at (EQ::bell, 1000, -12, 4, 0, 1000), -12, 0.05) && at (EQ::bell, 1000, -12, 4, 0, 3000) > -1.0, "narrow bell");
+            expect (near (at (EQ::lowShelf, 200, 6, 0.71, 1, 20), 6, 0.3) && near (at (EQ::lowShelf, 200, 6, 0.71, 1, 10000), 0, 0.1), "low shelf");
+            expect (near (at (EQ::highShelf, 4000, -9, 0.71, 1, 20000), -9, 0.6) && near (at (EQ::highShelf, 4000, -9, 0.71, 1, 50), 0, 0.1), "high shelf");
+            expect (near (at (EQ::highShelf, 4000, 6, 1, 0, 23000), 6, 0.4), "6 dB/oct shelf");
+            const int slopeDb[] = { 6, 12, 18, 24, 30, 36, 48, 72, 96 };
+            for (int sIdx = 0; sIdx < 9; ++sIdx)
+            {
+                // one octave below a low cut: about -slope dB (Butterworth: -3 dB at f)
+                const double atF = at (EQ::lowCut, 1000, 0, 0.7071, sIdx, 1000), oct = at (EQ::lowCut, 1000, 0, 0.7071, sIdx, 500);
+                const double perOct = oct - at (EQ::lowCut, 1000, 0, 0.7071, sIdx, 250);
+                expect (near (atF, -3.0, 0.3), "low cut " + String (slopeDb[sIdx]) + " -3 dB at f (" + String (atF, 2) + ")");
+                expect (near (perOct, slopeDb[sIdx], slopeDb[sIdx] * 0.1 + 0.6), "low cut slope " + String (slopeDb[sIdx]) + " (" + String (perOct, 1) + ")");
+                expect (near (at (EQ::highCut, 1000, 0, 0.7071, sIdx, 100), 0.0, 0.1), "high cut passes lows " + String (slopeDb[sIdx]));
+            }
+            expect (at (EQ::notch, 1000, 0, 2, 0, 1000) < -60.0 && at (EQ::notch, 1000, 0, 2, 0, 3000) > -0.5, "notch");
+            expect (near (at (EQ::bandPass, 1000, 0, 2, 1, 1000), 0, 0.1) && at (EQ::bandPass, 1000, 0, 2, 1, 4000) < -10.0, "band pass");
+            expect (near (at (EQ::bandPass, 1000, 0, 2, 6, 1000), 0, 0.1) && at (EQ::bandPass, 1000, 0, 2, 6, 4000) < at (EQ::bandPass, 1000, 0, 2, 1, 4000) - 15.0, "steeper band pass");
+            bool flatAll = true;
+            for (double f : { 30.0, 300.0, 1000.0, 5000.0, 18000.0 }) flatAll = flatAll && near (at (EQ::allPass, 1000, 0, 1, 0, f), 0, 0.01);
+            expect (flatAll, "all pass is flat");
+            expect (near (at (EQ::tiltShelf, 1000, 6, 0.71, 1, 1000), 0, 0.3) && near (at (EQ::tiltShelf, 1000, 6, 0.71, 1, 20), -3, 0.4)
+                    && near (at (EQ::tiltShelf, 1000, 6, 0.71, 1, 20000), 3, 0.4), "tilt shelf");
+            const double ft1k = at (EQ::flatTilt, 1000, 6, 1, 0, 1000), ft20 = at (EQ::flatTilt, 1000, 6, 1, 0, 20), ft20k = at (EQ::flatTilt, 1000, 6, 1, 0, 20000);
+            const double ft100 = at (EQ::flatTilt, 1000, 6, 1, 0, 100), ft10k = at (EQ::flatTilt, 1000, 6, 1, 0, 10000);
+            expect (near (ft1k, 0, 0.01) && ft20 < -3.0 && ft20k > 3.0 && ft100 < 0 && ft10k > 0 && ft100 > ft20 && ft10k < ft20k, "flat tilt ("
+                    + String (ft20, 1) + " / " + String (ft100, 1) + " / " + String (ft10k, 1) + " / " + String (ft20k, 1) + ")");
+            // a resonant cut peaks above 0 dB near f
+            expect (at (EQ::lowCut, 1000, 0, 6, 3, 1000) > 8.0, "resonant low cut");
+            rep.check (bad.isEmpty(), "Prism EQ filter shapes (10 types, 6-96 dB/oct)", bad.isEmpty() ? String ("all within tolerance") : bad.joinIntoString ("; "));
+
+            // audio: a stereo sine through the EQ, measured after it settles
+            auto t = ClipImport::createContentTrack (*edit, "Prism", false);
+            auto pl = edit->getPluginCache().createNewPlugin (EQ::xmlTypeName, {});
+            t->pluginList.insertPlugin (pl, 0, nullptr);
+            auto* eq = dynamic_cast<EQ*> (pl.get());
+            auto run = [&] (double hzL, double hzR, float ampL, float ampR, double seconds, std::function<void (int)> perBlock = {}) -> std::pair<float, float>
+            {
+                const int block = 480;
+                eq->initialise ({ te::TimePosition(), sr, block });
+                AudioBuffer<float> audio (2, block);
+                double ph = 0;
+                float rl = 0, rr = 0; int counted = 0;
+                const int blocks = (int) (seconds * sr / block);
+                for (int k = 0; k < blocks; ++k)
+                {
+                    if (perBlock) perBlock (k);
+                    for (int i = 0; i < block; ++i, ph += 1.0)
+                    {
+                        audio.setSample (0, i, ampL * (float) std::sin (MathConstants<double>::twoPi * hzL * ph / sr));
+                        audio.setSample (1, i, ampR * (float) std::sin (MathConstants<double>::twoPi * hzR * ph / sr));
+                    }
+                    te::MidiMessageArray midi;
+                    te::PluginRenderContext fc (&audio, 0, block, &midi, 0.0, { te::TimePosition::fromSeconds (k * block / sr), te::TimePosition::fromSeconds ((k + 1) * block / sr) },
+                                                true, false, true, false);
+                    eq->applyToBuffer (fc);
+                    if (k >= blocks - 10) { rl += audio.getRMSLevel (0, 0, block); rr += audio.getRMSLevel (1, 0, block); ++counted; }
+                }
+                eq->deinitialise();
+                return { Decibels::gainToDecibels (rl / jmax (1, counted) * 1.4142f), Decibels::gainToDecibels (rr / jmax (1, counted) * 1.4142f) };
+            };
+            auto setB = [&] (int b, int which, float v) { eq->set (EQ::idx (b, which), v); };
+            for (int b = 0; b < EQ::numBands; ++b) setB (b, EQ::pOn, 0.0f);
+            // static bell +6 at 1 kHz
+            setB (0, EQ::pOn, 1); setB (0, EQ::pType, EQ::bell); setB (0, EQ::pFreq, 1000); setB (0, EQ::pGain, 6); setB (0, EQ::pQ, 1);
+            const float staticOut = run (1000, 1000, 0.5f, 0.5f, 0.5).first - Decibels::gainToDecibels (0.5f);
+            // dynamic: cut by up to 12 dB above -40 dB: a loud tone comes out much quieter, a quiet one stays near +6
+            setB (0, EQ::pGain, 0); setB (0, EQ::pDyn, 1); setB (0, EQ::pRange, -12); setB (0, EQ::pThresh, -40); setB (0, EQ::pAttack, 1); setB (0, EQ::pRelease, 50);
+            const float loud = run (1000, 1000, 0.5f, 0.5f, 0.6).first - Decibels::gainToDecibels (0.5f);
+            const float dynNow = eq->dynGain[0].load();   // after the loud tone
+            const float quiet = run (1000, 1000, 0.001f, 0.001f, 0.6).first - Decibels::gainToDecibels (0.001f);
+            setB (0, EQ::pDyn, 0);
+            // mid / side: a side-only boost leaves a mono signal alone, and boosts an out-of-phase one
+            setB (0, EQ::pGain, 9); setB (0, EQ::pPlace, EQ::side);
+            const float monoSide = run (1000, 1000, 0.5f, 0.5f, 0.3).first - Decibels::gainToDecibels (0.5f);
+            setB (0, EQ::pPlace, EQ::left);
+            const auto lr = run (1000, 1000, 0.5f, 0.5f, 0.3);
+            setB (0, EQ::pPlace, EQ::stereo);
+            // movement: an LFO sweeps the band's frequency
+            setB (0, EQ::pModSrc, 1); setB (0, EQ::pModFreq, 2); setB (0, EQ::pModRate, 4); setB (0, EQ::pModSync, 0);
+            float fMin = 1e9f, fMax = 0;
+            run (1000, 1000, 0.5f, 0.5f, 0.6, [&] (int) { fMin = jmin (fMin, eq->effFreq[0].load()); fMax = jmax (fMax, eq->effFreq[0].load()); });
+            setB (0, EQ::pModSrc, 0);
+            // solo: only the band's region is heard (a 100 Hz tone vanishes when band 1 at 5 kHz is soloed)
+            setB (0, EQ::pFreq, 5000); setB (0, EQ::pGain, 0); setB (0, EQ::pSolo, 1);
+            const float soloed = run (100, 100, 0.5f, 0.5f, 0.3).first - Decibels::gainToDecibels (0.5f);
+            setB (0, EQ::pSolo, 0);
+            // auto gain: a big high shelf boost is compensated
+            setB (0, EQ::pType, EQ::highShelf); setB (0, EQ::pFreq, 2000); setB (0, EQ::pGain, 12); eq->set (eq->g (EQ::gAutoGain), 1.0f);
+            run (1000, 1000, 0.5f, 0.5f, 0.1);
+            const float autoG = eq->autoGainDb.load();
+            const bool audioOk = near (staticOut, 6.0, 0.3) && loud < -6.0f && quiet > -1.0f && dynNow < -6.0f && near (monoSide, 0.0, 0.2)
+                                 && lr.first > 8.0f - 6.03f && near (lr.second, -6.02, 0.2) && fMax > 2500.0f && fMin < 400.0f && soloed < -30.0f && autoG < -2.0f;
+            rep.check (audioOk, "Prism EQ audio (static, dynamic, mid/side, left, LFO movement, solo, auto gain)",
+                       "bell " + String (staticOut, 1) + ", dyn loud " + String (loud, 1) + " / quiet " + String (quiet, 1) + ", side-only on mono " + String (monoSide, 2)
+                         + ", left " + String (lr.first, 1) + "/" + String (lr.second, 1) + ", LFO " + String (roundToInt (fMin)) + "-" + String (roundToInt (fMax))
+                         + " Hz, solo " + String (soloed, 1) + ", auto gain " + String (autoG, 1));
+
+            // the editor and its display build (snapshot: prism_eq.png)
+            {
+                PulseLookAndFeel laf;
+                LookAndFeel::setDefaultLookAndFeel (&laf);
+                EditViewState evs (*edit, sm);
+                eq->set (eq->g (EQ::gAutoGain), 0.0f);
+                setB (0, EQ::pType, EQ::lowCut); setB (0, EQ::pFreq, 40); setB (0, EQ::pSlope, 6);
+                setB (1, EQ::pOn, 1); setB (1, EQ::pType, EQ::lowShelf); setB (1, EQ::pFreq, 120); setB (1, EQ::pGain, 3);
+                setB (2, EQ::pOn, 1); setB (2, EQ::pType, EQ::bell); setB (2, EQ::pFreq, 350); setB (2, EQ::pGain, -4); setB (2, EQ::pQ, 1.5f);
+                setB (3, EQ::pOn, 1); setB (3, EQ::pType, EQ::bell); setB (3, EQ::pFreq, 3000); setB (3, EQ::pGain, 4); setB (3, EQ::pDyn, 1); setB (3, EQ::pRange, -6);
+                setB (4, EQ::pOn, 1); setB (4, EQ::pType, EQ::notch); setB (4, EQ::pFreq, 7000); setB (4, EQ::pQ, 6);
+                setB (5, EQ::pOn, 1); setB (5, EQ::pType, EQ::highShelf); setB (5, EQ::pFreq, 12000); setB (5, EQ::pGain, 2.5f); setB (5, EQ::pPlace, EQ::side);
+                PrismUI::View view (evs, *eq, true);
+                view.setSize (1100, 760);
+                view.showBand (3);
+                auto img = view.createComponentSnapshot (view.getLocalBounds());
+                auto f = dir.getChildFile ("prism_eq.png");
+                f.deleteFile();
+                if (auto os = f.createOutputStream()) { PNGImageFormat png; png.writeImageToStream (img, *os); }
+                PrismUI::View card (evs, *eq, false);
+                card.setSize (560, 300);
+                auto img2 = card.createComponentSnapshot (card.getLocalBounds());
+                auto f2 = dir.getChildFile ("prism_eq_card.png");
+                f2.deleteFile();
+                if (auto os = f2.createOutputStream()) { PNGImageFormat png; png.writeImageToStream (img2, *os); }
+                // double-click on an empty spot adds a band there (all six are on: none free)
+                setB (5, EQ::pOn, 0);
+                auto& gr = view.getGraph();
+                const int added = gr.addBandAt (2000.0, 5.0);
+                const bool addOk = added == 5 && std::abs (eq->get (EQ::idx (5, EQ::pFreq)) - 2000.0f) < 1.0f && eq->bandType (5) == EQ::bell
+                                   && std::abs (eq->get (EQ::idx (5, EQ::pGain)) - 5.0f) < 0.01f;
+                rep.check (img.isValid() && img2.isValid() && addOk, "Prism EQ editor (display, band panel, add band by double-click)");
+                LookAndFeel::setDefaultLookAndFeel (nullptr);
+            }
+            pl = nullptr;
+            edit->deleteTrack (t);
         }
 
         // --- sharing: project zip, crash bundle, update check -----------------------------------------

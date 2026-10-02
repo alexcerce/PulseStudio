@@ -1164,6 +1164,7 @@ namespace pulse
 #include "Loudness.h"
 #include "PulseFx2.h"
 #include "FMSynth.h"
+#include "PrismEQ.h"
 
 namespace pulse
 {
@@ -1177,6 +1178,7 @@ namespace pulse
         pm.createBuiltInType<GlueCompressor>();
         pm.createBuiltInType<Saturator>();
         pm.createBuiltInType<PulseEQ>();
+        pm.createBuiltInType<PrismEQ>();
         pm.createBuiltInType<AutoFilter>();
         pm.createBuiltInType<Limiter>();
         pm.createBuiltInType<Arpeggiator>();

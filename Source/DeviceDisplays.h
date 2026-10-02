@@ -4,6 +4,7 @@
 #include "PulseSynths.h"
 #include "ClipImport.h"
 #include "Graphs.h"
+#include "PrismEQDisplay.h"
 
 /** Visual panels shown at the left of Pulse device cards. */
 namespace DeviceDisplays
@@ -1256,6 +1257,8 @@ namespace DeviceDisplays
     inline std::unique_ptr<Component> create (EditViewState& evs, te::Plugin& p)
     {
         using EG = Graphs::EnvelopeGraph;
+        if (auto q = dynamic_cast<pulse::PrismEQ*> (&p))
+            return std::make_unique<PrismUI::View> (evs, *q, false);
         if (auto s = dynamic_cast<pulse::WavetableSynth*> (&p))
         {
             using W = pulse::WavetableSynth;

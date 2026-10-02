@@ -133,3 +133,6 @@ when you start, touch it after each step, and delete it when you stop.
   FabFilter-style 6-band filter / EQ with every filter type and movement.
 - 2026-10-02: v0.41.0 themes: Theme tokens are mutable (20 themes incl. 3 light), hard-coded UI greys mapped to tokens,
   Appearance tab with preview cards, live switch (remaps colours set at construction + rebuilds views). 189 checks pass.
+- 2026-10-02: v0.42.0 Prism EQ (PrismEQ.h DSP: 10 shapes, Butterworth cascades to 96 dB/oct, dynamic bands, LFO /
+  envelope movement, St/L/R/M/S placement, solo, auto gain, pre/post analyser; PrismEQDisplay.h editor) + 15 presets.
+  193 checks pass.
