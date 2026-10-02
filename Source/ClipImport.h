@@ -109,6 +109,26 @@ namespace ClipImport
 
     inline bool isPluginDescription (const var& d) { return d.toString().startsWith ("plugin:"); }
 
+    /** A readable track name for a device dragged from the browser. */
+    inline String trackNameFor (te::Engine& engine, const String& d)
+    {
+        if (d == "plugin:builtin:drumrack" || d == "plugin:builtin:drumrackkit") return "Drums";
+        if (d.startsWith ("plugin:builtin:"))
+        {
+            const auto type = d.fromFirstOccurrenceOf ("plugin:builtin:", false, false);
+            if (type == pulse::DrumSynth::xmlTypeName) return "Drums";
+            for (auto& b : builtIns()) if (type == b.type) return b.name;
+            return "Track";
+        }
+        if (d.startsWith ("plugin:factory:")) return d.fromLastOccurrenceOf (":", false, false);
+        if (d.startsWith ("plugin:chain:") || d.startsWith ("plugin:track:"))
+            return File (d.fromFirstOccurrenceOf (":", false, false).fromFirstOccurrenceOf (":", false, false)).getFileNameWithoutExtension();
+        if (d.startsWith ("plugin:ext:"))
+            if (auto desc = engine.getPluginManager().knownPluginList.getTypeForIdentifierString (d.fromFirstOccurrenceOf ("plugin:ext:", false, false)))
+                return desc->name;
+        return "Track";
+    }
+
     inline te::Plugin::Ptr createPluginFromDescription (te::Edit& edit, const String& d)
     {
         if (d == "plugin:builtin:drumrack")

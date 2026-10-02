@@ -113,3 +113,6 @@ when you start, touch it after each step, and delete it when you stop.
 - Owner feedback (2026-10-02) -> v0.36: friendly track names from browser drops ("drumrackkit"), return track
   devices must be editable, big resizable device editor windows with detailed graphs and collapsible sections,
   better graph quality, piano roll note entry (grid-length notes, drag to size, easier resize).
+- 2026-10-02: v0.36.0 done: plain track names, Pulse Reverb / Delay returns + devices button on mixer strips,
+  DeviceEditor.h (big resizable editor per Pulse device: frames view, drum hits, GR history, parameter bars,
+  foldable control groups), graphs with axis labels / glow when large, piano roll draw / edge resize. 180 checks pass.

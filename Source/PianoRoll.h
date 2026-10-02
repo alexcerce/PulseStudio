@@ -74,6 +74,12 @@ public:
 
     ~PianoRoll() override { setClip (nullptr); }
 
+    /** Grid as in the grid box: 1 = 1/4, 2 = 1/8, 3 = 1/16, 4 = 1/32, 5 = 1/8T, 6 = 1/16T, 7 = off. */
+    void setGrid (int id) { gridBox.setSelectedId (id, sendNotificationSync); }
+
+    /** Where a beat (from the clip start) and pitch are drawn: the middle of the note row. */
+    juce::Point<float> positionOf (double beat, int pitch) const { return { beatToX (beat), pitchToY (pitch) + rowH * 0.5f }; }
+
     void setClip (te::MidiClip* mc)
     {
         if (clip != nullptr)
@@ -382,7 +388,7 @@ public:
                 selected.add (n);
             }
             anchor = n;
-            mode = (beatToX (n->getEndBeat().inBeats() - contentStart()) - x < 7.0f) ? Mode::resize : Mode::move;
+            mode = edgeAt (*n, x);
             captureOriginals();
             if (mode == Mode::move) preview (n->getNoteNumber(), n->getVelocity());
             repaint();
@@ -396,15 +402,16 @@ public:
             return;
         }
 
-        // create a note
+        // create a note one grid step long; dragging right draws it longer
         auto beat = jmax (0.0, snapFloor (xToBeat (x)));
         auto pitch = jlimit (0, 127, yToPitch (y));
+        const double len = snap > 0 ? snap : 0.25;
         auto* note = seq.addNote (pitch, te::BeatPosition::fromBeats (beat + contentStart()),
-                                  te::BeatDuration::fromBeats (noteLen), velocity, 0, &um());
+                                  te::BeatDuration::fromBeats (len), velocity, 0, &um());
         selected.clear();
         selected.add (note);
         anchor = note;
-        mode = Mode::move;
+        mode = Mode::draw;
         captureOriginals();
         preview (pitch, velocity);
         repaint();
@@ -475,6 +482,32 @@ public:
                 break;
             }
 
+            case Mode::draw:   // a new note: its end follows the mouse, at least one grid step long
+            {
+                const double step = snap > 0 ? snap : 0.0625;
+                const double start = anchor->getStartBeat().inBeats();
+                double end = xToBeat (x) + contentStart();
+                end = std::ceil ((end - start) / step - 1.0e-6) * step + start;
+                anchor->setStartAndLength (anchor->getStartBeat(), te::BeatDuration::fromBeats (jmax (step, end - start)), &um());
+                break;
+            }
+
+            case Mode::resizeStart:   // the left edge moves the start, keeping the end
+            {
+                const auto& o = originals[anchor];
+                const double dBeat = e.getDistanceFromDragStartX() / ppb;
+                double start = o.start + dBeat;
+                if (snap > 0) start = std::round (start / snap) * snap;
+                const double ds = start - o.start;
+                const double minLen = snap > 0 ? snap : 0.05;
+                for (auto& [n, v] : originals)
+                {
+                    const double ns = jlimit (0.0, v.start + v.len - minLen, v.start + ds);
+                    n->setStartAndLength (te::BeatPosition::fromBeats (ns + contentStart()), te::BeatDuration::fromBeats (v.start + v.len - ns), &um());
+                }
+                break;
+            }
+
             case Mode::resize:
             {
                 const auto& o = originals[anchor];
@@ -512,8 +545,7 @@ public:
     {
         auto* n = (e.y > toolbarH && e.y < toolbarH + gridHeight()) ? hitNote ((float) e.x, (float) e.y) : nullptr;
         if (n != nullptr)
-            setMouseCursor (beatToX (n->getEndBeat().inBeats() - contentStart()) - (float) e.x < 7.0f ? MouseCursor::LeftRightResizeCursor
-                                                                                                         : MouseCursor::DraggingHandCursor);
+            setMouseCursor (edgeAt (*n, (float) e.x) != Mode::move ? MouseCursor::LeftRightResizeCursor : MouseCursor::DraggingHandCursor);
         else
             setMouseCursor (e.x < keyW ? MouseCursor::PointingHandCursor : MouseCursor::CrosshairCursor);
     }
@@ -582,7 +614,7 @@ public:
     }
 
 private:
-    enum class Mode { none, key, move, resize, rubber, erase, velocity, controller };
+    enum class Mode { none, key, move, resize, rubber, erase, velocity, controller, draw, resizeStart };
     struct Orig { double start, len; int pitch; };
 
     //==============================================================================
@@ -852,6 +884,17 @@ private:
             at->playGuideNote (pitch, te::MidiChannel (1), vel, true, true, mode != Mode::key);
     }
 
+    /** Which part of a note is under x: its start edge, end edge (resize) or body (move). The edges
+        grow with the note but stay grabbable on short notes. */
+    Mode edgeAt (te::MidiNote& n, float x) const
+    {
+        const float x0 = beatToX (n.getStartBeat().inBeats() - contentStart()), x1 = beatToX (n.getEndBeat().inBeats() - contentStart());
+        const float edge = jlimit (4.0f, 10.0f, (x1 - x0) * 0.3f);
+        if (x >= x1 - edge) return Mode::resize;
+        if (x <= x0 + edge && x1 - x0 > 16.0f) return Mode::resizeStart;
+        return Mode::move;
+    }
+
     te::MidiNote* hitNote (float x, float y)
     {
         if (clip == nullptr) return nullptr;
@@ -862,7 +905,8 @@ private:
         for (int i = notes.size(); --i >= 0;)
         {
             auto* n = notes.getUnchecked (i);
-            if (n->getNoteNumber() == pitch && beat >= n->getStartBeat().inBeats() && beat <= n->getEndBeat().inBeats())
+            const double slack = 3.0 / ppb;
+            if (n->getNoteNumber() == pitch && beat >= n->getStartBeat().inBeats() - slack && beat <= n->getEndBeat().inBeats() + slack)
                 return n;
         }
         return nullptr;

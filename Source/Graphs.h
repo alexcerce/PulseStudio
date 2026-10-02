@@ -23,19 +23,47 @@ namespace Graphs
 
     inline void panel (Graphics& g, Rectangle<float> r)
     {
-        g.setColour (Colour (0xff101216));
+        g.setGradientFill (ColourGradient (Colour (0xff15181d), 0.0f, r.getY(), Colour (0xff0c0e11), 0.0f, r.getBottom(), false));
         g.fillRoundedRectangle (r, 4.0f);
         g.setColour (Theme::line);
         g.drawRoundedRectangle (r.reduced (0.5f), 4.0f, 1.0f);
     }
 
+    /** True when a graph has room for axis labels and a finer grid (in the big device editor). */
+    inline bool isLarge (const Component& c) { return c.getWidth() >= 300 && c.getHeight() >= 150; }
+
+    inline void label (Graphics& g, const String& t, Rectangle<float> r, Justification j, float alpha = 0.75f)
+    {
+        g.setColour (Theme::muted.withAlpha (alpha));
+        g.setFont (FontOptions (9.5f));
+        g.drawText (t, r, j, false);
+    }
+
+    /** A curve with a soft glow under it. */
+    inline void glowStroke (Graphics& g, const Path& p, Colour c, float width)
+    {
+        g.setColour (c.withAlpha (0.12f));
+        g.strokePath (p, PathStrokeType (width + 5.0f, PathStrokeType::curved, PathStrokeType::rounded));
+        g.setColour (c.withAlpha (0.25f));
+        g.strokePath (p, PathStrokeType (width + 2.0f, PathStrokeType::curved, PathStrokeType::rounded));
+        g.setColour (c);
+        g.strokePath (p, PathStrokeType (width, PathStrokeType::curved, PathStrokeType::rounded));
+    }
+
     inline void node (Graphics& g, juce::Point<float> c, Colour col, bool hot)
     {
         const float r = hot ? 5.5f : 4.5f;
-        g.setColour (Colours::black.withAlpha (0.5f));
-        g.fillEllipse (c.x - r - 1.0f, c.y - r - 1.0f, (r + 1.0f) * 2.0f, (r + 1.0f) * 2.0f);
+        if (hot)
+        {
+            g.setColour (col.withAlpha (0.25f));
+            g.fillEllipse (c.x - r - 5.0f, c.y - r - 5.0f, (r + 5.0f) * 2.0f, (r + 5.0f) * 2.0f);
+        }
+        g.setColour (Colours::black.withAlpha (0.6f));
+        g.fillEllipse (c.x - r - 1.5f, c.y - r - 1.5f, (r + 1.5f) * 2.0f, (r + 1.5f) * 2.0f);
         g.setColour (hot ? Colours::white : col);
         g.fillEllipse (c.x - r, c.y - r, r * 2.0f, r * 2.0f);
+        g.setColour (Colours::black.withAlpha (0.35f));
+        g.fillEllipse (c.x - r * 0.4f, c.y - r * 0.4f, r * 0.8f, r * 0.8f);
     }
 
     /** Base: polls its parameters and repaints when they move; tracks hover / drag. */
@@ -85,9 +113,37 @@ namespace Graphs
         {
             auto b = getLocalBounds().toFloat().reduced (1.0f);
             panel (g, b);
+            const bool large = isLarge (*this);
             area = b.reduced (8.0f, 10.0f).withTrimmedTop (6.0f);
+            if (large) area = area.withTrimmedLeft (26.0f).withTrimmedBottom (16.0f).withTrimmedTop (8.0f);
             g.setColour (Colours::white.withAlpha (0.05f));
             for (int i = 1; i < 4; ++i) g.drawHorizontalLine ((int) (area.getY() + area.getHeight() * i / 4.0f), area.getX(), area.getRight());
+            if (large)
+            {
+                for (int i = 0; i <= 4; ++i)
+                    label (g, String (100 - i * 25) + "%", { b.getX() + 2.0f, area.getY() + area.getHeight() * i / 4.0f - 6.0f, 26.0f, 12.0f }, Justification::centredLeft, 0.55f);
+                auto pts = points (0);
+                const auto& e = envs[0];
+                // phase bands, with their values under the axis
+                const float xs[] = { area.getX(), pts[0].x, pts[1].x, pts[2].x, pts[3].x };
+                const char* names[] = { "A", "D", "S", "R" };
+                const Param ps[] = { e.a, e.d, e.s, e.r };
+                String legend;
+                for (int i = 0; i < 4; ++i)
+                {
+                    if (ps[i] == nullptr) continue;
+                    if (i % 2 == 1) { g.setColour (Colours::white.withAlpha (0.025f)); g.fillRect (Rectangle<float> (xs[i], area.getY(), xs[i + 1] - xs[i], area.getHeight())); }
+                    legend << names[i] << " " << ps[i]->getCurrentValueAsStringWithLabel() << "     ";
+                }
+                label (g, (envs.size() > 1 ? e.name + "   " : String()) + legend.trimEnd(),
+                       Rectangle<float> (area.getX(), area.getBottom() + 2.0f, area.getWidth(), 13.0f), Justification::centredLeft, 0.75f);
+                if (e.s != nullptr)
+                {
+                    g.setColour (e.colour.withAlpha (0.35f));
+                    const float dashes[] = { 3.0f, 3.0f };
+                    g.drawDashedLine (Line<float> (area.getX(), pts[1].y, area.getRight(), pts[1].y), dashes, 2, 1.0f);
+                }
+            }
 
             for (int ei = (int) envs.size(); --ei >= 0;)
             {
@@ -102,17 +158,18 @@ namespace Graphs
                 Path fill (p);
                 fill.lineTo (area.getX(), area.getBottom());
                 fill.closeSubPath();
-                g.setColour (e.colour.withAlpha (ei == 0 ? 0.18f : 0.08f));
+                g.setGradientFill (ColourGradient (e.colour.withAlpha (ei == 0 ? 0.32f : 0.12f), 0.0f, area.getY(),
+                                                   e.colour.withAlpha (0.02f), 0.0f, area.getBottom(), false));
                 g.fillPath (fill);
-                g.setColour (e.colour.withAlpha (ei == 0 ? 1.0f : 0.7f));
-                g.strokePath (p, PathStrokeType (1.6f));
+                if (ei == 0) glowStroke (g, p, e.colour, large ? 2.2f : 1.6f);
+                else { g.setColour (e.colour.withAlpha (0.7f)); g.strokePath (p, PathStrokeType (1.4f)); }
                 for (int k : { 0, 1, 3 })
                     if (k != 1 || e.d != nullptr || e.s != nullptr)
                         node (g, pts[(size_t) k], e.colour, hot == ei * 4 + k || dragging == ei * 4 + k);
                 if (envs.size() > 1)
                 {
                     g.setFont (FontOptions (9.5f, Font::bold));
-                    g.drawText (e.name, Rectangle<float> (b.getX() + 6.0f + ei * 70.0f, b.getY() + 2.0f, 68.0f, 12.0f), Justification::centredLeft);
+                    g.drawText (e.name, Rectangle<float> (area.getX() + ei * 70.0f, b.getY() + 2.0f, 68.0f, 12.0f), Justification::centredLeft);
                 }
             }
             drawReadout (g);
@@ -258,15 +315,39 @@ namespace Graphs
         {
             auto b = getLocalBounds().toFloat().reduced (1.0f);
             panel (g, b);
+            const bool large = isLarge (*this);
             area = b.reduced (6.0f, 8.0f);
-            g.setColour (Colours::white.withAlpha (0.05f));
-            for (double f : { 100.0, 1000.0, 10000.0 }) g.drawVerticalLine ((int) xForHz (area, f), area.getY(), area.getBottom());
-            const float y0 = yForDb (0.0f);
-            g.drawHorizontalLine ((int) y0, area.getX(), area.getRight());
-            g.setColour (Theme::muted.withAlpha (0.6f));
-            g.setFont (FontOptions (9.0f));
-            for (auto [f, t] : { std::pair<double, const char*> { 100.0, "100" }, { 1000.0, "1k" }, { 10000.0, "10k" } })
-                g.drawText (t, Rectangle<float> (xForHz (area, f) + 2.0f, area.getBottom() - 10.0f, 24.0f, 10.0f), Justification::left);
+            if (large)
+            {
+                area = area.withTrimmedLeft (28.0f).withTrimmedBottom (14.0f);
+                for (int dec = 10; dec <= 10000; dec *= 10)
+                    for (int k = 1; k <= 9; ++k)
+                    {
+                        const double f = dec * k;
+                        if (f < 20.0 || f > 20000.0) continue;
+                        g.setColour (Colours::white.withAlpha (k == 1 ? 0.08f : 0.03f));
+                        g.drawVerticalLine ((int) xForHz (area, f), area.getY(), area.getBottom());
+                    }
+                for (auto [f, t] : { std::pair<double, const char*> { 20.0, "20" }, { 50.0, "50" }, { 100.0, "100" }, { 200.0, "200" }, { 500.0, "500" },
+                                     { 1000.0, "1k" }, { 2000.0, "2k" }, { 5000.0, "5k" }, { 10000.0, "10k" }, { 20000.0, "20k" } })
+                    label (g, t, Rectangle<float> (xForHz (area, f) - 14.0f, area.getBottom() + 2.0f, 28.0f, 11.0f), Justification::centred);
+                for (int db = 18; db >= -24; db -= 6)
+                {
+                    g.setColour (Colours::white.withAlpha (db == 0 ? 0.12f : 0.035f));
+                    g.drawHorizontalLine ((int) yForDb ((float) db), area.getX(), area.getRight());
+                    label (g, (db > 0 ? "+" : "") + String (db), Rectangle<float> (b.getX() + 2.0f, yForDb ((float) db) - 6.0f, 26.0f, 12.0f), Justification::centredRight, 0.55f);
+                }
+            }
+            else
+            {
+                g.setColour (Colours::white.withAlpha (0.05f));
+                for (double f : { 100.0, 1000.0, 10000.0 }) g.drawVerticalLine ((int) xForHz (area, f), area.getY(), area.getBottom());
+                g.drawHorizontalLine ((int) yForDb (0.0f), area.getX(), area.getRight());
+                g.setColour (Theme::muted.withAlpha (0.6f));
+                g.setFont (FontOptions (9.0f));
+                for (auto [f, t] : { std::pair<double, const char*> { 100.0, "100" }, { 1000.0, "1k" }, { 10000.0, "10k" } })
+                    g.drawText (t, Rectangle<float> (xForHz (area, f) + 2.0f, area.getBottom() - 10.0f, 24.0f, 10.0f), Justification::left);
+            }
 
             const int m = mode();
             const double fc = cutoff->getCurrentBaseValue();
@@ -287,7 +368,7 @@ namespace Graphs
                 g.fillRect (Rectangle<float> (xa, area.getY(), xb - xa, area.getHeight()));
             }
             Path p, fill;
-            for (float x = area.getX(); x <= area.getRight(); x += 1.5f)
+            for (float x = area.getX(); x <= area.getRight(); x += large ? 1.0f : 1.5f)
             {
                 const float y = jlimit (area.getY(), area.getBottom(), yForDb (responseDb (m, hzForX (area, x), fc, r)));
                 if (x == area.getX()) { p.startNewSubPath (x, y); fill.startNewSubPath (x, area.getBottom()); fill.lineTo (x, y); }
@@ -297,8 +378,18 @@ namespace Graphs
             fill.closeSubPath();
             g.setGradientFill (ColourGradient (colour.withAlpha (0.35f), 0.0f, area.getY(), colour.withAlpha (0.03f), 0.0f, area.getBottom(), false));
             g.fillPath (fill);
-            g.setColour (colour);
-            g.strokePath (p, PathStrokeType (1.6f));
+            glowStroke (g, p, colour, large ? 2.2f : 1.6f);
+            if (large)
+            {
+                const float xc = xForHz (area, fc);
+                g.setColour (colour.withAlpha (0.4f));
+                const float dashes[] = { 3.0f, 3.0f };
+                g.drawDashedLine (Line<float> (xc, area.getY(), xc, area.getBottom()), dashes, 2, 1.0f);
+                const char* modeNames[] = { "Off", "Low pass 12", "Band pass", "High pass", "Notch", "Low pass 24" };
+                label (g, String (modeNames[jlimit (0, 5, m)]) + "   " + cutoff->getCurrentValueAsStringWithLabel()
+                          + (reso != nullptr ? "   Res " + reso->getCurrentValueAsStringWithLabel() : String()),
+                       area.reduced (6.0f, 4.0f).removeFromTop (12.0f), Justification::topRight, 0.9f);
+            }
             node (g, nodePos(), colour, hot >= 0 || dragging >= 0);
             drawReadout (g);
         }
@@ -384,15 +475,33 @@ namespace Graphs
         {
             auto b = getLocalBounds().toFloat().reduced (1.0f);
             panel (g, b);
+            const bool large = isLarge (*this);
             area = b.reduced (8.0f);
-            if (gr) { auto bar = area.removeFromRight (6.0f); area.removeFromRight (4.0f); drawGR (g, bar); }
-            g.setColour (Colours::white.withAlpha (0.06f));
-            for (float db : { -48.0f, -36.0f, -24.0f, -12.0f })
+            if (gr) { auto bar = area.removeFromRight (large ? 12.0f : 6.0f); area.removeFromRight (4.0f); drawGR (g, bar); }
+            if (large) area = area.withTrimmedLeft (26.0f).withTrimmedBottom (14.0f);
+            for (float db : { -54.0f, -48.0f, -42.0f, -36.0f, -30.0f, -24.0f, -18.0f, -12.0f, -6.0f, 0.0f })
             {
+                const bool major = std::fmod (-db, 12.0f) < 0.1f;
+                if (! large && (! major || db == 0.0f)) continue;
+                g.setColour (Colours::white.withAlpha (db == 0.0f ? 0.12f : (major ? 0.06f : 0.025f)));
                 g.drawVerticalLine ((int) xFor (db), area.getY(), area.getBottom());
                 g.drawHorizontalLine ((int) yFor (db), area.getX(), area.getRight());
+                if (large && major)
+                {
+                    label (g, String ((int) db), { xFor (db) - 14.0f, area.getBottom() + 2.0f, 28.0f, 11.0f }, Justification::centred, 0.55f);
+                    label (g, String ((int) db), { b.getX() + 2.0f, yFor (db) - 6.0f, 26.0f, 12.0f }, Justification::centredRight, 0.55f);
+                }
             }
+            g.setColour (Colours::white.withAlpha (0.08f));
             g.drawLine (area.getX(), area.getBottom(), area.getRight(), area.getY(), 0.8f);
+            if (large)
+            {
+                const float xt = xFor (threshold->getCurrentBaseValue());
+                g.setColour (colour.withAlpha (0.06f));
+                g.fillRect (Rectangle<float> (xt, area.getY(), area.getRight() - xt, area.getHeight()));
+                label (g, "IN (dB)", area.reduced (4.0f).removeFromBottom (12.0f), Justification::bottomRight, 0.45f);
+                label (g, "OUT (dB)", area.reduced (4.0f).removeFromTop (12.0f), Justification::topLeft, 0.45f);
+            }
             Path p;
             for (float x = area.getX(); x <= area.getRight(); x += 1.0f)
             {
@@ -400,8 +509,7 @@ namespace Graphs
                 const float y = jlimit (area.getY(), area.getBottom(), yFor (out));
                 if (x == area.getX()) p.startNewSubPath (x, y); else p.lineTo (x, y);
             }
-            g.setColour (colour);
-            g.strokePath (p, PathStrokeType (2.0f));
+            glowStroke (g, p, colour, large ? 2.4f : 2.0f);
             node (g, nodePos(), colour, hot >= 0 || dragging >= 0);
             drawReadout (g);
         }

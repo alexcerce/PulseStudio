@@ -118,6 +118,6 @@ public:
 
     /** Set by the main component: opens a MIDI clip in the piano roll. */
     std::function<void (te::MidiClip*)> openPianoRoll;
-    /** Set by the main component: shows the device chain tab. */
-    std::function<void()> showDevices;
+    /** Shows a track's devices (selects it and opens the Devices panel; also for return tracks). */
+    std::function<void (te::Track*)> showDevices;
 };

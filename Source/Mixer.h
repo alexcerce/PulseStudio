@@ -6,6 +6,8 @@
 #include "PulseSynths.h"
 #include "MidiLearn.h"
 #include "Meters.h"
+#include "FactoryPresets.h"
+#include "Icons.h"
 
 //==============================================================================
 class ChannelStrip : public Component,
@@ -21,6 +23,10 @@ public:
         name.setInterceptsMouseClicks (false, false);
         addAndMakeVisible (name);
 
+        devicesBtn.setTooltip ("Show this channel's devices (double-click the strip does the same)");
+        devicesBtn.onClick = [this] { if (evs.showDevices) evs.showDevices (track); };
+        devicesBtn.setFlat (true);
+        if (track != nullptr) addAndMakeVisible (devicesBtn);
         peakLbl.setJustificationType (Justification::centred);
         peakLbl.setFont (FontOptions (10.5f, Font::bold));
         peakLbl.setTooltip ("Highest peak (click to reset)");
@@ -170,7 +176,9 @@ public:
     void resized() override
     {
         auto r = getLocalBounds().reduced (6);
-        name.setBounds (getLocalBounds().removeFromTop (24).reduced (4, 0));
+        auto plate = getLocalBounds().removeFromTop (24).reduced (4, 0);
+        if (devicesBtn.isVisible()) devicesBtn.setBounds (plate.removeFromRight (20).reduced (0, 3));
+        name.setBounds (plate);
         r.removeFromTop (22);
 
         // sends: two per row
@@ -213,6 +221,8 @@ public:
         faderArea = area;
         fader.setBounds (area.withSizeKeepingCentre (26, area.getHeight()));
     }
+
+    void mouseDoubleClick (const MouseEvent&) override { if (track != nullptr && evs.showDevices) evs.showDevices (track); }
 
     void mouseDown (const MouseEvent& e) override
     {
@@ -358,6 +368,7 @@ private:
     std::unique_ptr<LevelMeter> meter;
     TextButton muteBtn { "M" }, soloBtn { "S" }, freezeBtn { "F" }, limiterBtn { "Limiter" };
     Label latency, loudLbl;
+    IconButton devicesBtn { Icons::Type::devices, "Show devices" };
 };
 
 //==============================================================================
@@ -376,8 +387,18 @@ public:
         addReturnBtn.onClick = [this]
         {
             PopupMenu m;
-            m.addItem ("Reverb return", [this] { Routing::createReturnTrack (evs.edit, "Reverb", te::ReverbPlugin::xmlTypeName); });
-            m.addItem ("Delay return",  [this] { Routing::createReturnTrack (evs.edit, "Delay", te::DelayPlugin::xmlTypeName); });
+            auto make = [this] (const char* name, const char* type, const char* preset)
+            {
+                if (auto r = Routing::createReturnTrack (evs.edit, name, type))
+                    for (auto p : r->pluginList)
+                        if (p->getPluginType() == String (type))
+                        {
+                            FactoryPresets::apply (*p, preset);
+                            if (auto mix = p->getAutomatableParameterByID ("mix")) mix->setParameter (1.0f, sendNotificationSync);
+                        }
+            };
+            m.addItem ("Reverb return", [make] { make ("Reverb", pulse::Reverb::xmlTypeName, "Hall"); });
+            m.addItem ("Delay return",  [make] { make ("Delay", pulse::Delay::xmlTypeName, "Dotted 8th"); });
             m.addItem ("Empty return",  [this] { Routing::createReturnTrack (evs.edit, "Return " + String (Routing::nextFreeBus (evs.edit) + 1)); });
             m.showMenuAsync (PopupMenu::Options().withTargetComponent (&addReturnBtn));
         };

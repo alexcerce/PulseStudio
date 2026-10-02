@@ -38,6 +38,8 @@
 #include "Modulators.h"
 #include "ClipEnvelopes.h"
 #include "SampleEditor.h"
+#include "PianoRoll.h"
+#include "DeviceEditor.h"
 
 /** "Pulse Studio.exe --selftest report.txt"
     Builds a scratch project in the temp folder, exercises the editing / routing / device
@@ -2750,6 +2752,133 @@ namespace SelfTest
             }
             rep.check (err < 0.01f && ripple < 0.05f && sineB > 0.0f && squareB > sineB * 2.0f, "Drawn wavetable (band-limited, morphs start -> end)",
                        "sine error " + String (err, 4) + ", brightness " + String (sineB, 3) + " -> " + String (squareB, 3));
+        }
+
+        // --- v0.36: drop names, note entry, device editors, returns -------------------------------------
+        {
+            rep.step ("names / note entry / device editors");
+            const bool names = ClipImport::trackNameFor (engine, "plugin:builtin:drumrackkit") == "Drums"
+                               && ClipImport::trackNameFor (engine, "plugin:builtin:drumrack") == "Drums"
+                               && ClipImport::trackNameFor (engine, String ("plugin:builtin:") + pulse::DrumSynth::xmlTypeName) == "Drums"
+                               && ClipImport::trackNameFor (engine, String ("plugin:builtin:") + pulse::WavetableSynth::xmlTypeName) == "Wavetable"
+                               && ClipImport::trackNameFor (engine, "plugin:factory:reverb:Hall") == "Hall"
+                               && ClipImport::trackNameFor (engine, "plugin:chain:C:/x/My Chain.pulsechain") == "My Chain";
+            String bad;
+            for (auto& b : ClipImport::builtIns())
+            {
+                const auto n = ClipImport::trackNameFor (engine, String ("plugin:builtin:") + b.type);
+                bool camel = n.containsChar ('_');
+                for (int i = 0; i + 1 < n.length(); ++i) camel = camel || (CharacterFunctions::isLowerCase (n[i]) && CharacterFunctions::isUpperCase (n[i + 1]));
+                if (camel) bad << n << " ";
+                if (n == "Track" || n.isEmpty()) bad << b.type << " ";
+            }
+            rep.check (names && bad.isEmpty(), "Dropped devices name their track in plain words", bad.isEmpty() ? String ("Drums, Wavetable, Hall, My Chain") : bad);
+
+            // piano roll: a click adds a note one grid step long; dragging draws it longer; edges resize
+            PulseLookAndFeel laf;
+            LookAndFeel::setDefaultLookAndFeel (&laf);
+            {
+                EditViewState evs (*edit, sm);
+                auto t = ClipImport::createContentTrack (*edit, "NoteEntry", true);
+                auto mc = dynamic_cast<te::MidiClip*> (t->insertNewClip (te::TrackItem::Type::midi, "n", { te::TimePosition(), te::TimePosition::fromSeconds (8.0) }, nullptr));
+                PianoRoll pr (evs);
+                pr.setSize (1200, 700);
+                pr.setClip (mc);
+                auto src = Desktop::getInstance().getMainMouseSource();
+                auto send = [&] (int kind, juce::Point<float> down, juce::Point<float> pos)
+                {
+                    const auto now = Time::getCurrentTime();
+                    MouseEvent e (src, pos, ModifierKeys (kind == 2 ? 0 : ModifierKeys::leftButtonModifier), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                  &pr, &pr, now, down, now, 1, kind == 1 && pos != down);
+                    if (kind == 0) pr.mouseDown (e); else if (kind == 1) pr.mouseDrag (e); else pr.mouseUp (e);
+                };
+                auto click = [&] (juce::Point<float> a, juce::Point<float> b)
+                {
+                    send (0, a, a);
+                    if (b != a) send (1, a, b);
+                    send (2, a, b);
+                };
+                auto& seq = mc->getSequence();
+                const int pitch = 60;
+                auto lenOf = [&] (int i) { return seq.getNumNotes() > i ? seq.getNote (i)->getLengthBeats().inBeats() : -1.0; };
+                String info;
+
+                pr.setGrid (3);   // 1/16
+                click (pr.positionOf (0.1, pitch), pr.positionOf (0.1, pitch));
+                const bool sixteenth = seq.getNumNotes() == 1 && std::abs (lenOf (0) - 0.25) < 1e-6 && std::abs (seq.getNote (0)->getStartBeat().inBeats()) < 1e-6;
+                info << "1/16 click " << String (lenOf (0), 3);
+
+                pr.setGrid (2);   // 1/8: drawing a new note right of it, dragged ~1.3 steps -> 2 steps
+                click (pr.positionOf (2.05, pitch), pr.positionOf (2.0 + 0.5 * 1.3, pitch));
+                te::MidiNote* drawn = nullptr;
+                for (auto n : seq.getNotes()) if (std::abs (n->getStartBeat().inBeats() - 2.0) < 1e-6) drawn = n;
+                const bool drawnOk = drawn != nullptr && std::abs (drawn->getLengthBeats().inBeats() - 1.0) < 1e-6;
+                info << ", 1/8 drag " << (drawn != nullptr ? String (drawn->getLengthBeats().inBeats(), 3) : String ("none"));
+
+                // grab the drawn note's end edge and stretch it to beat 4
+                bool resized = false, startMoved = false;
+                if (drawn != nullptr)
+                {
+                    const auto edgeP = pr.positionOf (2.98, pitch);
+                    click (edgeP, pr.positionOf (4.0, pitch));
+                    resized = std::abs (drawn->getStartBeat().inBeats() - 2.0) < 1e-6 && std::abs (drawn->getLengthBeats().inBeats() - 2.0) < 1e-6;
+                    info << ", end drag " << String (drawn->getLengthBeats().inBeats(), 3);
+                    // its start edge: move the start to beat 3, end stays at 4
+                    click (pr.positionOf (2.02, pitch), pr.positionOf (3.02, pitch));
+                    startMoved = std::abs (drawn->getStartBeat().inBeats() - 3.0) < 1e-6 && std::abs (drawn->getEndBeat().inBeats() - 4.0) < 1e-6;
+                    info << ", start drag " << String (drawn->getStartBeat().inBeats(), 3) << "-" << String (drawn->getEndBeat().inBeats(), 3);
+                }
+                rep.check (sixteenth && drawnOk && resized && startMoved && seq.getNumNotes() == 2, "Piano roll note entry (grid length, draw, resize both edges)", info);
+                pr.setClip (nullptr);
+                t->getClips().getFirst()->removeFromParent();
+                edit->deleteTrack (t);
+            }
+
+            // the big device editor builds for every Pulse device, with graphs (snapshots: editor_<type>.png)
+            {
+                EditViewState evs (*edit, sm);
+                auto t = ClipImport::createContentTrack (*edit, "EditorTest", true);
+                int built = 0, withGraphs = 0, total = 0;
+                String missing;
+                for (auto& b : ClipImport::builtIns())
+                {
+                    auto pl = edit->getPluginCache().createNewPlugin (b.type, {});
+                    auto pp = dynamic_cast<pulse::PulsePlugin*> (pl.get());
+                    if (pp == nullptr) continue;
+                    ++total;
+                    t->pluginList.insertPlugin (pl, 0, nullptr);
+                    {
+                        DeviceEditors::Editor ed (evs, *pp);
+                        ed.setSize (1100, 760);
+                        auto img = ed.createComponentSnapshot (ed.getLocalBounds());
+                        if (img.isValid()) ++built;
+                        if (ed.getNumGraphs() > 0) ++withGraphs; else missing << b.name << " ";
+                        auto f = dir.getChildFile ("editor_" + File::createLegalFileName (b.name) + ".png");
+                        f.deleteFile();
+                        if (auto os = f.createOutputStream()) { PNGImageFormat png; png.writeImageToStream (img, *os); }
+                    }
+                    pl->deleteFromParent();
+                }
+                rep.check (total > 10 && built == total && withGraphs == total, "Big device editor for every Pulse device (graphs + controls)",
+                           String (built) + "/" + String (total) + " built" + (missing.isNotEmpty() ? ", no graphs: " + missing : String()));
+                edit->deleteTrack (t);
+            }
+            LookAndFeel::setDefaultLookAndFeel (nullptr);
+
+            // returns are made of Pulse devices whose settings are reachable
+            {
+                auto ret = Routing::createReturnTrack (*edit, "TestReverb", pulse::Reverb::xmlTypeName);
+                pulse::Reverb* r = ret != nullptr ? ret->pluginList.findFirstPluginOfType<pulse::Reverb>() : nullptr;
+                bool ok = false;
+                if (r != nullptr)
+                {
+                    FactoryPresets::apply (*r, "Hall");
+                    r->set (pulse::Reverb::pMix, 1.0f);
+                    ok = r->get (pulse::Reverb::pMix) > 0.99f && r->numParams() > 3;
+                }
+                rep.check (ok, "Reverb return uses the editable Pulse Reverb");
+                if (ret != nullptr) edit->deleteTrack (ret);
+            }
         }
 
         // --- sharing: project zip, crash bundle, update check -----------------------------------------

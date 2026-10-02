@@ -2476,10 +2476,7 @@ private:
             if (ClipImport::isPluginDescription (d.description))
             {
                 auto desc = d.description.toString();
-                auto name = desc.fromLastOccurrenceOf (":", false, false);
-                if (desc == "plugin:builtin:drumrack") name = "Drums";
-                if (desc.startsWith ("plugin:chain:")) name = File (desc.fromFirstOccurrenceOf ("plugin:chain:", false, false)).getFileNameWithoutExtension();
-                if (desc.startsWith ("plugin:ext:")) name = "Track";
+                auto name = ClipImport::trackNameFor (evs.edit.engine, desc);
                 if (auto t = ClipImport::createContentTrack (evs.edit, name, false))
                 {
                     Presets::applyDescription (t, t->pluginList, desc);

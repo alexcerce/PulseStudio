@@ -676,6 +676,7 @@ private:
 
         evs = std::make_unique<EditViewState> (*edit, selectionManager);
         evs->openPianoRoll = [this] (te::MidiClip* mc) { pianoRoll->setClip (mc); showTab (Tab::pianoRoll); };
+        evs->showDevices = [this] (te::Track* t) { if (t != nullptr) selectionManager.selectOnly (t); showTab (Tab::devices); };
         midiLearn = std::make_unique<MidiLearn> (*edit);
         linkSync = std::make_unique<LinkSync> (*edit);
         envelopePlayer = std::make_unique<ClipEnvelopes::Player> (*edit);
@@ -725,6 +726,7 @@ private:
         selectionManager.deselectAll();
         edit->getTransport().stop (false, true);
         transport.setEdit (nullptr);
+        DeviceEditors::closeAll();
         pianoRoll = nullptr;
         mixer = nullptr;
         deviceChain = nullptr;
@@ -857,23 +859,22 @@ private:
         }
 
         // Return buses: Reverb + Delay, fed by sends.
-        if (auto rev = Routing::createReturnTrack (*edit, "Reverb", te::ReverbPlugin::xmlTypeName))
+        if (auto rev = Routing::createReturnTrack (*edit, "Reverb", pulse::Reverb::xmlTypeName))
         {
             rev->setColour (Theme::trackColour (5));
-            if (auto r = rev->pluginList.findFirstPluginOfType<te::ReverbPlugin>())
+            if (auto r = rev->pluginList.findFirstPluginOfType<pulse::Reverb>())
             {
-                r->setDry (0.0f);
-                r->setWet (1.0f);
-                r->setRoomSize (0.8f);
+                FactoryPresets::apply (*r, "Hall");
+                r->set (pulse::Reverb::pMix, 1.0f);
             }
         }
-        if (auto del = Routing::createReturnTrack (*edit, "Delay", te::DelayPlugin::xmlTypeName))
+        if (auto del = Routing::createReturnTrack (*edit, "Delay", pulse::Delay::xmlTypeName))
         {
             del->setColour (Theme::trackColour (3));
-            if (auto d = del->pluginList.findFirstPluginOfType<te::DelayPlugin>())
+            if (auto d = del->pluginList.findFirstPluginOfType<pulse::Delay>())
             {
-                d->mixValue = 1.0f;
-                d->lengthMs = 369;   // dotted eighth at 122 BPM
+                FactoryPresets::apply (*d, "Dotted 8th");
+                d->set (pulse::Delay::pMix, 1.0f);
             }
         }
         Routing::setSendDb (*tracks[2], 0, -12.0f);

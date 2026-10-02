@@ -71,6 +71,8 @@ Projects are saved as `.tracktionedit` files in `Documents/Pulse Studio/`. Prese
 - **Clip looping:** right-click a MIDI or audio clip → *Loop clip*, then drag the right edge (or use *Clip length*) to repeat it. For example, loop a 1-bar clip across 8 bars. *Loop length* sets the looped region; dashed lines mark each repeat.
 - **Warp markers** (audio): right-click → *Warp markers*. Double-click the strip at the bottom of the clip to add a marker, drag markers to move audio onto the beat (Alt = no snap), and right-click a marker to delete it. You can also add markers at the playhead or at every detected transient.
 
+- **Piano roll note entry:** click to add a note one grid step long (1/16 grid = a 1/16 note), or keep dragging right to draw it longer in grid steps. Grab either end of a note to resize it (the right end changes the length, the left end the start); the edges are easy to catch even on short notes.
+- **Track names:** a device dropped from the browser names its new track in plain words (*Drums* for Drum Rack, Drum Rack kits and Drum Synth, *Wavetable*, a preset's name, a chain's file name).
 ### Audio tools (right-click an audio clip)
 - **Clip properties** (double-click an audio clip): a **gain envelope** over the waveform (click the yellow line to add a point, drag points, double-click to delete; *Clear* removes it — the original file is never changed), clip gain, pitch, and fades with their **shape** (linear, fast, slow, S-curve).
 - **Slip editing:** **Alt**+drag inside an audio clip moves the audio within the clip without moving the clip.
@@ -141,6 +143,7 @@ Plug it in and it connects automatically (hot-plug supported). The Push's area i
 
 ### Instruments and effects
 Pulse's own devices have compact cards: knobs stack in as many rows as the device panel's height allows (drag the divider above the panel up for more), and big devices put their sections on pages with tabs (e.g. FM Synth: *Global*, *Op 1*-*Op 4*). Each card has a collapse arrow (fold it to a slim strip), an **A/B** button to compare two versions of its settings, and in its ☰ menu *Randomise* (levels are left alone), *Randomise a little*, *Reset to defaults*, *Copy settings* and *Paste settings*. Cards have labelled sections and a live display that follows the page you're on.
+- **Big editor window:** click a Pulse device's edit button (or double-click its card) to open it in its own resizable window. It has large graphs with frequency, dB and time scales (for example, Wavetable shows both oscillators' wavetable frames, the filter curve and both envelopes, and Drum Synth draws its kick, snare, hat and clap with the current settings). Below them are all the controls in sections you can fold, plus *Presets*, *Randomise*, *Reset* and *Fold all*. Devices without a dedicated graph show every parameter as a bar you can drag. Opening it again brings the window to the front.
 - **Graphs you can drag:** every graph is an editor wired to the knobs (with undo; double-click a point to reset it):
   - **Envelopes** (Wavetable amp + filter, Simpler amp + filter, FM operators and filter, Drum Rack pads, Auto Filter's follower): drag the attack peak, the decay / sustain point and the release end.
   - **Filter curves** (Wavetable, Simpler, FM, Drum Rack pads, Auto Filter): drag the point for cutoff (left / right) and resonance (up / down), or scroll for resonance. The shaded band shows how far the filter envelope sweeps.
@@ -206,7 +209,7 @@ Pulse's own devices have compact cards: knobs stack in as many rows as the devic
 - **Linked faders:** select several tracks (Ctrl-click headers) and moving one of their faders moves them all by the same amount.
 - **Mixer snapshots:** *Snapshots* (under *+ Return*) stores every track's volume, pan, mute, solo and sends under a name, and recalls them later.
 - Faders, pan, meters and mute/solo, plus submix strips for groups.
-- **Return tracks** with **sends** on every track, and **sidechain** inputs (the **SC** button on devices that support it).
+- **Return tracks** with **sends** on every track. The *Reverb* and *Delay* returns use Pulse Reverb and Pulse Delay, so every setting can be changed: click the devices icon on a strip (or double-click the strip) to open its devices. The same works for any channel, and **sidechain** inputs (the **SC** button on devices that support it).
 - **Pre/post-fader sends:** right-click a send knob. Pre-fader sends get an orange label and keep sending when the fader is down, which is useful for headphone mixes and parallel effects.
 - **CPU and latency:** each strip shows the CPU its devices use (orange above 30%) and their latency. Pulse compensates automatically, so everything stays in time.
 - **Freeze (F):** renders a track to audio and switches off its plugins, to save CPU with heavy VST instruments. Click F again to unfreeze.
@@ -327,6 +330,7 @@ All app code is header-only in `Source/` and compiled through `Main.cpp`.
 | `Workflow.h` | Keyboard nudging, clip looping, warp markers, MIDI export, track presets, groove |
 | `PulseDevices.h`, `PulseSynths.h` | Pulse's own devices (EQ, Glue, Saturator, Auto Filter, Wavetable, Simpler) |
 | `DeviceDisplays.h`, `ParamKnob.h` | Device card displays and knobs |
+| `DeviceEditor.h`, `Graphs.h` | Big device editor windows; draggable envelope / filter / dynamics graphs |
 | `ExportDialog.h`, `AudioSettings.h` | Export and audio/recording settings |
 | `Mixer.h`, `Routing.h` | Mixer strips, sends/returns |
 | `ClipImport.h`, `ClipProperties.h` | File import, audio clip panel |

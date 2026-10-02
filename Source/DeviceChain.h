@@ -121,6 +121,8 @@ namespace DeviceTools
     inline Clipboard& clipboard() { static Clipboard c; return c; }
 }
 
+#include "DeviceEditor.h"
+
 //==============================================================================
 /** One device in the chain: header (power / name / presets / editor / move / remove) + quick knobs. */
 class PluginCard : public CardBase,
@@ -347,6 +349,7 @@ private:
     void openEditor()
     {
         if (auto sb = dynamic_cast<pulse::SandboxedPlugin*> (plugin.get())) sb->showEditor();
+        else if (auto pp = dynamic_cast<pulse::PulsePlugin*> (plugin.get())) DeviceEditors::show (evs, *pp);
         else plugin->showWindowExplicitly();
     }
 
