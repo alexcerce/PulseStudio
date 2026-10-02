@@ -2356,6 +2356,83 @@ namespace SelfTest
             rep.check (recOk, "Session clips recorded into the arrangement", recInfo);
         }
 
+        // --- quality: backup history, heavy-project stress render -------------------------------------
+        {
+            rep.step ("backups");
+            const auto editFile = te::EditFileOperations (*edit).getEditFile();
+            Backups::folderFor (editFile).deleteRecursively();
+            int made = 0;
+            for (int i = 0; i < 23; ++i)
+            {
+                auto f = Backups::write (*edit);
+                if (f.existsAsFile()) { ++made; f.setLastModificationTime (Time::getCurrentTime() - RelativeTime::minutes (60 - i)); }
+            }
+            auto all = Backups::list (editFile);
+            auto copy = all.isEmpty() ? File() : Backups::restoreAsCopy (all.getFirst(), editFile);
+            bool reopened = false;
+            if (copy.existsAsFile())
+            {
+                auto e2 = te::loadEditFromFile (engine, copy);
+                reopened = e2 != nullptr && EngineHelpers::getUserTracks (*e2).size() == EngineHelpers::getUserTracks (*edit).size();
+                e2 = nullptr;
+                copy.deleteFile();
+            }
+            rep.check (made == 23 && all.size() == Backups::keep && reopened, "Backup history (newest 20 kept, restore as a copy)",
+                       String (made) + " written, " + String (all.size()) + " kept");
+            Backups::folderFor (editFile).deleteRecursively();
+
+            rep.step ("stress render");
+            const int before = EngineHelpers::getUserTracks (*edit).size();
+            Array<te::AudioTrack*> heavy;
+            for (int i = 0; i < 16; ++i)
+                if (auto t = ClipImport::createContentTrack (*edit, "Stress " + String (i + 1), true))
+                {
+                    heavy.add (t);
+                    for (auto type : { pulse::WavetableSynth::xmlTypeName, pulse::PulseEQ::xmlTypeName, pulse::GlueCompressor::xmlTypeName,
+                                       pulse::Reverb::xmlTypeName, pulse::Delay::xmlTypeName })
+                        PluginMenu::insertPlugin (t, t->pluginList, edit->getPluginCache().createNewPlugin (type, {}), nullptr);
+                    if (auto mc = t->insertMIDIClip ("S", { te::TimePosition(), te::TimePosition::fromSeconds (8.0) }, nullptr))
+                        for (int k = 0; k < 32; ++k)
+                            for (int v = 0; v < 3; ++v)   // chords: 3 notes, 3 unison voices each
+                                mc->getSequence().addNote (48 + (i * 5 + v * 4) % 24, te::BeatPosition::fromBeats (k * 0.5), te::BeatDuration::fromBeats (0.45), 90, 0, nullptr);
+                    if (auto vp = t->getVolumePlugin()) vp->setVolumeDb (-24.0f);
+                }
+            EditingOps::waitForClipProxies (*edit);
+            te::Renderer::Parameters rp (*edit);
+            Array<te::Track*> tracksToDo;
+            for (auto t : heavy) tracksToDo.add (t);
+            rp.tracksToDo = te::toBitSet (tracksToDo);
+            rp.destFile = dir.getChildFile ("stress.wav");
+            rp.destFile.deleteFile();
+            rp.audioFormat = engine.getAudioFileFormatManager().getWavFormat();
+            rp.bitDepth = 32; rp.sampleRateForAudio = 48000.0;
+            rp.time = { te::TimePosition(), te::TimePosition::fromSeconds (8.0) };
+            rp.usePlugins = true;
+            const auto t0 = Time::getMillisecondCounterHiRes();
+            te::Renderer::renderToFile ("stress", rp);
+            const double secs = (Time::getMillisecondCounterHiRes() - t0) * 0.001;
+            bool finite = false;
+            float peak = 0;
+            if (std::unique_ptr<AudioFormatReader> r (engine.getAudioFileFormatManager().readFormatManager.createReaderFor (rp.destFile)); r != nullptr)
+            {
+                AudioBuffer<float> b ((int) r->numChannels, (int) r->lengthInSamples);
+                r->read (&b, 0, b.getNumSamples(), 0, true, true);
+                finite = true;
+                for (int ch = 0; ch < b.getNumChannels(); ++ch)
+                    for (int i = 0; i < b.getNumSamples(); ++i)
+                    {
+                        const float v = b.getSample (ch, i);
+                        if (! std::isfinite (v)) finite = false;
+                        peak = jmax (peak, std::abs (v));
+                    }
+            }
+            const double speed = secs > 0 ? 8.0 / secs : 0.0;
+            rep.check (finite && peak > 0.001f && speed > 1.0, "Stress render: 16 tracks x (Wavetable 3-voice unison chords + EQ + Glue + Reverb + Delay)",
+                       String (speed, 1) + "x real time, peak " + String (Decibels::gainToDecibels (peak), 1) + " dB, finite " + String ((int) finite));
+            for (auto t : heavy) edit->deleteTrack (t);
+            jassert (EngineHelpers::getUserTracks (*edit).size() == before);
+        }
+
         // --- undo -------------------------------------------------------------------------------
         rep.check (um.canUndo(), "Undo history recorded");
 

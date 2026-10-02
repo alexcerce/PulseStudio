@@ -18,6 +18,8 @@ public:
         std::function<StringArray()> recentProjects;
         std::function<void (const File&)> openRecent;
         std::function<void()> clearRecent;
+        std::function<StringArray()> backups;
+        std::function<void (const File&)> restoreBackup;
         std::function<int()> midiRecordMode;
         std::function<void (int)> setMidiRecordMode;
         std::function<String()> controllerStatus;
@@ -133,6 +135,25 @@ public:
                     recent.addItem ("Clear list", [this] { if (actions.clearRecent) actions.clearRecent(); });
                 }
                 m.addSubMenu ("Open recent", recent, ! list.isEmpty());
+
+                PopupMenu backups;
+                auto bl = actions.backups ? actions.backups() : StringArray();
+                const auto now = Time::getCurrentTime();
+                for (auto& path : bl)
+                {
+                    const File f (path);
+                    const auto t = f.getLastModificationTime();
+                    const auto mins = (int) ((now - t).inMinutes());
+                    const String age = mins < 1 ? String ("just now") : mins < 60 ? String (mins) + " min ago"
+                                     : mins < 60 * 24 ? String (mins / 60) + " h ago" : t.formatted ("%d %b");
+                    backups.addItem (t.formatted ("%H:%M:%S") + "   (" + age + ")", [this, f] { if (actions.restoreBackup) actions.restoreBackup (f); });
+                }
+                if (! bl.isEmpty())
+                {
+                    backups.addSeparator();
+                    backups.addItem ("Opens as a copy - your project file stays as it is", false, false, nullptr);
+                }
+                m.addSubMenu ("Restore backup", backups, ! bl.isEmpty());
             }
             add ("Save", "Ctrl+S", actions.saveProject);
             add ("Collect all and save", {}, actions.collectAll);

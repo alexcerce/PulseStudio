@@ -352,6 +352,20 @@ private:
         a.recentProjects = [this] { return StringArray::fromLines (settings().getValue ("recentProjects")); };
         a.openRecent     = [this] (const File& f) { if (f.existsAsFile()) { saveIfNeeded(); loadEdit (f, false); } };
         a.clearRecent    = [this] { settings().setValue ("recentProjects", String()); };
+        a.backups        = [this]
+        {
+            StringArray out;
+            if (edit != nullptr)
+                for (auto& f : Backups::list (te::EditFileOperations (*edit).getEditFile())) out.add (f.getFullPathName());
+            return out;
+        };
+        a.restoreBackup  = [this] (const File& f)
+        {
+            if (edit == nullptr) return;
+            saveIfNeeded();
+            auto copy = Backups::restoreAsCopy (f, te::EditFileOperations (*edit).getEditFile());
+            if (copy.existsAsFile()) loadEdit (copy, false);
+        };
         a.saveProject    = [this] { saveProject(); };
         a.exportWav      = [this] { exportWav(); };
         a.collectAll     = [this] { collectAll(); };
@@ -448,8 +462,12 @@ private:
     void timerCallback() override
     {
         if (edit != nullptr && edit->hasChangedSinceSaved())
+        {
             te::EditFileOperations (*edit).saveTempVersion (false);
+            if (++minutesChanged >= 5) { Backups::write (*edit); minutesChanged = 0; }   // backup history
+        }
     }
+    int minutesChanged = 0;
 
     void offerRecoveryIfNeeded (const File& file)
     {
@@ -901,9 +919,11 @@ private:
         if (edit != nullptr)
         {
             te::EditFileOperations ops (*edit);
+            const bool changed = edit->hasChangedSinceSaved();
             ops.save (true, true, false);
             if (! edit->hasChangedSinceSaved())
                 ops.deleteTempVersion();
+            if (changed) Backups::write (*edit);
         }
     }
 

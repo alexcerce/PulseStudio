@@ -196,3 +196,47 @@ namespace Sharing
 
     inline String defaultTemplateName (PropertiesFile& settings) { return settings.getValue ("defaultTemplate"); }
 }
+
+//==============================================================================
+/** Backup history: timestamped copies of the project in "<project> Backups" (newest 20 kept). */
+namespace Backups
+{
+    constexpr int keep = 20;
+
+    inline File folderFor (const File& editFile)
+    {
+        return editFile.getParentDirectory().getChildFile (editFile.getFileNameWithoutExtension() + " Backups");
+    }
+
+    /** Backups of a project, newest first. */
+    inline Array<File> list (const File& editFile)
+    {
+        auto files = folderFor (editFile).findChildFiles (File::findFiles, false, "*.tracktionedit");
+        std::sort (files.begin(), files.end(), [] (const File& a, const File& b) { return a.getLastModificationTime() > b.getLastModificationTime(); });
+        return files;
+    }
+
+    /** Writes a backup now and drops the oldest beyond `keep`. */
+    inline File write (te::Edit& e)
+    {
+        const auto editFile = te::EditFileOperations (e).getEditFile();
+        if (editFile == File()) return {};
+        auto dir = folderFor (editFile);
+        dir.createDirectory();
+        auto f = dir.getNonexistentChildFile (editFile.getFileNameWithoutExtension() + " " + Time::getCurrentTime().formatted ("%Y-%m-%d %H-%M-%S"),
+                                              ".tracktionedit", false);
+        if (! te::EditFileOperations (e).writeToFile (f, false)) return {};
+        auto all = list (editFile);
+        for (int i = keep; i < all.size(); ++i) all[i].deleteFile();
+        return f;
+    }
+
+    /** Copies a backup next to the project as a new project file (the original stays as it is). */
+    inline File restoreAsCopy (const File& backup, const File& editFile)
+    {
+        auto dest = editFile.getParentDirectory().getNonexistentChildFile (editFile.getFileNameWithoutExtension() + " (restored "
+                                                                            + backup.getLastModificationTime().formatted ("%H-%M") + ")",
+                                                                            ".tracktionedit", false);
+        return backup.copyFileTo (dest) ? dest : File();
+    }
+}
