@@ -22,6 +22,7 @@
 #include "Push2.h"
 #include "CrashGuard.h"
 #include "Sharing.h"
+#include "WelcomeScreen.h"
 #include "BackgroundRender.h"
 #include "Commands.h"
 #include "ClipEnvelopes.h"
@@ -200,7 +201,7 @@ public:
     {
         auto& c = *commands;
         auto key = [] (int code, ModifierKeys m = {}) { return KeyPress (code, m, 0); };
-        const auto ctrl = ModifierKeys::commandModifier, shiftM = ModifierKeys::shiftModifier;
+        const auto ctrl = ModifierKeys::commandModifier, shiftM = ModifierKeys::shiftModifier, altM = ModifierKeys::altModifier;
         auto withEdit = [this] (std::function<void (te::Edit&)> fn) { return [this, fn] { if (edit != nullptr) fn (*edit); }; };
         auto um = [this] (const char* name) { edit->getUndoManager().beginNewTransaction (name); };
 
@@ -263,6 +264,17 @@ public:
         c.add ("app.audioSettings", "Audio settings", "App", {}, [this] { showAudioSettings(); });
         c.add ("app.plugins", "Plugin manager", "App", {}, [this] { showPluginManager(); });
         c.add ("app.shortcuts", "Keyboard shortcuts", "App", {}, [this] { showShortcutEditor(); });
+        c.add ("app.welcome", "Welcome screen", "App", {}, [this] { showWelcome(); });
+        c.add ("midi.humanize", "MIDI: humanize notes", "MIDI", key ('H', ctrl | altM), [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("humanize"); } });
+        c.add ("midi.legato", "MIDI: legato", "MIDI", key ('L', ctrl | altM), [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("legato"); } });
+        c.add ("midi.fitScale", "MIDI: fit to scale", "MIDI", key ('F', ctrl | altM), [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("fit"); } });
+        c.add ("midi.strum", "MIDI: strum chords up", "MIDI", {}, [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("strum"); } });
+        c.add ("mixer.snapshot", "Store a mixer snapshot", "Mixer", {}, [this] { if (edit) MixSnapshots::store (*edit, "Mix " + String (MixSnapshots::names (*edit).size() + 1)); });
+        c.add ("mixer.resetLoudness", "Reset the loudness meter", "Mixer", {}, [this]
+        {
+            if (edit) if (auto pr = edit->getMasterPluginList().findFirstPluginOfType<pulse::LoudnessProbe>()) pr->resetRequested = true;
+        });
+        c.add ("devices.collapseAll", "Collapse / expand all devices", "View", key ('C', ctrl | altM), [this] { if (deviceChain) deviceChain->toggleCollapseAll(); });
     }
 
     void openPalette()
@@ -343,6 +355,7 @@ private:
         a.newProject     = [this] { newProject(); };
         a.openProject    = [this] { openProject(); };
         a.midiRecordMode = [this] { return midiRecordMode(); };
+        a.welcome        = [this] { showWelcome(); };
         a.setMidiRecordMode = [this] (int m)
         {
             settings().setValue ("midiRecordMode", m);
@@ -516,7 +529,27 @@ private:
             loadEdit (last, false);
         else
             loadEdit (projectsFolder().getNonexistentChildFile ("Demo Song", ".tracktionedit", false), true);
+
+        if (settings().getBoolValue ("showWelcome", true) && ! JUCEApplication::getCommandLineParameters().contains ("--snapshots"))
+            MessageManager::callAsync ([sp = SafePointer<MainComponent> (this)] { if (sp != nullptr) sp->showWelcome(); });
     }
+
+public:
+    /** The start screen: recent projects, new project, tips. */
+    void showWelcome()
+    {
+        WelcomeScreen::Callbacks cb;
+        cb.openProject = [this] (const File& f) { if (f.existsAsFile()) { saveIfNeeded(); loadEdit (f, false); } };
+        cb.newProject = [this] (const File& t, bool demo) { createProject (t, demo); };
+        cb.browseProject = [this] { openProject(); };
+        cb.setShowAtStartup = [this] (bool on) { settings().setValue ("showWelcome", on); };
+        auto* w = new WelcomeScreen (StringArray::fromLines (settings().getValue ("recentProjects")), settings().getBoolValue ("showWelcome", true), cb);
+        addAndMakeVisible (w);
+        w->setBounds (getLocalBounds());
+        w->grabKeyboardFocus();
+    }
+
+private:
 
     void loadEdit (const File& file, bool createDemo)
     {
@@ -812,6 +845,7 @@ public:
             case 5: showSession = false; selectTrack (0);
                     if (auto mc = dynamic_cast<te::MidiClip*> (tracks[0]->getClips().getFirst())) { pianoRoll->setClip (mc); }
                     showTab (Tab::pianoRoll); break;
+            case 6: showTab (Tab::devices); showWelcome(); break;
             default: break;
         }
         resized();

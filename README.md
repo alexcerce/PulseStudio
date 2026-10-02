@@ -6,7 +6,7 @@ A native Windows DAW built with C++, [JUCE](https://juce.com) and [Tracktion Eng
 
 ## Install
 
-Run `dist/PulseStudio-0.29.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
+Run `dist/PulseStudio-0.30.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
 
 ## Build
 
@@ -28,6 +28,7 @@ ISCC.exe installer\PulseStudio.iss
 The installer is written to `dist/`. Add `/DBuildDir=..\build-dev` to package a different build folder.
 
 ## First run
+- **Welcome screen:** at startup (turn it off with *Show this at startup*, reopen it from *File → Welcome screen...*): your recent projects, new project (empty, demo song or one of your templates), open, and the main shortcuts.
 
 1. **Audio Settings → Audio / MIDI**: pick your interface. Choose **ASIO** for the lowest latency, then set the buffer size.
 2. **Audio Settings → Recording**: set the count-in, MIDI overdub and a per-input recording offset.

@@ -906,6 +906,21 @@ private:
         repaint();
     }
 
+public:
+    /** Runs a MIDI tool by id (keyboard shortcuts): humanize, legato, fit, strum. */
+    void applyTool (const String& id)
+    {
+        if (clip == nullptr) return;
+        um().beginNewTransaction ("MIDI tool");
+        Random r;
+        if (id == "humanize")    MidiTools::humanize (*clip, selected, 0.025, 12, r);
+        else if (id == "legato") MidiTools::legato (*clip, selected);
+        else if (id == "strum")  MidiTools::strum (*clip, selected, 1.0 / 16.0, true);
+        else if (id == "fit")    MidiTools::fitToScale (*clip, selected, scaleBox.getSelectedId() - 2, rootBox.getSelectedId() - 1);
+        repaint();
+    }
+
+private:
     void showTools()
     {
         if (clip == nullptr) return;

@@ -20,6 +20,7 @@ public:
         std::function<void()> clearRecent;
         std::function<StringArray()> backups;
         std::function<void (const File&)> restoreBackup;
+        std::function<void()> welcome;
         std::function<int()> midiRecordMode;
         std::function<void (int)> setMidiRecordMode;
         std::function<String()> controllerStatus;
@@ -165,6 +166,7 @@ public:
             m.addSeparator();
             add ("Command palette...", "Ctrl+P", actions.openPalette);
             add ("Keyboard shortcuts...", {}, actions.editShortcuts);
+            add ("Welcome screen...", {}, actions.welcome);
             m.showMenuAsync (PopupMenu::Options().withTargetComponent (&fileBtn));
         };
         addAndMakeVisible (fileBtn);

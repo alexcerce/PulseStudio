@@ -249,6 +249,8 @@ public:
         }
     }
 
+    bool isCollapsed() const { return collapsed; }
+
     /** Folds the card to a slim strip (stored in the project). */
     void setCollapsed (bool c)
     {
@@ -1039,6 +1041,14 @@ public:
     }
 
     void paint (Graphics& g) override { g.fillAll (Theme::panel); }
+
+    /** Collapses every device card (or expands them all if they're all collapsed). */
+    void toggleCollapseAll()
+    {
+        bool allCollapsed = true;
+        for (auto* c : cards) if (auto* pc = dynamic_cast<PluginCard*> (c)) allCollapsed = allCollapsed && pc->isCollapsed();
+        for (auto* c : cards) if (auto* pc = dynamic_cast<PluginCard*> (c)) pc->setCollapsed (! allCollapsed);
+    }
 
     void resized() override
     {
