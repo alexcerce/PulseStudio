@@ -42,7 +42,26 @@ when you start, touch it after each step, and delete it when you stop.
      "extract pad to its own track", randomise kit.
    - Drum synth instrument (kick, snare, hats, clap, toms synthesised, no samples) usable on pads.
    - Multi-sample mapping for Simpler (key and velocity zones).
-3. Then **think of more improvements** and do them in a cycle: polish, reliability, performance, UI clarity,
+3. **Owner request (2026-10-02): "All of it" + massive UI upgrade (professional, Ableton-like but not a copy).**
+   Use `Pulse Studio.exe --dev-profile --snapshots <dir>` to screenshot the main views and LOOK at them after UI work.
+   - ~~v0.21 UI levels + colours~~ (done): shared LevelMeter (peak hold, clip LED); meters in track headers, session
+     columns, master meter in the top bar, better mixer meters; track colour palette + inline rename, track
+     numbers, master track row; clips use track colour; session view mixer footer.
+   - v0.22 Drag and drop: reorder tracks by dragging headers, drag device cards to reorder / onto other tracks
+     (Ctrl = copy), drag clips between arrangement and session slots, drag images + insertion indicators.
+   - v0.23 Look and feel: browser with category sidebar (Instruments, Audio Effects, MIDI Effects, Drums,
+     Plugins, Samples, Favourites, Places); piano roll notes in track colour with velocity shading; device and
+     instrument displays polish; transport polish.
+   - v0.24 Editing: audio quantize, MIDI tools (velocity editing, humanize, legato, strum, fit to scale),
+     draggable clip fades, MIDI loop-record takes.
+   - v0.25 Mixing: sidechain picker, mixer groups / VCA, LUFS + true-peak master meter and export
+     normalisation, mixer snapshots.
+   - v0.26 Instruments/FX: Pulse Reverb and Delay with displays, FM synth (Operator-like), granular mode in
+     Simpler, vocoder, pitch correction.
+   - v0.27 Performance: Push encoder MIDI learn + drum bank + step seq on remapped notes, follow actions,
+     per-scene tempo, per-clip launch quantize, record session to arrangement.
+   - v0.28 Quality: autosave history (last 20), faster startup / plugin scan, UI snapshot tests, playback stress test.
+4. Then **think of more improvements** and do them in a cycle: polish, reliability, performance, UI clarity,
    missing DAW features (e.g. sidechain UI improvements, audio quantize, tuner/spectrum devices, MIDI
    learn for Push encoders, better browser search/tags, recent projects, auto-update of README docs).
    Pick the most valuable next item, add it to this queue, implement it, test it, commit.
@@ -63,3 +82,7 @@ when you start, touch it after each step, and delete it when you stop.
 - 2026-10-02: v0.19.0 Utility (width / mono / bass mono / phase / channels), Tuner (YIN pitch, cents needle),
   Spectrum analyser. 134 checks pass.
 - 2026-10-02: v0.20.0 browser search (recursive, background thread) and favourites, File > Open recent. 138 checks pass.
+- 2026-10-02: v0.21.0 UI: shared LevelMeter (peak hold, clip light) in track headers, session column footers,
+  top bar and mixer (dB scale, peak readout); 32-colour palette; track numbers; richer demo song (drums, bass,
+  chords, lead, pad, session scenes); --snapshots mode. 139 checks pass. Note: snapshot playback depends on the
+  audio device being free; meter logic is covered by a self-test instead.

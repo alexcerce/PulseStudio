@@ -7,6 +7,7 @@
 #include "DrumRack.h"
 #include "Presets.h"
 #include "Macros.h"
+#include "Meters.h"
 #include "DeviceChain.h"
 #include "PulseLookAndFeel.h"
 #include "MidiLearn.h"
@@ -1796,6 +1797,43 @@ namespace SelfTest
             rep.check (recent.size() == 12 && File (recent[0]).getFileName() == "p10.tracktionedit" && File (recent[1]).getFileName() == "p14.tracktionedit"
                          && recent.indexOf (dir.getChildFile ("p10.tracktionedit").getFullPathName()) == 0
                          && [&recent] { auto c = recent; c.removeDuplicates (true); return c.size() == recent.size(); }(), "Recent projects list (newest first, 12 max, no duplicates)");
+        }
+
+        // --- level meters ------------------------------------------------------------------------------
+        {
+            rep.step ("meters");
+            auto lp = edit->getPluginCache().createNewPlugin (te::LevelMeterPlugin::xmlTypeName, {});
+            bool ok = false;
+            String info;
+            if (auto lm = dynamic_cast<te::LevelMeterPlugin*> (lp.get()))
+            {
+                LevelMeter v (*lm, true), h (*lm, false);
+                AudioBuffer<float> b (2, 512);
+                for (int i = 0; i < 512; ++i) { b.setSample (0, i, 0.5f * std::sin ((float) i * 0.1f)); b.setSample (1, i, 0.25f * std::sin ((float) i * 0.1f)); }
+                lm->measurer.processBuffer (b, 0, 512);
+                v.poll(); h.poll();
+                const float l = v.getLevelDb (0), r = v.getLevelDb (1);
+                b.applyGain (2.5f);   // clip: 1.25 peak
+                lm->measurer.processBuffer (b, 0, 512);
+                v.poll();
+                const bool clippedPeak = v.getMaxPeak() > 1.0f;
+                ok = std::abs (l + 6.0f) < 0.3f && std::abs (r + 12.0f) < 0.3f && clippedPeak
+                     && MeterStyle::norm (-60.0f) == 0.0f && MeterStyle::norm (6.0f) == 1.0f && MeterStyle::norm (0.0f) > MeterStyle::norm (-6.0f);
+                info = String (l, 1) + " / " + String (r, 1) + " dB, peak " + String (v.getMaxPeak(), 1);
+
+                PulseLookAndFeel laf;
+                LookAndFeel::setDefaultLookAndFeel (&laf);
+                Component box;
+                box.setSize (200, 160);
+                box.addAndMakeVisible (v); box.addAndMakeVisible (h);
+                v.setBounds (10, 10, 12, 140); h.setBounds (40, 70, 150, 14);
+                auto img = box.createComponentSnapshot (box.getLocalBounds());
+                auto f = dir.getChildFile ("meters.png");
+                f.deleteFile();
+                if (auto os = f.createOutputStream()) { PNGImageFormat png; png.writeImageToStream (img, *os); }
+                LookAndFeel::setDefaultLookAndFeel (nullptr);
+            }
+            rep.check (ok, "Level meters (stereo, peak, clip)", info);
         }
 
         // --- undo -------------------------------------------------------------------------------

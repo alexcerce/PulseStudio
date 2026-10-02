@@ -604,83 +604,200 @@ private:
     //==============================================================================
     void createDemoContent()
     {
-        edit->tempoSequence.getTempo (0)->setBpm (120.0);
-        edit->ensureNumberOfAudioTracks (4);
-        auto tracks = EngineHelpers::getUserTracks (*edit);
-        const char* names[] = { "Keys", "Bass", "Lead", "Audio" };
-
-        for (int i = 0; i < tracks.size(); ++i)
-        {
-            tracks[i]->setName (names[i]);
-            tracks[i]->setColour (Theme::trackColour (i + 1));
-        }
-
-        auto addSynth = [this] (te::AudioTrack& t)
-        {
-            if (auto p = edit->getPluginCache().createNewPlugin (te::FourOscPlugin::xmlTypeName, {}))
-                t.pluginList.insertPlugin (p, 0, nullptr);
-        };
+        edit->tempoSequence.getTempo (0)->setBpm (122.0);
         auto bars = [this] (double b) { return EngineHelpers::beatToTime (*edit, b * 4.0); };
+        auto beat = [] (double b) { return te::BeatPosition::fromBeats (b); };
+        auto len = [] (double b) { return te::BeatDuration::fromBeats (b); };
 
-        for (int i = 0; i < 3; ++i)
-            addSynth (*tracks[i]);
-
-        // Keys: Am - F - C - G
-        if (auto mc = tracks[0]->insertMIDIClip ("Chords", { bars (0), bars (4) }, nullptr))
+        struct Def { const char* name; int colour; };
+        const Def defs[] = { { "Drums", 0 }, { "Bass", 4 }, { "Chords", 1 }, { "Lead", 2 }, { "Pad", 6 } };
+        edit->ensureNumberOfAudioTracks (5);
+        auto tracks = EngineHelpers::getUserTracks (*edit);
+        for (int i = 0; i < 5 && i < tracks.size(); ++i)
         {
-            const int chords[4][3] = { { 57, 60, 64 }, { 57, 60, 65 }, { 55, 60, 64 }, { 55, 59, 62 } };
-            for (int bar = 0; bar < 4; ++bar)
-                for (int n : chords[bar])
-                    mc->getSequence().addNote (n, te::BeatPosition::fromBeats (bar * 4.0), te::BeatDuration::fromBeats (3.9), 85, 0, nullptr);
+            tracks[i]->setName (defs[i].name);
+            tracks[i]->setColour (Theme::trackColour (defs[i].colour));
         }
 
-        // Bass: off-beat roots
-        if (auto mc = tracks[1]->insertMIDIClip ("Bassline", { bars (0), bars (4) }, nullptr))
+        // Drums: synthesised kit, 4 bars of house groove
+        if (auto rp = DrumRack::create (*edit, true))
+        {
+            tracks[0]->pluginList.insertPlugin (rp, 0, nullptr);
+            if (auto mc = tracks[0]->insertMIDIClip ("Groove", { bars (0), bars (8) }, nullptr))
+            {
+                auto& sq = mc->getSequence();
+                for (int bar = 0; bar < 4; ++bar)
+                    for (int b = 0; b < 4; ++b)
+                    {
+                        const double t = bar * 4.0 + b;
+                        sq.addNote (36, beat (t), len (0.25), 118, 0, nullptr);                    // kick
+                        if (b % 2 == 1) sq.addNote (39, beat (t), len (0.25), 100, 0, nullptr);     // clap
+                        sq.addNote (42, beat (t + 0.25), len (0.1), 70, 0, nullptr);                // hats
+                        sq.addNote (46, beat (t + 0.5), len (0.2), 88, 0, nullptr);                 // open hat
+                        sq.addNote (42, beat (t + 0.75), len (0.1), 60, 0, nullptr);
+                    }
+                mc->setLoopRangeBeats ({ beat (0), beat (16) });
+            }
+        }
+
+        auto wavetable = [this] (te::AudioTrack& t, std::initializer_list<std::pair<int, float>> params) -> pulse::WavetableSynth*
+        {
+            auto p = edit->getPluginCache().createNewPlugin (pulse::WavetableSynth::xmlTypeName, {});
+            t.pluginList.insertPlugin (p, 0, nullptr);
+            auto w = dynamic_cast<pulse::WavetableSynth*> (p.get());
+            if (w != nullptr) for (auto [i, v] : params) w->set (i, v);
+            return w;
+        };
+        using W = pulse::WavetableSynth;
+        wavetable (*tracks[1], { { W::pVoices, 1.0f }, { W::pSub, 0.6f }, { W::pCutoff, 600.0f }, { W::pFilterEnv, 0.5f }, { W::pFD, 220.0f }, { W::pLevel, -4.0f } });
+        wavetable (*tracks[2], { { W::pVoices, 3.0f }, { W::pCutoff, 2400.0f }, { W::pA, 8.0f }, { W::pR, 400.0f }, { W::pLevel, -10.0f } });
+        wavetable (*tracks[3], { { W::pSet1, 4.0f }, { W::pVoices, 5.0f }, { W::pDetune, 0.35f }, { W::pCutoff, 4500.0f }, { W::pGlide, 40.0f }, { W::pLevel, -12.0f } });
+        wavetable (*tracks[4], { { W::pSet1, 3.0f }, { W::pVoices, 7.0f }, { W::pA, 900.0f }, { W::pR, 2500.0f }, { W::pCutoff, 1800.0f }, { W::pLfoPos, 0.5f }, { W::pLevel, -16.0f } });
+
+        // Bass: off-beat roots, Am - F - C - G
+        if (auto mc = tracks[1]->insertMIDIClip ("Bassline", { bars (0), bars (8) }, nullptr))
         {
             const int roots[] = { 33, 29, 36, 31 };
             for (int bar = 0; bar < 4; ++bar)
                 for (int b = 0; b < 4; ++b)
-                    mc->getSequence().addNote (roots[bar], te::BeatPosition::fromBeats (bar * 4.0 + b + 0.5), te::BeatDuration::fromBeats (0.4), 105, 0, nullptr);
+                    mc->getSequence().addNote (roots[bar], beat (bar * 4.0 + b + 0.5), len (0.4), 105, 0, nullptr);
+            mc->setLoopRangeBeats ({ beat (0), beat (16) });
         }
 
-        // Lead: arpeggio in bars 3-4
-        if (auto mc = tracks[2]->insertMIDIClip ("Arp", { bars (2), bars (4) }, nullptr))
+        // Chords: stabs on the off-beats
+        if (auto mc = tracks[2]->insertMIDIClip ("Stabs", { bars (0), bars (8) }, nullptr))
+        {
+            const int chords[4][3] = { { 57, 60, 64 }, { 57, 60, 65 }, { 55, 60, 64 }, { 55, 59, 62 } };
+            for (int bar = 0; bar < 4; ++bar)
+                for (double off : { 0.5, 1.5, 2.75, 3.5 })
+                    for (int n : chords[bar])
+                        mc->getSequence().addNote (n, beat (bar * 4.0 + off), len (0.3), 90, 0, nullptr);
+            mc->setLoopRangeBeats ({ beat (0), beat (16) });
+        }
+
+        // Lead: arpeggio from bar 5
+        if (auto mc = tracks[3]->insertMIDIClip ("Arp", { bars (4), bars (8) }, nullptr))
         {
             const int arp[] = { 69, 72, 76, 72, 65, 69, 72, 69, 67, 72, 76, 72, 67, 71, 74, 71 };
-            for (int i = 0; i < 16; ++i)
-                mc->getSequence().addNote (arp[i], te::BeatPosition::fromBeats (i * 0.5), te::BeatDuration::fromBeats (0.3), 90, 0, nullptr);
+            for (int i = 0; i < 32; ++i)
+                mc->getSequence().addNote (arp[i % 16] + (i >= 16 ? 12 : 0), beat (i * 0.5), len (0.3), 92, 0, nullptr);
         }
 
-        if (auto vp = tracks[0]->getVolumePlugin()) vp->setVolumeDb (-8.0f);
-        if (auto vp = tracks[1]->getVolumePlugin()) vp->setVolumeDb (-4.0f);
-        if (auto vp = tracks[2]->getVolumePlugin()) vp->setVolumeDb (-10.0f);
+        // Pad: long chords
+        if (auto mc = tracks[4]->insertMIDIClip ("Pad", { bars (2), bars (8) }, nullptr))
+        {
+            const int chords[4][4] = { { 57, 64, 69, 72 }, { 53, 60, 65, 69 }, { 55, 60, 64, 67 }, { 55, 62, 67, 71 } };
+            for (int bar = 0; bar < 6; ++bar)
+                for (int n : chords[(bar + 2) % 4])
+                    mc->getSequence().addNote (n, beat (bar * 4.0), len (3.9), 70, 0, nullptr);
+        }
 
-        // Return buses: Reverb + Delay, fed by sends on the synths.
+        // Return buses: Reverb + Delay, fed by sends.
         if (auto rev = Routing::createReturnTrack (*edit, "Reverb", te::ReverbPlugin::xmlTypeName))
+        {
+            rev->setColour (Theme::trackColour (5));
             if (auto r = rev->pluginList.findFirstPluginOfType<te::ReverbPlugin>())
             {
                 r->setDry (0.0f);
                 r->setWet (1.0f);
-                r->setRoomSize (0.75f);
+                r->setRoomSize (0.8f);
             }
-
+        }
         if (auto del = Routing::createReturnTrack (*edit, "Delay", te::DelayPlugin::xmlTypeName))
+        {
+            del->setColour (Theme::trackColour (3));
             if (auto d = del->pluginList.findFirstPluginOfType<te::DelayPlugin>())
             {
                 d->mixValue = 1.0f;
-                d->lengthMs = 375;   // dotted eighth at 120 BPM
+                d->lengthMs = 369;   // dotted eighth at 122 BPM
             }
+        }
+        Routing::setSendDb (*tracks[2], 0, -12.0f);
+        Routing::setSendDb (*tracks[3], 0, -12.0f);
+        Routing::setSendDb (*tracks[3], 1, -9.0f);
+        Routing::setSendDb (*tracks[4], 0, -6.0f);
+        // gain staging: about -6 dB peaks on the master
+        const float vols[] = { -9.0f, -8.0f, -10.0f, -10.0f, -8.0f };
+        for (int i = 0; i < 5 && i < tracks.size(); ++i)
+            if (auto vp = tracks[i]->getVolumePlugin()) vp->setVolumeDb (vols[i]);
 
-        Routing::setSendDb (*tracks[0], 0, -10.0f);
-        Routing::setSendDb (*tracks[2], 0, -14.0f);
-        Routing::setSendDb (*tracks[2], 1, -9.0f);
+        // Session view: the same parts as clips in scenes (Intro / Groove / Full / Breakdown)
+        {
+            auto& sl = edit->getSceneList();
+            sl.ensureNumberOfScenes (8);
+            const char* sceneNames[] = { "Intro", "Groove", "Full", "Breakdown" };
+            for (int s = 0; s < 4; ++s)
+                if (auto sc = sl.getScenes()[s]) sc->name = sceneNames[s];
+            // which tracks play in each scene
+            const bool plays[5][4] = { { true, true, true, false },     // Drums
+                                       { false, true, true, false },    // Bass
+                                       { false, true, true, true },     // Chords
+                                       { false, false, true, true },    // Lead
+                                       { true, false, true, true } };   // Pad
+            for (int t = 0; t < 5 && t < tracks.size(); ++t)
+            {
+                auto src = dynamic_cast<te::MidiClip*> (tracks[t]->getClips().getFirst());
+                if (src == nullptr) continue;
+                tracks[t]->getClipSlotList().ensureNumberOfSlots (8);
+                auto slots = tracks[t]->getClipSlotList().getClipSlots();
+                const double lenBeats = 16.0;
+                for (int s = 0; s < 4; ++s)
+                {
+                    if (! plays[t][s]) continue;
+                    auto mc = te::insertMIDIClip (*slots[s], src->getName(), { te::TimePosition(), EngineHelpers::beatToTime (*edit, lenBeats) });
+                    if (mc == nullptr) continue;
+                    for (auto n : src->getSequence().getNotes())
+                        if (n->getStartBeat().inBeats() < lenBeats)
+                            mc->getSequence().addNote (n->getNoteNumber(), n->getStartBeat(), n->getLengthBeats(), n->getVelocity(), 0, nullptr);
+                    mc->setLoopRangeBeats ({ te::BeatPosition(), te::BeatPosition::fromBeats (lenBeats) });
+                }
+            }
+        }
 
         auto& tc = edit->getTransport();
-        tc.setLoopRange ({ bars (0), bars (4) });
+        tc.setLoopRange ({ bars (0), bars (8) });
         tc.looping = true;
         te::EditFileOperations (*edit).save (true, true, false);
     }
 
+    //==============================================================================
+public:
+    /** --snapshots: opens a fresh demo, plays it and saves a PNG of each main view. */
+    void prepareSnapshot (int step)
+    {
+        auto tracks = EngineHelpers::getUserTracks (*edit);
+        auto selectTrack = [&] (int i) { if (auto t = tracks[i]) selectionManager.selectOnly (t); };
+        switch (step)
+        {
+            case 0: showSession = false; selectTrack (0); showTab (Tab::devices); break;
+            case 1: showSession = false; showTab (Tab::mixer); break;
+            case 2: showSession = true;  showTab (Tab::mixer); break;
+            case 3: showSession = false; selectTrack (2);
+                    if (auto mc = dynamic_cast<te::MidiClip*> (tracks[2]->getClips().getFirst())) { pianoRoll->setClip (mc); }
+                    showTab (Tab::pianoRoll); break;
+            case 4: showSession = false; selectTrack (3); showTab (Tab::devices); break;
+            default: break;
+        }
+        resized();
+    }
+
+    void saveSnapshot (const File& f)
+    {
+        auto img = createComponentSnapshot (getLocalBounds());
+        f.deleteFile();
+        if (auto os = f.createOutputStream()) { PNGImageFormat png; png.writeImageToStream (img, *os); }
+    }
+
+    void startSnapshotDemo (const File& dir)
+    {
+        dir.createDirectory();
+        auto f = dir.getChildFile ("Snapshot Demo.tracktionedit");
+        f.deleteFile();
+        loadEdit (f, true);
+        edit->getTransport().play (false);
+    }
+
+private:
     //==============================================================================
     void addTrack (bool instrument)
     {

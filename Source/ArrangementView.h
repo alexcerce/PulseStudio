@@ -12,6 +12,7 @@
 #include "Stems.h"
 #include "Timeline.h"
 #include "SampleEditor.h"
+#include "Meters.h"
 
 //==============================================================================
 /** Draws a bar/beat grid between x positions for the given view. */
@@ -1206,6 +1207,11 @@ public:
         volume.setSkewFactorFromMidPoint (-12.0);
         volume.setDoubleClickReturnValue (true, 0.0);
         volume.setTooltip ("Volume (double-click: 0 dB)");
+        if (auto lm = track->getLevelMeterPlugin())
+        {
+            meter = std::make_unique<LevelMeter> (*lm, true);
+            addAndMakeVisible (*meter);
+        }
         volume.onValueChange = [this]
         {
             if (auto vp = track->getVolumePlugin())
@@ -1220,7 +1226,11 @@ public:
     void paint (Graphics& g) override
     {
         const bool selected = evs.selectionManager.isSelected (track.get());
-        g.fillAll (selected ? Colour (0xff262b33) : Theme::panel);
+        const auto col = track->getColour();
+        g.fillAll (selected ? Colour (0xff272c35) : Theme::panel);
+        g.setGradientFill (ColourGradient (col.withAlpha (selected ? 0.22f : 0.12f), 0.0f, 0.0f,
+                                          col.withAlpha (0.0f), (float) getWidth() * 0.7f, 0.0f, false));
+        g.fillRect (getLocalBounds());
         // group indentation: one coloured bar per enclosing folder
         int x = 0;
         for (auto f = track->getParentFolderTrack(); f != nullptr; f = f->getParentFolderTrack())
@@ -1229,9 +1239,17 @@ public:
             g.fillRect (x, 0, 3, getHeight());
             x += indentPerLevel;
         }
-        g.setColour (track->getColour());
-        g.fillRect (x, 0, 5, getHeight());
-        g.setColour (Colour (0xff111317));
+        g.setColour (col);
+        g.fillRect (x, 0, 6, getHeight());
+        // track number badge
+        const int number = EngineHelpers::getUserTracks (evs.edit).indexOf (track.get()) + 1;
+        auto badge = numberArea.toFloat();
+        g.setColour (col);
+        g.fillRoundedRectangle (badge, 3.0f);
+        g.setColour (TrackColours::textOn (col));
+        g.setFont (FontOptions (11.0f, Font::bold));
+        g.drawText (String (number), badge, Justification::centred);
+        g.setColour (Colour (0xff0d0f12));
         g.fillRect (0, getHeight() - 1, getWidth(), 1);
     }
 
@@ -1247,7 +1265,14 @@ public:
     void resized() override
     {
         auto r = getLocalBounds().withTrimmedLeft (10 + depth() * indentPerLevel).reduced (4, 6);
+        if (meter != nullptr)
+        {
+            meter->setBounds (r.removeFromRight (8));
+            r.removeFromRight (6);
+        }
         auto top = r.removeFromTop (20);
+        numberArea = top.removeFromLeft (20).reduced (0, 1);
+        top.removeFromLeft (5);
         name.setBounds (top);
         type.setBounds (r.removeFromTop (16));
         r.removeFromTop (4);
@@ -1263,6 +1288,14 @@ public:
     void mouseDown (const MouseEvent& e) override
     {
         auto& sm = evs.selectionManager;
+
+        // click the colour strip or the number: colour palette (for every selected track)
+        if (! e.mods.isPopupMenu() && (e.x < 10 + depth() * indentPerLevel || numberArea.contains (e.getPosition())))
+        {
+            if (! sm.isSelected (track.get())) sm.selectOnly (track.get());
+            showColours();
+            return;
+        }
 
         // Ctrl-click: multi-select tracks (e.g. to group them)
         if (e.mods.isCtrlDown() && ! e.mods.isPopupMenu())
@@ -1282,10 +1315,7 @@ public:
             m.addItem ("Rename", [this] { name.showEditor(); });
             m.addItem ("Add plugin...", [this] { PluginMenu::show (evs.edit, this, [t = track, sm = &evs.selectionManager] (te::Plugin::Ptr p)
                                                   { PluginMenu::insertPlugin (t.get(), t->pluginList, p, sm); }); });
-            PopupMenu colours;
-            for (int i = 0; i < 9; ++i)
-                colours.addColouredItem (100 + i, "Colour " + String (i + 1), Theme::trackColour (i), true, false, nullptr);
-            m.addSubMenu ("Colour", colours);
+            m.addItem ("Colour...", [this] { showColours(); });
             m.addSeparator();
 
             auto selectedTracks = sm.getItemsOfType<te::AudioTrack>();
@@ -1339,16 +1369,23 @@ public:
             });
             m.addSeparator();
             m.addItem ("Delete track", [this] { evs.edit.deleteTrack (track.get()); });
-            m.showMenuAsync (PopupMenu::Options().withTargetComponent (this), [this] (int res)
-            {
-                if (res >= 100 && res < 109)
-                    track->setColour (Theme::trackColour (res - 100));
-                repaint();
-            });
+            m.showMenuAsync (PopupMenu::Options().withTargetComponent (this));
         }
     }
 
     void mouseDoubleClick (const MouseEvent&) override { name.showEditor(); }
+
+    /** The palette, applied to every selected track (and their clips follow the track colour). */
+    void showColours()
+    {
+        TrackColours::show (*this, track->getColour(), [&e = evs, t = track] (Colour c)
+        {
+            e.edit.getUndoManager().beginNewTransaction ("Track colour");
+            auto sel = e.selectionManager.getItemsOfType<te::Track>();
+            if (! sel.contains (t.get())) sel = { t.get() };
+            for (auto tr : sel) tr->setColour (c);
+        });
+    }
 
 private:
     void timerCallback() override { refresh(); }
@@ -1457,6 +1494,8 @@ private:
     Label name, type;
     TextButton muteBtn { "M" }, soloBtn { "S" }, armBtn { "R" }, inBtn { "I" }, autoBtn { "A" };
     Slider volume;
+    std::unique_ptr<LevelMeter> meter;
+    Rectangle<int> numberArea;
 };
 
 //==============================================================================
@@ -2247,6 +2286,13 @@ private:
         void paint (Graphics& g) override
         {
             g.fillAll (Colour (0xff15171b));
+            if (! highlight && getHeight() - rowsBottom() > 60)
+            {
+                g.setColour (Theme::muted.withAlpha (0.45f));
+                g.setFont (FontOptions (12.5f));
+                g.drawText ("Drop samples, MIDI files or devices here to create a track", getLocalBounds().withTop (rowsBottom() + 18).withHeight (20),
+                            Justification::centred);
+            }
             if (highlight)
             {
                 g.setColour (Theme::accent.withAlpha (0.1f));

@@ -194,6 +194,11 @@ private:
     void select (int slot)
     {
         selected = slot;
+        if (auto s = DrumRack::source (*rack, slot))   // show what the pad is made of
+        {
+            if (page == Page::sample && s->isSynth()) page = Page::synth;
+            else if (page == Page::synth && ! s->isSynth() && s->numLayers() > 0) page = Page::sample;
+        }
         refreshDetail();
         for (auto* p : pads) p->repaint();
     }

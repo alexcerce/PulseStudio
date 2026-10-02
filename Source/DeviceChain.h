@@ -417,13 +417,12 @@ public:
         title.setText ("Macros", dontSendNotification);
         title.setFont (FontOptions (13.5f, Font::bold));
         addAndMakeVisible (title);
-        hint.setText ("Right-click any device knob and choose \"Map to Macro\".", dontSendNotification);
+        hint.setText ("Right-click any device knob > Map to Macro", dontSendNotification);
         hint.setFont (FontOptions (12.0f));
         hint.setColour (Label::textColourId, Theme::muted);
         hint.setJustificationType (Justification::topLeft);
         addAndMakeVisible (hint);
         build();
-        setSize (4 * 64 + 16, 0);
         startTimerHz (2);
     }
 
@@ -456,6 +455,13 @@ private:
             addAndMakeVisible (k);
         }
         builtCount = knobs.size();
+        // compact until a macro exists
+        const int w = knobs.isEmpty() ? 150 : 4 * 64 + 16;
+        if (getWidth() != w)
+        {
+            setSize (w, getHeight());
+            if (auto* p = getParentComponent()) p->resized();
+        }
         resized();
     }
 

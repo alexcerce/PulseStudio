@@ -2,6 +2,7 @@
 
 #include "EditViewState.h"
 #include "Icons.h"
+#include "Meters.h"
 
 /** Top bar: transport, tempo, position display and app actions. */
 class TransportBar : public Component,
@@ -156,7 +157,29 @@ public:
         startTimerHz (20);
     }
 
-    void setEdit (te::Edit* e) { edit = e; }
+    void setEdit (te::Edit* e)
+    {
+        edit = e;
+        masterMeter.reset();
+        meterPlugin = nullptr;
+        resized();
+    }
+
+    /** Follows the master meter plugin (created / replaced after the edit loads). */
+    void updateMasterMeter()
+    {
+        te::LevelMeterPlugin* m = edit != nullptr ? edit->getMasterPluginList().findFirstPluginOfType<te::LevelMeterPlugin>() : nullptr;
+        if (m == meterPlugin && (masterMeter != nullptr) == (m != nullptr)) return;
+        meterPlugin = m;
+        masterMeter.reset();
+        if (m != nullptr)
+        {
+            masterMeter = std::make_unique<LevelMeter> (*m, false);
+            masterMeter->setTooltip ("Master output level (click to reset the clip light)");
+            addAndMakeVisible (*masterMeter);
+        }
+        resized();
+    }
 
     void paint (Graphics& g) override
     {
@@ -238,6 +261,12 @@ public:
         browserBtn.setBounds (r.removeFromLeft (80)); r.removeFromLeft (4);
         viewBtn.setBounds (r.removeFromLeft (84)); r.removeFromLeft (8);
 
+        if (masterMeter != nullptr)
+        {
+            auto m = r.removeFromRight (120);
+            masterMeter->setBounds (m.withSizeKeepingCentre (m.getWidth(), 14));
+            r.removeFromRight (6);
+        }
         cpuLabel.setBounds (r.removeFromRight (62));
         renderArea = cpuLabel.getBounds().withX (cpuLabel.getX() - 170).withWidth (166).reduced (0, 6);
         cancelRenderBtn.setBounds (renderArea.removeFromRight (22));
@@ -269,6 +298,7 @@ private:
     void timerCallback() override
     {
         if (edit == nullptr) return;
+        if (++meterCheck % 20 == 0) updateMasterMeter();
         auto& tc = edit->getTransport();
         auto pos = tc.getPosition();
         barsLabel.setText (EngineHelpers::formatBarsBeats (*edit, pos), dontSendNotification);
@@ -349,4 +379,8 @@ private:
                browserBtn { Icons::Type::browser }, viewBtn { Icons::Type::session };
     Label barsLabel, timeLabel, bpmLabel, sigLabel,
           barsCap { {}, "BAR.BEAT.16" }, timeCap { {}, "TIME" }, bpmCap { {}, "BPM" }, sigCap { {}, "METER" }, cpuLabel;
+public:
+    std::unique_ptr<LevelMeter> masterMeter;
+    te::LevelMeterPlugin* meterPlugin = nullptr;
+    int meterCheck = 0;
 };

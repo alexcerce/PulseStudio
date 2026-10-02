@@ -4,6 +4,7 @@
 #include "ClipImport.h"
 #include "PluginMenu.h"
 #include "Icons.h"
+#include "Meters.h"
 
 //==============================================================================
 /** Launching helpers (adapted from Tracktion's ClipLauncher demo). */
@@ -625,7 +626,7 @@ public:
     }
 
 private:
-    static constexpr int colW = 130, rowH = 40, headH = 46, sceneW = 120;
+    static constexpr int colW = 130, rowH = 40, headH = 46, sceneW = 120, footH = 88;
 
     struct Grid : public Component
     {
@@ -645,6 +646,87 @@ private:
         EditViewState& evs;
     };
 
+    /** Mini mixer under each column: level meter, volume, mute / solo / arm. */
+    struct ColumnFooter : public Component, private Timer
+    {
+        ColumnFooter (EditViewState& e, te::AudioTrack& t) : evs (e), track (&t)
+        {
+            if (auto lm = t.getLevelMeterPlugin())
+            {
+                meter = std::make_unique<LevelMeter> (*lm, false);
+                addAndMakeVisible (*meter);
+            }
+            volume.setSliderStyle (Slider::LinearHorizontal);
+            volume.setTextBoxStyle (Slider::NoTextBox, false, 0, 0);
+            volume.setRange (-60.0, 6.0, 0.1);
+            volume.setSkewFactorFromMidPoint (-12.0);
+            volume.setDoubleClickReturnValue (true, 0.0);
+            volume.onValueChange = [this] { if (auto vp = track->getVolumePlugin()) vp->setVolumeDb ((float) volume.getValue()); };
+            addAndMakeVisible (volume);
+            db.setFont (FontOptions (10.5f));
+            db.setJustificationType (Justification::centredRight);
+            db.setColour (Label::textColourId, Theme::muted);
+            addAndMakeVisible (db);
+            for (auto* b : { &mute, &solo, &arm })
+            {
+                b->setClickingTogglesState (false);
+                addAndMakeVisible (b);
+            }
+            mute.setColour (TextButton::buttonOnColourId, Theme::yellow);
+            solo.setColour (TextButton::buttonOnColourId, Theme::accent);
+            arm.setColour (TextButton::buttonOnColourId, Theme::red);
+            mute.onClick = [this] { track->setMute (! track->isMuted (false)); };
+            solo.onClick = [this] { track->setSolo (! track->isSolo (false)); };
+            arm.onClick = [this] { EngineHelpers::armTrack (*track, ! EngineHelpers::isTrackArmed (*track)); };
+            arm.setTooltip ("Arm for recording into a clip slot");
+            refresh();
+            startTimerHz (8);
+        }
+
+        void paint (Graphics& g) override
+        {
+            auto r = getLocalBounds().toFloat().reduced (2.0f, 0.0f);
+            g.setColour (Theme::panel2);
+            g.fillRoundedRectangle (r, 4.0f);
+            g.setColour (track->getColour());
+            g.fillRect (r.withHeight (2.0f));
+        }
+
+        void resized() override
+        {
+            auto r = getLocalBounds().reduced (8, 7);
+            if (meter != nullptr) meter->setBounds (r.removeFromTop (10));
+            r.removeFromTop (6);
+            auto vrow = r.removeFromTop (20);
+            db.setBounds (vrow.removeFromRight (40));
+            volume.setBounds (vrow);
+            r.removeFromTop (6);
+            const int w = r.getWidth() / 3;
+            for (auto* b : { &mute, &solo, &arm }) b->setBounds (r.removeFromLeft (w).reduced (2, 0));
+        }
+
+        void timerCallback() override { refresh(); }
+        void refresh()
+        {
+            if (auto vp = track->getVolumePlugin())
+            {
+                if (! volume.isMouseButtonDown()) volume.setValue (vp->getVolumeDb(), dontSendNotification);
+                const float v = vp->getVolumeDb();
+                db.setText (v <= -59.9f ? String ("-inf") : String (v, 1), dontSendNotification);
+            }
+            mute.setToggleState (track->isMuted (false), dontSendNotification);
+            solo.setToggleState (track->isSolo (false), dontSendNotification);
+            arm.setToggleState (EngineHelpers::isTrackArmed (*track), dontSendNotification);
+        }
+
+        EditViewState& evs;
+        te::AudioTrack* track;
+        std::unique_ptr<LevelMeter> meter;
+        Slider volume;
+        Label db;
+        TextButton mute { "M" }, solo { "S" }, arm { "R" };
+    };
+
     struct TrackHead : public Component
     {
         TrackHead (EditViewState& e, te::AudioTrack& t) : evs (e), track (&t)
@@ -659,17 +741,31 @@ private:
         {
             auto r = getLocalBounds().toFloat().reduced (2.0f);
             const bool sel = evs.selectionManager.isSelected (track);
-            g.setColour (Theme::panel2);
-            g.fillRoundedRectangle (r, 3.0f);
-            g.setColour (track->getColour());
-            g.fillRect (r.removeFromTop (3.0f));
-            g.setColour (sel ? Theme::accent : Theme::text);
+            const auto col = track->getColour();
+            g.setColour (col.withAlpha (sel ? 1.0f : 0.85f));
+            g.fillRoundedRectangle (r, 4.0f);
+            g.setColour (TrackColours::textOn (col));
             g.setFont (FontOptions (13.0f, Font::bold));
-            g.drawText (track->getName(), r.reduced (6.0f, 0.0f).removeFromTop (22.0f), Justification::centredLeft, true);
+            const int number = EngineHelpers::getUserTracks (evs.edit).indexOf (track) + 1;
+            g.drawText (String (number) + "  " + track->getName(), r.reduced (8.0f, 0.0f).removeFromTop (24.0f), Justification::centredLeft, true);
+            if (sel)
+            {
+                g.setColour (Colours::white);
+                g.drawRoundedRectangle (r, 4.0f, 1.5f);
+            }
         }
 
         void resized() override { arrBtn.setBounds (getLocalBounds().reduced (6, 4).removeFromBottom (16).removeFromRight (40)); }
-        void mouseDown (const MouseEvent&) override { evs.selectionManager.selectOnly (track); }
+        void mouseDown (const MouseEvent& e) override
+        {
+            evs.selectionManager.selectOnly (track);
+            if (e.mods.isPopupMenu())
+                TrackColours::show (*this, track->getColour(), [t = track] (Colour c)
+                {
+                    t->edit.getUndoManager().beginNewTransaction ("Track colour");
+                    t->setColour (c);
+                });
+        }
         void update() { arrBtn.setVisible (track->playSlotClips.get()); repaint(); }
 
         EditViewState& evs;
@@ -683,6 +779,7 @@ private:
         heads.clear();
         sceneBtns.clear();
         stopBtns.clear();
+        footers.clear();
 
         auto tracks = EngineHelpers::getUserTracks (evs.edit);
         auto& sceneList = evs.edit.getSceneList();
@@ -702,12 +799,15 @@ private:
             stop->setTooltip ("Stop clips on this track");
             stop->onClick = [t] { Launcher::stopTrack (*t); };
             grid.addAndMakeVisible (stop);
+            grid.addAndMakeVisible (footers.add (new ColumnFooter (evs, *t)));
         }
 
         for (int s = 0; s < numScenes; ++s)
         {
             auto* b = sceneBtns.add (new IconButton (Icons::Type::play));
-            b->setText ("Scene " + String (s + 1));
+            auto sc = sceneList.getScenes()[s];
+            const auto sceneName = sc != nullptr ? sc->name.get() : String();
+            b->setText (sceneName.isNotEmpty() ? sceneName : "Scene " + String (s + 1));
             b->setIconColour (Theme::green);
             b->setTooltip ("Launch every clip in this row");
             b->onClick = [this, s] { Launcher::launchScene (evs.edit, s); };
@@ -721,7 +821,7 @@ private:
     void layoutGrid()
     {
         const int w = numTracks * colW + sceneW + 24;
-        const int h = headH + numScenes * rowH + 40;
+        const int h = headH + numScenes * rowH + 40 + footH + 8;
         grid.setSize (jmax (w, viewport.getMaximumVisibleWidth()), jmax (h, viewport.getMaximumVisibleHeight()));
 
         for (int t = 0; t < numTracks; ++t)
@@ -731,6 +831,7 @@ private:
             for (int s = 0; s < numScenes; ++s)
                 slots[t * numScenes + s]->setBounds (x, headH + s * rowH, colW - 4, rowH);
             stopBtns[t]->setBounds (x + 2, headH + numScenes * rowH + 6, colW - 8, 24);
+            footers[t]->setBounds (x, headH + numScenes * rowH + 38, colW - 4, footH);
         }
 
         const int sx = 8 + numTracks * colW + 12;
@@ -773,6 +874,7 @@ private:
     OwnedArray<TrackHead> heads;
     OwnedArray<SlotComponent> slots;
     OwnedArray<IconButton> sceneBtns, stopBtns;
+    OwnedArray<ColumnFooter> footers;
     ComboBox quantBox;
     std::map<int, te::LaunchQType> qTypeById;
     TextButton stopAllBtn { "Stop all clips" }, addSceneBtn { "+ Scene" }, backToArrBtn { "Back to arrangement" };

@@ -82,6 +82,31 @@ public:
         pulse::registerDevices (*engine);
         mainWindow = std::make_unique<MainWindow> (*engine);
 
+        // Pulse Studio.exe --snapshots <dir> : screenshots of the main views (for UI work), then exit
+        if (auto i = args.indexOf ("--snapshots"); i >= 0 && i + 1 < args.size())
+        {
+            struct Runner : public Timer
+            {
+                Runner (MainComponent& m, File d) : mc (m), dir (d) { startTimer (1500); }
+                void timerCallback() override
+                {
+                    if (step > 0) mc.saveSnapshot (dir.getChildFile ("view_" + String (step - 1) + ".png"));
+                    if (step >= 5) { stopTimer(); JUCEApplication::quit(); return; }
+                    mc.prepareSnapshot (step++);
+                }
+                MainComponent& mc;
+                File dir;
+                int step = 0;
+            };
+            if (auto* mc = dynamic_cast<MainComponent*> (mainWindow->getContentComponent()))
+            {
+                mainWindow->setBounds (40, 40, 1600, 940);
+                auto dir = File::getCurrentWorkingDirectory().getChildFile (args[i + 1].unquoted());
+                mc->startSnapshotDemo (dir);
+                snapshotRunner = std::make_unique<Runner> (*mc, dir);
+            }
+        }
+
         // Pulse Studio.exe --render out.wav : bounce the last project and exit
         if (auto i = args.indexOf ("--render"); i >= 0 && i + 1 < args.size())
         {
@@ -94,6 +119,7 @@ public:
 
     void shutdown() override
     {
+        snapshotRunner = nullptr;
         mainWindow = nullptr;
         engine = nullptr;
         tooltips = nullptr;
@@ -135,6 +161,7 @@ private:
     std::unique_ptr<TooltipWindow> tooltips;
     std::unique_ptr<te::Engine> engine;
     std::unique_ptr<MainWindow> mainWindow;
+    std::unique_ptr<Timer> snapshotRunner;
 };
 
 START_JUCE_APPLICATION (PulseStudioApplication)

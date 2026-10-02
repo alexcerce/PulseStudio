@@ -1,75 +1,11 @@
-﻿#pragma once
+#pragma once
 
 #include "EditViewState.h"
 #include "Routing.h"
 #include "EditingOps.h"
 #include "PulseSynths.h"
 #include "MidiLearn.h"
-
-//==============================================================================
-/** Stereo peak meter fed by a LevelMeterPlugin's measurer (fast attack, peak hold). */
-class LevelMeter : public Component,
-                   private Timer
-{
-public:
-    explicit LevelMeter (te::LevelMeterPlugin& p) : holder (&p), plugin (p)
-    {
-        plugin.measurer.addClient (client);
-        startTimerHz (30);
-    }
-
-    ~LevelMeter() override { plugin.measurer.removeClient (client); }
-
-    void paint (Graphics& g) override
-    {
-        auto r = getLocalBounds().toFloat();
-        const float w = (r.getWidth() - 2.0f) / 2.0f;
-        drawBar (g, r.withWidth (w), level[0], peak[0]);
-        drawBar (g, r.withTrimmedLeft (w + 2.0f), level[1], peak[1]);
-    }
-
-private:
-    static float norm (float db) { return jlimit (0.0f, 1.0f, (db + 60.0f) / 66.0f); }
-
-    void drawBar (Graphics& g, Rectangle<float> r, float db, float pk)
-    {
-        g.setColour (Colour (0xff0d0f12));
-        g.fillRect (r);
-        auto n = norm (db);
-        if (n > 0.0f)
-        {
-            ColourGradient grad (Colour (0xff2f9e44), 0, r.getBottom(), Theme::red, 0, r.getY(), false);
-            grad.addColour (norm (-12.0f), Theme::green);
-            grad.addColour (norm (-3.0f), Theme::yellow);
-            g.setGradientFill (grad);
-            g.fillRect (r.withTrimmedTop (r.getHeight() * (1.0f - n)));
-        }
-        auto pn = norm (pk);
-        if (pn > 0.0f)
-        {
-            g.setColour (pk > 0.0f ? Theme::red : Theme::text);
-            g.fillRect (r.getX(), r.getY() + r.getHeight() * (1.0f - pn), r.getWidth(), 1.5f);
-        }
-    }
-
-    void timerCallback() override
-    {
-        const auto now = Time::getMillisecondCounter();
-        for (int ch = 0; ch < 2; ++ch)
-        {
-            auto db = client.getAndClearAudioLevel (jmin (ch, jmax (0, client.getNumChannelsUsed() - 1))).dB;
-            level[ch] = jmax (db, level[ch] - 0.8f);
-            if (db >= peak[ch] || now - peakTime[ch] > 1200) { peak[ch] = db; peakTime[ch] = now; }
-        }
-        repaint();
-    }
-
-    te::Plugin::Ptr holder;          // keeps the plugin (and its measurer) alive
-    te::LevelMeterPlugin& plugin;
-    te::LevelMeasurer::Client client;
-    float level[2] { -100.0f, -100.0f }, peak[2] { -100.0f, -100.0f };
-    uint32 peakTime[2] {};
-};
+#include "Meters.h"
 
 //==============================================================================
 class ChannelStrip : public Component,
@@ -81,9 +17,16 @@ public:
     {
         name.setText (t != nullptr ? t->getName() : "Master", dontSendNotification);
         name.setJustificationType (Justification::centred);
-        name.setFont (FontOptions (13.0f, Font::bold));
+        name.setFont (FontOptions (12.5f, Font::bold));
         name.setInterceptsMouseClicks (false, false);
         addAndMakeVisible (name);
+
+        peakLbl.setJustificationType (Justification::centred);
+        peakLbl.setFont (FontOptions (10.5f, Font::bold));
+        peakLbl.setTooltip ("Highest peak (click to reset)");
+        peakLbl.addMouseListener (this, false);
+        addAndMakeVisible (peakLbl);
+        addAndMakeVisible (scale);
 
         pan.setSliderStyle (Slider::RotaryHorizontalVerticalDrag);
         pan.setTextBoxStyle (Slider::NoTextBox, false, 0, 0);
@@ -181,18 +124,31 @@ public:
     {
         auto r = getLocalBounds().toFloat().reduced (0.5f);
         const bool selected = track != nullptr && evs.selectionManager.isSelected (track);
-        g.setColour (track == nullptr ? Colour (0xff23272e) : Theme::panel2);
+        g.setGradientFill (ColourGradient (Theme::panel2.brighter (selected ? 0.08f : 0.02f), 0.0f, r.getY(),
+                                          Theme::panel2.darker (0.15f), 0.0f, r.getBottom(), false));
         g.fillRoundedRectangle (r, 6.0f);
-        g.setColour (track != nullptr ? track->getColour() : Theme::text);
-        g.fillRoundedRectangle (r.withHeight (3.0f), 1.5f);
-        g.setColour (selected ? Theme::accent : Theme::line);
+        // name plate in the track colour
+        const auto col = track != nullptr ? track->getColour() : Colour (0xff3a3f47);
+        auto plate = r.withHeight (24.0f);
+        g.setColour (col.withAlpha (selected ? 1.0f : 0.85f));
+        g.fillRoundedRectangle (plate, 6.0f);
+        g.fillRect (plate.withTrimmedTop (12.0f));
+        name.setColour (Label::textColourId, TrackColours::textOn (col));
+        g.setColour (selected ? Colours::white : Theme::line);
         g.drawRoundedRectangle (r, 6.0f, selected ? 1.5f : 1.0f);
+        // fader groove marks
+        if (! faderArea.isEmpty())
+        {
+            g.setColour (Colours::black.withAlpha (0.35f));
+            g.fillRoundedRectangle (faderArea.toFloat().withSizeKeepingCentre (4.0f, (float) faderArea.getHeight() - 10.0f), 2.0f);
+        }
     }
 
     void resized() override
     {
         auto r = getLocalBounds().reduced (6);
-        name.setBounds (r.removeFromTop (20));
+        name.setBounds (getLocalBounds().removeFromTop (24).reduced (4, 0));
+        r.removeFromTop (22);
 
         // sends: two per row
         for (int i = 0; i < sends.size(); i += 2)
@@ -222,16 +178,22 @@ public:
             limiterBtn.setBounds (bottom.reduced (2, 0));
         }
         latency.setBounds (r.removeFromBottom (13));
-        db.setBounds (r.removeFromBottom (18));
-        auto faderArea = r.reduced (0, 4);
+        auto readouts = r.removeFromBottom (18);
+        db.setBounds (readouts.removeFromLeft (readouts.getWidth() / 2));
+        peakLbl.setBounds (readouts);
+        auto area = r.reduced (0, 4);
         if (meter != nullptr)
-            meter->setBounds (faderArea.removeFromRight (14));
-        faderArea.removeFromRight (6);
-        fader.setBounds (faderArea.withSizeKeepingCentre (26, faderArea.getHeight()));
+            meter->setBounds (area.removeFromRight (12));
+        area.removeFromRight (2);
+        scale.setBounds (area.removeFromRight (22));
+        faderArea = area;
+        fader.setBounds (area.withSizeKeepingCentre (26, area.getHeight()));
     }
 
     void mouseDown (const MouseEvent& e) override
     {
+        if (e.eventComponent == &peakLbl && meter != nullptr) { meter->resetPeak(); return; }
+
         // right-click a send: pre / post fader
         for (auto* snd : sends)
             if (e.eventComponent == &snd->knob && e.mods.isPopupMenu())
@@ -269,7 +231,14 @@ private:
             if (! fader.isMouseButtonDown()) fader.setValue (volPlugin->getVolumeDb(), dontSendNotification);
             if (! pan.isMouseButtonDown())   pan.setValue (volPlugin->getPan(), dontSendNotification);
             auto v = volPlugin->getVolumeDb();
-            db.setText (v <= -59.9f ? "-inf" : String (v, 1) + " dB", dontSendNotification);
+            db.setText (v <= -59.9f ? "-inf" : String (v, 1), dontSendNotification);
+        }
+        if (meter != nullptr)
+        {
+            const float pk = meter->getMaxPeak();
+            peakLbl.setText (pk <= -99.0f ? String ("-inf") : String (pk, 1), dontSendNotification);
+            peakLbl.setColour (Label::textColourId, pk > 0.0f ? Colour (0xffff4d4d) : pk > -3.0f ? Theme::orange : Theme::text);
+            peakLbl.setColour (Label::backgroundColourId, pk > 0.0f ? Colour (0x40ff4d4d) : Colour (0xff111317));
         }
 
         if (track != nullptr)
@@ -346,8 +315,10 @@ private:
     te::Track* track;
     te::AudioTrack* audioTrack() const { return dynamic_cast<te::AudioTrack*> (track); }
     te::VolumeAndPanPlugin::Ptr volPlugin;
-    Label name, db;
+    Label name, db, peakLbl;
     Slider pan, fader;
+    Rectangle<int> faderArea;
+    DbScale scale { [this] (float v) { return (float) (fader.getY() - scale.getY()) + (float) fader.getPositionOfValue (jlimit (-60.0, 6.0, (double) v)); } };
     std::unique_ptr<LevelMeter> meter;
     TextButton muteBtn { "M" }, soloBtn { "S" }, freezeBtn { "F" }, limiterBtn { "Limiter" };
     Label latency;
