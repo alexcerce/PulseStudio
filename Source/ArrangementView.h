@@ -13,6 +13,7 @@
 #include "Timeline.h"
 #include "SampleEditor.h"
 #include "Meters.h"
+#include "DragDrop.h"
 
 //==============================================================================
 /** Draws a bar/beat grid between x positions for the given view. */
@@ -1162,6 +1163,7 @@ private:
 
 //==============================================================================
 class TrackHeader : public Component,
+                    public DragAndDropTarget,
                     private Timer
 {
 public:
@@ -1375,6 +1377,51 @@ public:
 
     void mouseDoubleClick (const MouseEvent&) override { name.showEditor(); }
 
+    // drag the header to reorder tracks
+    void mouseDrag (const MouseEvent& e) override
+    {
+        if (dragStarted || e.mods.isPopupMenu() || e.getDistanceFromDragStart() < 8) return;
+        dragStarted = true;
+        DragDrop::start (*this, DragDrop::trackPrefix + track->itemID.toString(), track->getName(), track->getColour());
+    }
+    void mouseUp (const MouseEvent&) override { dragStarted = false; }
+
+    // devices dropped on the header go to the end of this track's chain
+    bool isInterestedInDragSource (const SourceDetails& d) override
+    {
+        return DragDrop::is (d.description, DragDrop::devicePrefix)
+               || (ClipImport::isPluginDescription (d.description) && ! Workflow::isTrackPreset (d.description.toString()));
+    }
+    void itemDragEnter (const SourceDetails&) override { dropHover = true; repaint(); }
+    void itemDragExit (const SourceDetails&) override  { dropHover = false; repaint(); }
+    void itemDropped (const SourceDetails& d) override
+    {
+        dropHover = false;
+        repaint();
+        if (DragDrop::is (d.description, DragDrop::devicePrefix))
+        {
+            if (auto p = DragDrop::pluginFrom (evs.edit, d.description))
+                DragDrop::placeDevice (*p, track.get(), track->pluginList, nullptr, ModifierKeys::currentModifiers.isCtrlDown());
+        }
+        else
+        {
+            evs.edit.getUndoManager().beginNewTransaction ("Add device");
+            Presets::applyDescription (track.get(), track->pluginList, d.description.toString());
+        }
+        evs.selectionManager.selectOnly (track.get());
+    }
+
+    void paintOverChildren (Graphics& g) override
+    {
+        if (! dropHover) return;
+        g.setColour (Theme::accent.withAlpha (0.18f));
+        g.fillRect (getLocalBounds());
+        g.setColour (Theme::accent);
+        g.drawRect (getLocalBounds(), 2);
+    }
+
+    te::AudioTrack* getTrack() const { return track.get(); }
+
     /** The palette, applied to every selected track (and their clips follow the track colour). */
     void showColours()
     {
@@ -1496,6 +1543,7 @@ private:
     Slider volume;
     std::unique_ptr<LevelMeter> meter;
     Rectangle<int> numberArea;
+    bool dragStarted = false, dropHover = false;
 };
 
 //==============================================================================
@@ -2326,15 +2374,45 @@ private:
 
         bool isInterestedInDragSource (const SourceDetails& d) override
         {
-            return ClipImport::isPluginDescription (d.description) || d.description == "PulseFiles";
+            return ClipImport::isPluginDescription (d.description) || d.description == "PulseFiles" || DragDrop::is (d.description, DragDrop::trackPrefix);
         }
 
-        void itemDragMove (const SourceDetails& d) override  { setHighlight (d.localPosition.y > rowsBottom()); }
-        void itemDragExit (const SourceDetails&) override    { setHighlight (false); }
+        void itemDragMove (const SourceDetails& d) override
+        {
+            if (DragDrop::is (d.description, DragDrop::trackPrefix))
+            {
+                const int y = insertionFor (d.localPosition.y).second;
+                if (y != insertY) { insertY = y; repaint(); }
+                return;
+            }
+            setHighlight (d.localPosition.y > rowsBottom());
+        }
+        void itemDragExit (const SourceDetails&) override    { setHighlight (false); insertY = -1; repaint(); }
+
+        /** The track a dropped track goes before (nullptr = the end) and the y of the insertion line. */
+        std::pair<te::Track*, int> insertionFor (int y)
+        {
+            Array<TrackHeader*> headers;
+            for (auto* c : getChildren())
+                if (auto* h = dynamic_cast<TrackHeader*> (c)) headers.add (h);
+            std::sort (headers.begin(), headers.end(), [] (auto* a, auto* b) { return a->getY() < b->getY(); });
+            for (auto* h : headers)
+                if (y < h->getBounds().getCentreY())
+                    return { h->getTrack(), h->getY() };
+            return { nullptr, headers.isEmpty() ? 0 : headers.getLast()->getBottom() };
+        }
 
         void itemDropped (const SourceDetails& d) override
         {
             setHighlight (false);
+            if (DragDrop::is (d.description, DragDrop::trackPrefix))
+            {
+                insertY = -1;
+                repaint();
+                if (auto t = DragDrop::trackFrom (evs.edit, d.description))
+                    DragDrop::moveTrack (*t, insertionFor (d.localPosition.y).first);
+                return;
+            }
 
             if (Workflow::isTrackPreset (d.description.toString()))
             {
@@ -2383,6 +2461,12 @@ private:
 
         void paintOverChildren (Graphics& g) override
         {
+            if (insertY >= 0)
+            {
+                g.setColour (Theme::accent);
+                g.fillRect (0, insertY - 1, getWidth(), 3);
+                g.fillEllipse (2.0f, (float) insertY - 4.0f, 8.0f, 8.0f);
+            }
             if (! rubber.isEmpty())
             {
                 g.setColour (Theme::accent.withAlpha (0.12f));
@@ -2395,6 +2479,7 @@ private:
         EditViewState& evs;
         bool highlight = false;
         Rectangle<int> rubber;
+        int insertY = -1;
     };
 
     /** One arrangement row: a track (with optional automation lane) or a group. */

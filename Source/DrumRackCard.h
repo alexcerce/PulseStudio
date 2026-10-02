@@ -84,6 +84,8 @@ public:
 
         title.setText ("Drum Rack", dontSendNotification);
         title.setFont (FontOptions (13.5f, Font::bold));
+        title.setInterceptsMouseClicks (false, false);
+        dragPlugin = instanceHolder;
         addAndMakeVisible (title);
         power.setClickingTogglesState (true);
         power.setToggleState (instance->isEnabled(), dontSendNotification);

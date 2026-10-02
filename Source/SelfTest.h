@@ -8,6 +8,7 @@
 #include "Presets.h"
 #include "Macros.h"
 #include "Meters.h"
+#include "DragDrop.h"
 #include "DeviceChain.h"
 #include "PulseLookAndFeel.h"
 #include "MidiLearn.h"
@@ -1834,6 +1835,81 @@ namespace SelfTest
                 LookAndFeel::setDefaultLookAndFeel (nullptr);
             }
             rep.check (ok, "Level meters (stereo, peak, clip)", info);
+        }
+
+        // --- drag and drop operations ---------------------------------------------------------------------
+        {
+            rep.step ("drag and drop");
+            auto ta = ClipImport::createContentTrack (*edit, "DnD A", false);
+            auto tb = ClipImport::createContentTrack (*edit, "DnD B", false);
+            auto tc = ClipImport::createContentTrack (*edit, "DnD C", false);
+            bool reordered = false, reorderedEnd = false;
+            if (ta != nullptr && tb != nullptr && tc != nullptr)
+            {
+                DragDrop::moveTrack (*tc, ta);   // C before A
+                auto all = te::getAllTracks (*edit);
+                reordered = all.indexOf (tc) + 1 == all.indexOf (ta) && all.indexOf (ta) + 1 == all.indexOf (tb);
+                DragDrop::moveTrack (*tc, nullptr);    // to the end
+                reorderedEnd = te::getAllTracks (*edit).getLast() == tc;
+            }
+            rep.check (reordered && reorderedEnd, "Drag a track to reorder");
+
+            // devices: reorder within a chain, move and copy to another track
+            bool reorderOk = false, moveOk = false, copyOk = false, rackCopyOwn = false;
+            if (ta != nullptr && tb != nullptr)
+            {
+                auto mk = [&] (const char* type) { return edit->getPluginCache().createNewPlugin (type, {}); };
+                auto eq = mk (pulse::PulseEQ::xmlTypeName), sat = mk (pulse::Saturator::xmlTypeName), lim = mk (pulse::Limiter::xmlTypeName);
+                for (auto& p : { eq, sat, lim }) PluginMenu::insertPlugin (ta, ta->pluginList, p, nullptr);
+                auto order = [] (te::AudioTrack& t)
+                {
+                    StringArray n;
+                    for (auto p : t.pluginList)
+                        if (dynamic_cast<pulse::PulsePlugin*> (p) != nullptr || dynamic_cast<te::RackInstance*> (p) != nullptr) n.add (p->getName());
+                    return n.joinIntoString (",");
+                };
+                DragDrop::placeDevice (*lim, ta, ta->pluginList, eq.get(), false);       // limiter to the front
+                reorderOk = order (*ta) == "Limiter,EQ Six,Saturator";
+                DragDrop::placeDevice (*sat, tb, tb->pluginList, nullptr, false);        // move to B
+                moveOk = order (*ta) == "Limiter,EQ Six" && order (*tb) == "Saturator";
+                DragDrop::placeDevice (*eq, tb, tb->pluginList, nullptr, true);          // copy to B
+                copyOk = order (*ta) == "Limiter,EQ Six" && order (*tb) == "Saturator,EQ Six";
+                rep.check (reorderOk && moveOk && copyOk, "Drag devices: reorder, move and copy to another track", order (*ta) + " | " + order (*tb));
+
+                auto rp = DrumRack::create (*edit, true);
+                PluginMenu::insertPlugin (ta, ta->pluginList, rp, nullptr);
+                DragDrop::placeDevice (*rp, tb, tb->pluginList, nullptr, true);
+                auto copyRack = DrumRack::findOnTrack (*tb);
+                rackCopyOwn = copyRack != nullptr && copyRack->type != DrumRack::rackOf (rp.get())
+                              && DrumRack::usedPads (*copyRack->type).size() == 11;
+                rep.check (rackCopyOwn, "Copying a Drum Rack gives the copy its own pads");
+            }
+
+            // session clips: move and copy between slots
+            bool slotMove = false, slotCopy = false;
+            if (ta != nullptr && tb != nullptr)
+            {
+                ta->getClipSlotList().ensureNumberOfSlots (4);
+                tb->getClipSlotList().ensureNumberOfSlots (4);
+                auto sa = ta->getClipSlotList().getClipSlots();
+                auto sb = tb->getClipSlotList().getClipSlots();
+                auto mc = te::insertMIDIClip (*sa[0], "Slot clip", { te::TimePosition(), te::TimePosition::fromSeconds (2.0) });
+                if (mc != nullptr)
+                {
+                    mc->getSequence().addNote (60, te::BeatPosition(), te::BeatDuration::fromBeats (1.0), 100, 0, nullptr);
+                    DragDrop::placeClipInSlot (*mc, *sb[1], false);
+                    slotMove = sa[0]->getClip() == nullptr && sb[1]->getClip() != nullptr;
+                    if (auto moved = sb[1]->getClip())
+                    {
+                        DragDrop::placeClipInSlot (*moved, *sa[2], true);
+                        auto copy = dynamic_cast<te::MidiClip*> (sa[2]->getClip());
+                        slotCopy = copy != nullptr && sb[1]->getClip() != nullptr && copy != sb[1]->getClip()
+                                   && copy->getSequence().getNumNotes() == 1;
+                    }
+                }
+            }
+            rep.check (slotMove && slotCopy, "Drag session clips between slots (move, Ctrl copies)");
+            for (auto t : { ta, tb, tc }) if (t != nullptr) edit->deleteTrack (t);
         }
 
         // --- undo -------------------------------------------------------------------------------

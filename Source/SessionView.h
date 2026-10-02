@@ -5,6 +5,7 @@
 #include "PluginMenu.h"
 #include "Icons.h"
 #include "Meters.h"
+#include "DragDrop.h"
 
 //==============================================================================
 /** Launching helpers (adapted from Tracktion's ClipLauncher demo). */
@@ -472,13 +473,29 @@ public:
         }
     }
 
-    // Drops: files from the browser / Explorer
-    bool isInterestedInDragSource (const SourceDetails& d) override { return d.description == "PulseFiles"; }
+    // drag a clip to another slot (Ctrl copies)
+    void mouseDrag (const MouseEvent& e) override
+    {
+        auto clip = slot->getClip();
+        if (clip == nullptr || dragStarted || e.mods.isPopupMenu() || e.getMouseDownX() < 24 || e.getDistanceFromDragStart() < 6) return;
+        dragStarted = true;
+        DragDrop::start (*this, DragDrop::slotPrefix + clip->itemID.toString(), clip->getName(), track->getColour());
+    }
+    void mouseUp (const MouseEvent&) override { dragStarted = false; }
+
+    // Drops: files from the browser / Explorer, and clips from other slots
+    bool isInterestedInDragSource (const SourceDetails& d) override { return d.description == "PulseFiles" || DragDrop::is (d.description, DragDrop::slotPrefix); }
     void itemDragEnter (const SourceDetails&) override { setHighlight (true); }
     void itemDragExit (const SourceDetails&) override  { setHighlight (false); }
     void itemDropped (const SourceDetails& d) override
     {
         setHighlight (false);
+        if (DragDrop::is (d.description, DragDrop::slotPrefix))
+        {
+            if (auto c = DragDrop::clipFrom (evs.edit, d.description))
+                DragDrop::placeClipInSlot (*c, *slot, ModifierKeys::currentModifiers.isCtrlDown());
+            return;
+        }
         auto files = ClipImport::filesFromDrag (d);
         if (! files.isEmpty()) importFile (files.getFirst());
     }
@@ -558,7 +575,7 @@ private:
     te::AudioTrack* track;
     te::ClipSlot* slot;
     std::shared_ptr<FileChooser> chooser;
-    bool dropHighlight = false;
+    bool dropHighlight = false, dragStarted = false;
 };
 
 //==============================================================================
@@ -809,7 +826,8 @@ private:
             const auto sceneName = sc != nullptr ? sc->name.get() : String();
             b->setText (sceneName.isNotEmpty() ? sceneName : "Scene " + String (s + 1));
             b->setIconColour (Theme::green);
-            b->setTooltip ("Launch every clip in this row");
+            b->setTooltip ("Launch every clip in this row (right-click to rename)");
+            b->addMouseListener (this, false);
             b->onClick = [this, s] { Launcher::launchScene (evs.edit, s); };
             grid.addAndMakeVisible (b);
         }
@@ -837,6 +855,27 @@ private:
         const int sx = 8 + numTracks * colW + 12;
         for (int s = 0; s < numScenes; ++s)
             sceneBtns[s]->setBounds (sx, headH + s * rowH + 4, sceneW - 8, rowH - 8);
+    }
+
+    void mouseDown (const MouseEvent& e) override
+    {
+        const int s = sceneBtns.indexOf (dynamic_cast<IconButton*> (e.eventComponent));
+        if (s < 0 || ! e.mods.isPopupMenu()) return;
+        auto scene = evs.edit.getSceneList().getScenes()[s];
+        if (scene == nullptr) return;
+        auto* w = new AlertWindow ("Rename scene", {}, MessageBoxIconType::NoIcon);
+        w->addTextEditor ("name", scene->name.get().isNotEmpty() ? scene->name.get() : "Scene " + String (s + 1));
+        w->addButton ("OK", 1, KeyPress (KeyPress::returnKey));
+        w->addButton ("Cancel", 0, KeyPress (KeyPress::escapeKey));
+        w->enterModalState (true, ModalCallbackFunction::create ([this, w, sc = scene] (int r)
+        {
+            if (r == 1)
+            {
+                evs.edit.getUndoManager().beginNewTransaction ("Rename scene");
+                sc->name = w->getTextEditorContents ("name").trim();
+                markAndUpdate (rebuildFlag);
+            }
+        }), true);
     }
 
     void timerCallback() override

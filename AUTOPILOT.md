@@ -47,7 +47,7 @@ when you start, touch it after each step, and delete it when you stop.
    - ~~v0.21 UI levels + colours~~ (done): shared LevelMeter (peak hold, clip LED); meters in track headers, session
      columns, master meter in the top bar, better mixer meters; track colour palette + inline rename, track
      numbers, master track row; clips use track colour; session view mixer footer.
-   - v0.22 Drag and drop: reorder tracks by dragging headers, drag device cards to reorder / onto other tracks
+   - ~~v0.22 Drag and drop~~ (done): reorder tracks by dragging headers, drag device cards to reorder / onto other tracks
      (Ctrl = copy), drag clips between arrangement and session slots, drag images + insertion indicators.
    - v0.23 Look and feel: browser with category sidebar (Instruments, Audio Effects, MIDI Effects, Drums,
      Plugins, Samples, Favourites, Places); piano roll notes in track colour with velocity shading; device and
@@ -86,3 +86,4 @@ when you start, touch it after each step, and delete it when you stop.
   top bar and mixer (dB scale, peak readout); 32-colour palette; track numbers; richer demo song (drums, bass,
   chords, lead, pad, session scenes); --snapshots mode. 139 checks pass. Note: snapshot playback depends on the
   audio device being free; meter logic is covered by a self-test instead.
+- 2026-10-02: v0.22.0 drag and drop: tracks, devices (reorder / to other tracks, Ctrl copy), session clips, scene rename. 143 checks pass.

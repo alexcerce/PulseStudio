@@ -8,6 +8,7 @@
 #include "Macros.h"
 #include "MidiLearn.h"
 #include "DrumRack.h"
+#include "DragDrop.h"
 #include "StateControls.h"
 #include "Icons.h"
 #include "CrashGuard.h"
@@ -20,6 +21,19 @@ class CardBase : public Component
 {
 public:
     static constexpr int headerH = 36;
+
+    /** Cards for a device can be dragged by their header: to reorder the chain, or onto a track
+        header in the arrangement to move it there (Ctrl copies). */
+    te::Plugin::Ptr dragPlugin;
+
+    void mouseDrag (const MouseEvent& e) override
+    {
+        if (dragPlugin == nullptr || dragStarted || e.getMouseDownY() > headerH || e.getDistanceFromDragStart() < 6) return;
+        dragStarted = true;
+        DragDrop::start (*this, DragDrop::devicePrefix + dragPlugin->itemID.toString(), dragPlugin->getName(), Theme::accent);
+    }
+    void mouseUp (const MouseEvent&) override { dragStarted = false; }
+    bool dragStarted = false;
 
     void paintCard (Graphics& g, Colour stripe, bool enabled)
     {
@@ -65,6 +79,8 @@ public:
         title.setText (plugin->getName(), dontSendNotification);
         title.setFont (FontOptions (13.5f, Font::bold));
         title.setInterceptsMouseClicks (false, false);
+        title.setTooltip ("Drag the header to move this device (onto a track header to move it to that track; Ctrl copies)");
+        dragPlugin = plugin;
 
         editBtn.onClick  = [this] { openEditor(); };
         restartBtn.onClick = [this] { if (auto sb = dynamic_cast<pulse::SandboxedPlugin*> (plugin.get())) { sb->restart(); updateSandboxStatus(); } };
@@ -499,6 +515,8 @@ public:
     {
         title.setText ("Sampler", dontSendNotification);
         title.setFont (FontOptions (13.5f, Font::bold));
+        title.setInterceptsMouseClicks (false, false);
+        dragPlugin = holder;
         power.setClickingTogglesState (true);
         power.setColour (TextButton::buttonOnColourId, Theme::green);
         power.setToggleState (sampler.isEnabled(), dontSendNotification);
@@ -704,26 +722,67 @@ public:
     // Devices dragged from the browser land at the end of the chain.
     bool isInterestedInDragSource (const SourceDetails& d) override
     {
-        return ClipImport::isPluginDescription (d.description) && currentList() != nullptr;
+        return (ClipImport::isPluginDescription (d.description) || DragDrop::is (d.description, DragDrop::devicePrefix)) && currentList() != nullptr;
     }
 
-    void itemDragEnter (const SourceDetails&) override { dropHighlight = true; repaint(); }
-    void itemDragExit (const SourceDetails&) override  { dropHighlight = false; repaint(); }
+    void itemDragEnter (const SourceDetails& d) override { dropHighlight = true; itemDragMove (d); }
+    void itemDragExit (const SourceDetails&) override    { dropHighlight = false; insertX = -1; repaint(); }
+
+    void itemDragMove (const SourceDetails& d) override
+    {
+        auto [before, x] = insertionAt (d.localPosition);
+        ignoreUnused (before);
+        if (x != insertX) { insertX = x; repaint(); }
+    }
 
     void itemDropped (const SourceDetails& d) override
     {
         dropHighlight = false;
+        auto [before, x] = insertionAt (d.localPosition);
+        ignoreUnused (x);
+        insertX = -1;
         repaint();
-        if (auto* list = currentList())
-            Presets::applyDescription (currentTrack(), *list, d.description.toString());
+        auto* list = currentList();
+        if (list == nullptr) return;
+        if (DragDrop::is (d.description, DragDrop::devicePrefix))
+        {
+            if (auto p = DragDrop::pluginFrom (evs.edit, d.description))
+                DragDrop::placeDevice (*p, currentTrack(), *list, before, ModifierKeys::currentModifiers.isCtrlDown());
+            return;
+        }
+        evs.edit.getUndoManager().beginNewTransaction ("Add device");
+        Presets::applyDescription (currentTrack(), *list, d.description.toString());
+        if (before != nullptr)   // browser devices land where they were dropped
+            if (auto added = list->getPlugins().getLast().get(); added != nullptr && added != before)
+            {
+                auto at = dynamic_cast<te::AudioTrack*> (currentTrack());
+                auto newest = (at != nullptr && at->getVolumePlugin() != nullptr) ? (*list)[list->indexOf (at->getVolumePlugin()) - 1] : added;
+                if (newest != nullptr && newest != before) DragDrop::placeDevice (*newest, currentTrack(), *list, before, false);
+            }
+    }
+
+    /** The device a drop at this point goes before (nullptr = the end) and the x of the insertion line. */
+    std::pair<te::Plugin*, int> insertionAt (juce::Point<int> pos)
+    {
+        auto p = rack.getLocalPoint (this, pos);
+        for (auto& [card, plugin] : pluginCards)
+            if (p.x < card->getBounds().getCentreX())
+                return { plugin, getLocalPoint (&rack, juce::Point<int> (card->getX() - 4, 0)).x };
+        const int endX = pluginCards.empty() ? addBtn.getX() - 4 : pluginCards.back().first->getRight() + 4;
+        return { nullptr, getLocalPoint (&rack, juce::Point<int> (endX, 0)).x };
     }
 
     void paintOverChildren (Graphics& g) override
     {
         if (dropHighlight)
         {
+            g.setColour (Theme::accent.withAlpha (0.5f));
+            g.drawRect (getLocalBounds(), 1);
+        }
+        if (insertX >= 0)
+        {
             g.setColour (Theme::accent);
-            g.drawRect (getLocalBounds(), 2);
+            g.fillRoundedRectangle ((float) insertX - 1.5f, 34.0f, 3.0f, (float) getHeight() - 40.0f, 1.5f);
         }
     }
 
@@ -783,6 +842,7 @@ private:
     void rebuild()
     {
         cards.clear();
+        pluginCards.clear();
         shown = visiblePlugins();
 
         auto* at = dynamic_cast<te::AudioTrack*> (currentTrack());
@@ -804,6 +864,7 @@ private:
             else
                 c = new PluginCard (evs, p, [this] (te::Plugin& pl, int dir) { movePlugin (pl, dir); });
             rack.addAndMakeVisible (cards.add (c));
+            pluginCards.push_back ({ c, p });
         }
 
         if (showMaster)
@@ -909,4 +970,6 @@ private:
     int shownModifiers = 0;
     Label heading;
     bool showMaster = false, dropHighlight = false;
+    std::vector<std::pair<Component*, te::Plugin*>> pluginCards;
+    int insertX = -1;
 };
