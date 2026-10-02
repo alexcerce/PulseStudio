@@ -16,6 +16,8 @@
 #include "PulseSynths.h"
 #include "LinkSync.h"
 #include "Push2Display.h"
+#include "AudioToMidi.h"
+#include "Stems.h"
 
 /** "Pulse Studio.exe --selftest report.txt"
     Builds a scratch project in the temp folder, exercises the editing / routing / device
@@ -598,6 +600,126 @@ namespace SelfTest
             rep.check (bytes.size() == 327680 && bytes[0] == (0x1F ^ 0xE7) && bytes[1] == (0x00 ^ 0xF3)
                          && bytes[2] == (0x00 ^ 0xE7) && bytes[3] == (0xF8 ^ 0xFF) && bytes[2048] == 0xE7,
                        "Push 2 display frame encoding");
+        }
+
+        // --- audio to MIDI, stems, ARA -----------------------------------------------------------
+        {
+            const double sr = 44100.0;
+            auto tone = [sr] (AudioBuffer<float>& b, double t0, double len, double hz, float amp, int harmonics = 1)
+            {
+                for (int i = (int) (t0 * sr); i < jmin (b.getNumSamples(), (int) ((t0 + len) * sr)); ++i)
+                {
+                    const double t = i / sr - t0;
+                    const float env = (float) jmin (1.0, t * 200.0, (len - t) * 200.0);
+                    float v = 0;
+                    for (int h = 1; h <= harmonics; ++h) v += (float) std::sin (MathConstants<double>::twoPi * hz * h * t) / (float) h;
+                    b.addSample (0, i, v * amp * env);
+                }
+            };
+            auto hz = [] (int midi) { return 440.0 * std::pow (2.0, (midi - 69) / 12.0); };
+
+            // melody: A3 C4 E4 G4
+            AudioBuffer<float> mel (1, (int) (sr * 1.5));
+            mel.clear();
+            const int melody[] = { 57, 60, 64, 67 };
+            for (int i = 0; i < 4; ++i) tone (mel, 0.05 + i * 0.35, 0.3, hz (melody[i]), 0.5f, 3);
+            auto mNotes = AudioToMidi::detect (AudioToMidi::Mode::melody, mel.getReadPointer (0), mel.getNumSamples(), sr);
+            String got;
+            for (auto& n : mNotes) got << n.pitch << " ";
+            rep.check (mNotes.size() == 4 && mNotes[0].pitch == 57 && mNotes[1].pitch == 60 && mNotes[2].pitch == 64 && mNotes[3].pitch == 67,
+                       "Audio to MIDI: melody", got.trim());
+
+            // drums: kicks on the beat, hats off the beat
+            AudioBuffer<float> drums (1, (int) (sr * 2.0));
+            drums.clear();
+            Random rng (42);
+            for (int k = 0; k < 4; ++k)
+            {
+                const int k0 = (int) (k * 0.5 * sr), h0 = (int) ((k * 0.5 + 0.25) * sr);
+                for (int i = 0; i < (int) (0.2 * sr); ++i)   // kick: falling sine
+                {
+                    const double t = i / sr;
+                    drums.addSample (0, k0 + i, (float) (0.9 * std::exp (-t * 18.0) * std::sin (MathConstants<double>::twoPi * (55.0 + 80.0 * std::exp (-t * 40.0)) * t)));
+                }
+                float prev = 0;
+                for (int i = 0; i < (int) (0.06 * sr); ++i)  // hat: differentiated noise burst
+                {
+                    const float nz = rng.nextFloat() * 2.0f - 1.0f;
+                    drums.addSample (0, h0 + i, (nz - prev) * 0.35f * (float) std::exp (-i / sr * 60.0));
+                    prev = nz;
+                }
+            }
+            auto dNotes = AudioToMidi::detect (AudioToMidi::Mode::drums, drums.getReadPointer (0), drums.getNumSamples(), sr);
+            int kicks = 0, hats = 0;
+            got.clear();
+            for (auto& n : dNotes) { got << n.pitch << "@" << String (n.start, 2) << " "; kicks += n.pitch == 36; hats += n.pitch == 42; }
+            rep.check (kicks == 4 && hats == 4 && dNotes.size() == 8, "Audio to MIDI: drums (kick / hi-hat)", got.trim());
+
+            // harmony: a C major triad with harmonics
+            AudioBuffer<float> chord (1, (int) (sr * 1.5));
+            chord.clear();
+            for (int p : { 60, 64, 67 }) tone (chord, 0.0, 1.5, hz (p), 0.25f, 3);
+            auto hNotes = AudioToMidi::detect (AudioToMidi::Mode::harmony, chord.getReadPointer (0), chord.getNumSamples(), sr);
+            std::set<int> pitches;
+            got.clear();
+            for (auto& n : hNotes) { pitches.insert (n.pitch); got << n.pitch << " "; }
+            rep.check (pitches.count (60) && pitches.count (64) && pitches.count (67) && pitches.size() <= 4, "Audio to MIDI: harmony (chord)", got.trim());
+
+            // end to end on a clip
+            auto melFile = dir.getChildFile ("melody.wav");
+            {
+                melFile.deleteFile();
+                WavAudioFormat wav;
+                std::unique_ptr<FileOutputStream> out (melFile.createOutputStream());
+                if (auto w = std::unique_ptr<AudioFormatWriter> (wav.createWriterFor (out.get(), sr, 1, 24, {}, 0)))
+                {
+                    out.release();
+                    w->writeFromAudioSampleBuffer (mel, 0, mel.getNumSamples());
+                }
+            }
+            auto vox = ClipImport::createContentTrack (*edit, "Vox", false);
+            te::Clip::Ptr vc = ClipImport::importFile (*vox, *edit, melFile, bars (1));
+            if (auto w = dynamic_cast<te::WaveAudioClip*> (vc.get()))
+            {
+                int count = 0;
+                auto t = AudioToMidi::convertClip (*w, AudioToMidi::Mode::melody, &count);
+                auto mc = t != nullptr && ! t->getClips().isEmpty() ? dynamic_cast<te::MidiClip*> (t->getClips()[0]) : nullptr;
+                rep.check (mc != nullptr && mc->getSequence().getNumNotes() == 4 && EngineHelpers::trackHasInstrument (*t)
+                             && std::abs ((mc->getPosition().getStart() - bars (1)).inSeconds()) < 0.001,
+                           "Convert audio clip to a new MIDI track", String (count) + " notes");
+
+                // stem separation (only when the Demucs environment is set up)
+                if (Stems::isInstalled())
+                {
+                    rep.step ("running Demucs (first run downloads the model)");
+                    auto stemsDir = dir.getChildFile ("stems");
+                    String log;
+                    auto res = Stems::separate (melFile, stemsDir, [] (float) { return true; }, &log);
+                    float loudest = -200.0f;
+                    if (res.wasOk())
+                        for (auto& name : Stems::stemNames())
+                            loudest = jmax (loudest, peakDb (engine, stemsDir.getChildFile ("htdemucs").getChildFile (name + ".wav")));
+                    rep.check (res.wasOk() && loudest > -40.0f, "Stem separation (Demucs)",
+                               res.wasOk() ? "4 stems, loudest " + String (loudest, 1) + " dBFS" : res.getErrorMessage().substring (0, 300));
+                    if (res.wasOk())
+                    {
+                        auto folder = Stems::importStems (*w, stemsDir.getChildFile ("htdemucs"));
+                        int stemClips = 0;
+                        if (folder != nullptr)
+                            for (auto st : te::getAudioTracks (*edit))
+                                if (st->getParentFolderTrack() == folder) stemClips += st->getClips().size();
+                        rep.check (stemClips == 4 && w->isMuted(), "Import stems as a group (original muted)");
+                    }
+                }
+                else
+                {
+                    rep.lines.add ("NOTE  stem separation not set up - skipped (" + Stems::envFolder().getFullPathName() + ")");
+                }
+            }
+            vc = nullptr;
+
+            rep.check (JUCE_PLUGINHOST_ARA == 1 && TRACKTION_ENABLE_ARA == 1 && te::TimeStretcher::isARA (te::TimeStretcher::ara),
+                       "ARA hosting compiled in", String (engine.getPluginManager().getARACompatiblePlugDescriptions().size()) + " ARA plugins known");
         }
 
         // --- undo -------------------------------------------------------------------------------

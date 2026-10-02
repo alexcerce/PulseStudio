@@ -8,6 +8,8 @@
 #include "EditingOps.h"
 #include "Presets.h"
 #include "Workflow.h"
+#include "AudioToMidi.h"
+#include "Stems.h"
 
 //==============================================================================
 /** Draws a bar/beat grid between x positions for the given view. */
@@ -228,7 +230,8 @@ public:
         }
         else if (auto wac = dynamic_cast<te::WaveAudioClip*> (clip.get()))
         {
-            showAudioClipPanel (*wac, *this);
+            if (wac->isUsingARA()) te::showARAWindow (*wac);
+            else                   showAudioClipPanel (*wac, *this);
         }
     }
 
@@ -314,13 +317,14 @@ private:
         g.fillRect (outX - 3.0f, top - 1.0f, 6.0f, 6.0f);
 
         // gain readout in the header
-        if (std::abs (ac.getGainDB()) > 0.05f || ac.getIsReversed() || ac.getAutoTempo() || std::abs (ac.getPitchChange()) > 0.01f)
+        if (std::abs (ac.getGainDB()) > 0.05f || ac.getIsReversed() || ac.getAutoTempo() || ac.isUsingARA() || std::abs (ac.getPitchChange()) > 0.01f)
         {
             String tags;
             if (std::abs (ac.getGainDB()) > 0.05f) tags << String (ac.getGainDB(), 1) << " dB  ";
             if (std::abs (ac.getPitchChange()) > 0.01f) tags << String (ac.getPitchChange(), 1) << " st  ";
             if (ac.getIsReversed()) tags << "REV  ";
-            if (ac.getAutoTempo()) tags << "WARP";
+            if (ac.getAutoTempo()) tags << "WARP  ";
+            if (ac.isUsingARA()) tags << "ARA";
             g.setColour (Colours::black.withAlpha (0.8f));
             g.setFont (FontOptions (10.5f));
             g.drawText (tags.trim(), header.reduced (5.0f, 0.0f), Justification::centredRight, false);
@@ -565,6 +569,76 @@ private:
         m.addSubMenu ("Clip length (repeats the loop)", clipLenMenu);
     }
 
+    /** Convert to MIDI, stem separation and ARA (Melodyne etc). */
+    void addAudioToolItems (PopupMenu& m, te::WaveAudioClip& wac)
+    {
+        te::Clip::Ptr c = &wac;
+        auto* sm = &evs.selectionManager;
+        m.addSeparator();
+
+        PopupMenu toMidi;
+        const std::pair<AudioToMidi::Mode, const char*> modes[] = { { AudioToMidi::Mode::drums, "Drums (kick / snare / hi-hat)" },
+                                                                    { AudioToMidi::Mode::melody, "Melody (monophonic)" },
+                                                                    { AudioToMidi::Mode::harmony, "Harmony (chords)" } };
+        for (auto [mode, name] : modes)
+            toMidi.addItem (name, [c, mode, sm]
+            {
+                if (auto w = dynamic_cast<te::WaveAudioClip*> (c.get()))
+                {
+                    w->edit.getUndoManager().beginNewTransaction ("Convert to MIDI");
+                    int count = 0;
+                    if (auto t = AudioToMidi::convertClip (*w, mode, &count))
+                        sm->selectOnly (t);
+                    if (count == 0)
+                        AlertWindow::showMessageBoxAsync (MessageBoxIconType::InfoIcon, "Convert to MIDI", "No notes were detected in this clip.");
+                }
+            });
+        m.addSubMenu ("Convert to new MIDI track", toMidi);
+
+        m.addItem (String ("Separate stems (Demucs)") + (Stems::isInstalled() ? "..." : " - set up..."), [c]
+        {
+            if (auto w = dynamic_cast<te::WaveAudioClip*> (c.get()))
+                Stems::separateClipInteractive (*w);
+        });
+
+        // ARA: Melodyne and other ARA plugins edit the clip's audio directly
+        PopupMenu ara;
+        auto araPlugins = wac.edit.engine.getPluginManager().getARACompatiblePlugDescriptions();
+        const bool using_ = wac.isUsingARA();
+        for (auto& d : araPlugins)
+            ara.addItem ("Edit with " + d.name, true, using_ && wac.araPluginDescription.get().name == d.name, [c, d]
+            {
+                if (auto w = dynamic_cast<te::WaveAudioClip*> (c.get()))
+                {
+                    w->edit.getUndoManager().beginNewTransaction ("Use ARA plugin");
+                    w->araPluginDescription = d;
+                    w->setTimeStretchMode (te::TimeStretcher::ara);
+                    if (w->setupARA (false))
+                        te::showARAWindow (*w);
+                }
+            });
+        if (araPlugins.isEmpty())
+            ara.addItem ("No ARA plugins found - install one (e.g. Melodyne), then rescan in Plugins...", false, false, nullptr);
+        if (using_)
+        {
+            ara.addSeparator();
+            ara.addItem ("Open " + wac.araPluginDescription.get().name + " editor", [c]
+            {
+                if (auto w = dynamic_cast<te::WaveAudioClip*> (c.get())) te::showARAWindow (*w);
+            });
+            ara.addItem ("Stop using ARA", [c]
+            {
+                if (auto w = dynamic_cast<te::WaveAudioClip*> (c.get()))
+                {
+                    w->edit.getUndoManager().beginNewTransaction ("Stop using ARA");
+                    te::hideARAWindow (*w);
+                    w->setTimeStretchMode (te::TimeStretcher::defaultMode);
+                }
+            });
+        }
+        m.addSubMenu (using_ ? "ARA (" + wac.araPluginDescription.get().name + ")" : String ("ARA (Melodyne...)"), ara);
+    }
+
     void addWarpItems (PopupMenu& m, te::AudioClipBase& ac)
     {
         te::Clip::Ptr c = &ac;
@@ -643,6 +717,7 @@ private:
             m.addSeparator();
             m.addItem ("Clip properties...", [this, wac] { showAudioClipPanel (*wac, *this); });
             addWarpItems (m, *wac);
+            addAudioToolItems (m, *wac);
             m.addItem ("Reverse", true, wac->getIsReversed(), [wac] { wac->setIsReversed (! wac->getIsReversed()); });
             m.addItem ("Remove fades", [wac] { wac->setFadeIn ({}); wac->setFadeOut ({}); });
             m.addItem ("Reset gain", [wac] { wac->setGainDB (0.0f); });

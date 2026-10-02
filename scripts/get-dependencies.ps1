@@ -16,3 +16,4 @@ Get-Repo "https://github.com/Tracktion/tracktion_engine.git" (Join-Path $ext "tr
 # JUCE comes in as tracktion_engine's submodule (37c894f83d379179b2070d437ccd0f1cd9af9576)
 Get-Repo "https://github.com/Ableton/link.git" (Join-Path $ext "link") "45931b8bd2a7066f1950f2a0beab81a0c51f28fe"   # Link-3.1.5
 Get-Repo "https://github.com/libusb/libusb.git" (Join-Path $ext "libusb") "15a7ebb4d426c5ce196684347d2b7cafad862626" # v1.0.29
+Get-Repo "https://github.com/Celemony/ARA_SDK.git" (Join-Path $ext "ARA_SDK") "e723ce48a917b1ce2d7851c78e468f36b51ea151"  # releases/2.2.0 (ARA_API + ARA_Library)

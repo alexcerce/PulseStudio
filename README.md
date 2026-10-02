@@ -4,7 +4,7 @@ A native Windows DAW built with C++, [JUCE](https://juce.com) and [Tracktion Eng
 
 ## Install
 
-Run `dist/PulseStudio-0.6.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
+Run `dist/PulseStudio-0.7.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
 
 ## Build
 
@@ -48,6 +48,17 @@ Projects are saved as `.tracktionedit` files in `Documents/Pulse Studio/`. Prese
 - **Keyboard editing:** the arrow keys move the selected clips. ←/→ move by the grid (Shift = 1 bar) and ↑/↓ move them to the track above or below. **Z** zooms to the selection (Shift+Z = whole song), **+**/**−** zoom, and **Ctrl+L** loops the selection.
 - **Clip looping:** right-click a MIDI or audio clip → *Loop clip*, then drag the right edge (or use *Clip length*) to repeat it. For example, loop a 1-bar clip across 8 bars. *Loop length* sets the looped region; dashed lines mark each repeat.
 - **Warp markers** (audio): right-click → *Warp markers*. Double-click the strip at the bottom of the clip to add a marker, drag markers to move audio onto the beat (Alt = no snap), and right-click a marker to delete it. You can also add markers at the playhead or at every detected transient.
+
+### Audio tools (right-click an audio clip)
+- **Convert to new MIDI track:** puts a new track under the clip with a MIDI clip lined up to the audio.
+  - **Drums:** onsets become kick, snare and hi-hat notes on a Drum Rack.
+  - **Melody:** monophonic pitch tracking, played by a Wavetable synth.
+  - **Harmony:** chords and polyphony, played by a Wavetable synth.
+- **Separate stems (Demucs):** splits the clip into drums, bass, vocals and other with Meta's open-source Demucs model. The stems arrive as a group of four tracks lined up with the clip, and the original clip is muted.
+  - The first use offers a one-time setup: a private Python environment with PyTorch (CPU) and Demucs, about 1.5 GB, in `Documents/Pulse Studio/Tools/stems-env`. Your system Python is left alone. It needs Python 3.9-3.12 from python.org.
+  - The first separation downloads the model (about 80 MB).
+  - Expect roughly 1-2× the song's length on a typical CPU.
+- **ARA (Melodyne, etc.):** *ARA → Edit with …* hands the clip to an ARA plugin, and double-clicking the clip opens its editor. Edits are saved with the project, and *Stop using ARA* returns to normal playback. ARA plugins appear after a VST3 rescan (*Plugins → Options → Scan*).
 
 ### Session view (Tab)
 - An Ableton-style clip launcher with scenes and launch quantisation. Clips loop until stopped.
@@ -159,7 +170,7 @@ Pulse's own devices have cards with labelled sections and a live display. Every 
 ## Command line
 
 - `--render out.wav` renders the last project offline and exits.
-- `--selftest report.txt` builds a scratch project and runs 72 checks, including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--selftest report.txt` builds a scratch project and runs 80 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
 - `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
 
 ## Code layout
@@ -177,6 +188,8 @@ All app code is header-only in `Source/` and compiled through `Main.cpp`.
 | `Push2.h` | Ableton Push 2 controller (modes, step sequencer, display drawing) |
 | `Push2Display.h`, `Push2Usb.cpp` | Push 2 display over USB (libusb) |
 | `LinkSync.h` | Ableton Link session |
+| `AudioToMidi.h` | Drum / melody / harmony detection and conversion |
+| `Stems.h` | Demucs setup, separation and stem import |
 | `Browser.h` | File browser with synced preview, device list |
 | `PianoRoll.h` | MIDI editor and controller lanes |
 | `DeviceChain.h` | Device rack: device cards, macros, Drum Rack editor, presets |
@@ -194,4 +207,4 @@ All app code is header-only in `Source/` and compiled through `Main.cpp`.
 
 ## Licensing
 
-Third-party code is fetched into `external/` by `scripts/get-dependencies.ps1`: Tracktion Engine with JUCE, Ableton Link (GPLv2+) and libusb (LGPL-2.1). JUCE (AGPLv3) and Tracktion Engine (GPLv3) are used under their open-source licences, so this project must stay GPL-compatible. Selling a closed-source build would require commercial licences for both.
+Third-party code is fetched into `external/` by `scripts/get-dependencies.ps1`: Tracktion Engine with JUCE, Ableton Link (GPLv2+), libusb (LGPL-2.1) and the ARA SDK (Apache 2.0). Demucs (MIT) and PyTorch (BSD) are installed on demand into their own Python environment and run as a separate process. JUCE (AGPLv3) and Tracktion Engine (GPLv3) are used under their open-source licences, so this project must stay GPL-compatible. Selling a closed-source build would require commercial licences for both.

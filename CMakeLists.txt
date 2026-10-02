@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(PulseStudio VERSION 0.6.0 LANGUAGES C CXX)
+project(PulseStudio VERSION 0.7.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -14,6 +14,8 @@ set_property(GLOBAL PROPERTY USE_FOLDERS YES)
 
 # JUCE + Tracktion Engine (git submodule-style checkout in external/)
 add_subdirectory(external/tracktion_engine/modules/juce)
+# ARA SDK (Melodyne and other ARA plugins on audio clips)
+juce_set_ara_sdk_path (${CMAKE_CURRENT_SOURCE_DIR}/external/ARA_SDK)
 add_subdirectory(external/tracktion_engine/modules)
 
 # libusb (static) - drives the Ableton Push 2 display over USB
@@ -50,6 +52,8 @@ target_compile_definitions(PulseStudio PRIVATE
     # Plugin hosting
     JUCE_PLUGINHOST_VST3=1
     JUCE_PLUGINHOST_AU=0
+    JUCE_PLUGINHOST_ARA=1
+    TRACKTION_ENABLE_ARA=1
     JUCE_PLUGINHOST_LADSPA=0
     JUCE_MODAL_LOOPS_PERMITTED=1
     JUCE_STRICT_REFCOUNTEDPOINTER=1
@@ -63,6 +67,7 @@ target_compile_definitions(PulseStudio PRIVATE
     TRACKTION_ENABLE_ABLETON_LINK=1)
 
 target_include_directories(PulseStudio PRIVATE
+    external/ARA_SDK
     external/link/include
     external/link/modules/asio-standalone/asio/include)
 
