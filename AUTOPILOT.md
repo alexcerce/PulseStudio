@@ -138,3 +138,6 @@ when you start, touch it after each step, and delete it when you stop.
   193 checks pass.
 - 2026-10-02: v0.43.0 FactorySounds.h (113 files rendered on first run in ~1 s: kits, loops, multisamples; Simpler and
   sampled Drum Rack use them), automation lanes for returns and the master (AutomationLane takes any track). 196 checks pass.
+- 2026-10-02: v0.44.0 mixer: MiniEQ per strip (click adds / opens Prism EQ), SendMatrix grid, narrow strips, folded groups;
+  UndoHistory.h (menus on undo / redo, history window), Shortcuts tab in Settings. 199 checks pass.
+  (The 0.43.0 installer in dist was rebuilt by mistake from the 0.44 code; the 0.44.0 one is current.)
