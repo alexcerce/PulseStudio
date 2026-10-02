@@ -545,11 +545,12 @@ namespace pulse
     {
     public:
         enum { pStart, pEnd, pLoop, pLoopStart, pXfade, pRoot, pTranspose, pFine, pMode,
-               pA, pD, pS, pR, pFilterType, pCutoff, pReso, pVelSens, pGain, pPan };
+               pA, pD, pS, pR, pFilterType, pCutoff, pReso, pVelSens, pGain, pPan,
+               pGrainSize, pDensity, pSpray, pGrainPos };
         static inline const char* xmlTypeName = "pulseSimpler";
         static const char* getPluginName() { return "Simpler"; }
         static inline const Identifier sampleFileID { "sampleFile" };
-        static inline const StringArray modeNames { "Classic", "One-shot", "Mono" };
+        static inline const StringArray modeNames { "Classic", "One-shot", "Mono", "Granular" };
         static inline const StringArray filterNames { "Off", "Low pass", "Band pass", "High pass" };
 
         explicit Simpler (te::PluginCreationInfo info) : PulseSynth (info)
@@ -573,6 +574,10 @@ namespace pulse
             add ("velsens", "Velocity", { 0.0f, 1.0f }, 0.6f, fmt::pct);
             add ("gain", "Gain", { -36.0f, 12.0f }, 0.0f, fmt::db);
             add ("pan", "Pan", { -1.0f, 1.0f }, 0.0f, [] (float v) { return std::abs (v) < 0.01f ? String ("C") : String (roundToInt (std::abs (v) * 50)) + (v < 0 ? "L" : "R"); });
+            add ("grainsize", "Grain Size", skewed (10.0f, 500.0f, 80.0f), 80.0f, fmt::ms);
+            add ("density", "Density", skewed (2.0f, 100.0f, 20.0f), 20.0f, [] (float v) { return String (v, 1) + " /s"; });
+            add ("spray", "Spray", { 0.0f, 1.0f }, 0.1f, fmt::pct);
+            add ("grainpos", "Scan", { 0.0f, 1.0f }, 0.3f, fmt::pct);
 
             for (int i = 0; i < 16; ++i)
                 synth.addVoice (new Voice (*this));
@@ -596,7 +601,7 @@ namespace pulse
         {
             return { { "Region", { pStart, pEnd, pLoop, pLoopStart, pXfade } }, { "Pitch", { pRoot, pTranspose, pFine, pMode } },
                      { "Amp env", { pA, pD, pS, pR } }, { "Filter", { pFilterType, pCutoff, pReso } },
-                     { "Output", { pVelSens, pGain, pPan } } };
+                     { "Output", { pVelSens, pGain, pPan } }, { "Granular", { pGrainSize, pDensity, pSpray, pGrainPos } } };
         }
 
         /** Loads a sample (undoable; stored in the project as the file path). */
@@ -833,6 +838,8 @@ namespace pulse
                 if (! isVoiceActive() || data == nullptr)
                     return;
 
+                if (o.getInt (pMode) == 3) { renderGranular (out, start, num); return; }
+
                 const int len = data->buffer.getNumSamples();
                 const float* L = data->buffer.getReadPointer (0);
                 const float* R = data->buffer.getReadPointer (1);
@@ -902,6 +909,69 @@ namespace pulse
                 o.playheads[(size_t) slot].store ((float) (pos / len));
             }
 
+            /** Granular mode: short windowed grains read from around the Scan position. */
+            void renderGranular (AudioBuffer<float>& out, int start, int num)
+            {
+                const int len = data->buffer.getNumSamples();
+                const float* L = data->buffer.getReadPointer (0);
+                const float* R = data->buffer.getReadPointer (1);
+                const double s0 = jlimit (0.0, (double) len - 2, (double) jmin (o.get (pStart), o.get (pEnd)) * len);
+                const double s1 = jlimit (s0 + 1, (double) len - 1, (double) jmax (o.get (pStart), o.get (pEnd)) * len);
+                const double semis = noteNumber - o.get (pRoot) + o.get (pTranspose) + o.get (pFine) / 100.0 + bend;
+                const double rate = std::pow (2.0, semis / 12.0) * data->sampleRate / getSampleRate();
+                const double grainLen = jmax (16.0, o.get (pGrainSize) * 0.001 * getSampleRate());
+                const double interval = getSampleRate() / jmax (1.0f, o.get (pDensity));
+                const float spray = o.get (pSpray), scan = o.get (pGrainPos);
+                const float norm = 1.0f / std::sqrt (jmax (1.0f, (float) (grainLen / interval)));
+                amp.setParameters (adsrFrom (o.get (pA), o.get (pD), o.get (pS), o.get (pR)));
+                const int ftype = o.getInt (pFilterType);
+                if (ftype > 0) filter.set (o.get (pCutoff), o.get (pReso), getSampleRate());
+                const float gain = Decibels::decibelsToGain (o.get (pGain)) * (1.0f - o.get (pVelSens) * (1.0f - velocity));
+                const float pan = o.get (pPan);
+                const float gl = std::sqrt (0.5f * (1.0f - pan)) * 1.4142f, gr = std::sqrt (0.5f * (1.0f + pan)) * 1.4142f;
+
+                for (int i = 0; i < num; ++i)
+                {
+                    if ((untilNextGrain -= 1.0) <= 0.0)
+                    {
+                        untilNextGrain += interval;
+                        for (auto& g : grains)
+                            if (! g.active)
+                            {
+                                const double centre = s0 + (scan + (rng.nextFloat() - 0.5f) * spray) * (s1 - s0);
+                                g = { true, jlimit (s0, s1 - 2.0, centre), rate, 0.0, grainLen };
+                                break;
+                            }
+                    }
+                    float l = 0.0f, r = 0.0f;
+                    for (auto& g : grains)
+                    {
+                        if (! g.active) continue;
+                        const float w = 0.5f - 0.5f * std::cos (MathConstants<float>::twoPi * (float) (g.age / g.length));
+                        l += interp (L, g.pos, len) * w;
+                        r += interp (R, g.pos, len) * w;
+                        g.pos += g.inc;
+                        if (g.pos >= s1) g.pos -= (s1 - s0);
+                        if ((g.age += 1.0) >= g.length) g.active = false;
+                    }
+                    if (ftype > 0)
+                    {
+                        const int mode = ftype == 1 ? 0 : ftype == 2 ? 1 : 2;
+                        l = filter.process (l, 0, mode);
+                        r = filter.process (r, 1, mode);
+                    }
+                    const float e = amp.getNextSample() * gain * norm;
+                    out.addSample (0, start + i, l * e * gl);
+                    if (out.getNumChannels() > 1) out.addSample (1, start + i, r * e * gr);
+                    if (! amp.isActive()) { clearCurrentNote(); data.reset(); for (auto& g : grains) g.active = false; return; }
+                }
+            }
+
+            struct Grain { bool active = false; double pos = 0, inc = 1, age = 0, length = 1; };
+            std::array<Grain, 48> grains;
+            double untilNextGrain = 0.0;
+            Random rng;
+
             static inline float interp (const float* d, double p, int len) noexcept   // 4-point Hermite
             {
                 const int i = (int) p;
@@ -932,6 +1002,8 @@ namespace pulse
 #include "DrumPads.h"
 #include "UtilityDevices.h"
 #include "Loudness.h"
+#include "PulseFx2.h"
+#include "FMSynth.h"
 
 namespace pulse
 {
@@ -959,6 +1031,11 @@ namespace pulse
         pm.createBuiltInType<Tuner>();
         pm.createBuiltInType<Spectrum>();
         pm.createBuiltInType<LoudnessProbe>();
+        pm.createBuiltInType<Reverb>();
+        pm.createBuiltInType<Delay>();
+        pm.createBuiltInType<Vocoder>();
+        pm.createBuiltInType<PitchCorrect>();
+        pm.createBuiltInType<FMSynth>();
         engine.getGrooveTemplateManager().useParameterizedGrooves (true);
     }
 }

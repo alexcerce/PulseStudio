@@ -636,6 +636,148 @@ namespace DeviceDisplays
     };
 
     //==============================================================================
+    /** Reverb: the decay envelope (bright early part darkened by damping) and predelay. */
+    class ReverbDisplay : public Polled
+    {
+    public:
+        explicit ReverbDisplay (pulse::Reverb& r) : Polled (r, 15) {}
+        void paint (Graphics& g) override
+        {
+            using R = pulse::Reverb;
+            auto r = getLocalBounds().toFloat().reduced (2.0f);
+            paintPanel (g, r);
+            auto a = r.reduced (8.0f, 10.0f);
+            const float total = 4.0f;   // seconds shown
+            const float pd = pp().get (R::pPredelay) * 0.001f, decay = pp().get (R::pDecay);
+            const bool freeze = pp().getInt (R::pFreeze) > 0;
+            Path p;
+            p.startNewSubPath (a.getX(), a.getBottom());
+            for (int i = 0; i <= 100; ++i)
+            {
+                const float t = total * (float) i / 100.0f;
+                float lvl = t < pd ? 0.0f : (freeze ? 1.0f : std::pow (10.0f, -3.0f * (t - pd) / jmax (0.05f, decay)));
+                const float db = Decibels::gainToDecibels (lvl, -60.0f);
+                p.lineTo (a.getX() + a.getWidth() * (float) i / 100.0f, a.getBottom() - a.getHeight() * (db + 60.0f) / 60.0f);
+            }
+            p.lineTo (a.getRight(), a.getBottom());
+            p.closeSubPath();
+            g.setGradientFill (ColourGradient (Theme::accent.withAlpha (0.6f), a.getX(), a.getY(), Theme::accent.withAlpha (0.05f), a.getRight(), a.getY(), false));
+            g.fillPath (p);
+            g.setColour (Theme::accent);
+            g.strokePath (p, PathStrokeType (1.2f));
+            g.setColour (Theme::muted);
+            g.setFont (FontOptions (10.5f));
+            g.drawText (freeze ? String ("FROZEN") : "RT60 " + String (decay, 1) + " s", a.withHeight (14.0f), Justification::topRight);
+        }
+    };
+
+    /** Delay: the repeats over two bars, alternating sides in ping-pong mode. */
+    class DelayDisplay : public Polled
+    {
+    public:
+        explicit DelayDisplay (pulse::Delay& d) : Polled (d, 15), delay (d) {}
+        void paint (Graphics& g) override
+        {
+            using D = pulse::Delay;
+            auto r = getLocalBounds().toFloat().reduced (2.0f);
+            paintPanel (g, r);
+            auto a = r.reduced (8.0f, 10.0f);
+            const double bpm = delay.lastBpm.load();
+            const double secs = delay.delaySeconds (bpm), shown = 8.0 * 60.0 / bpm;   // two bars of 4/4
+            const float fb = pp().get (D::pFeedback);
+            const bool ping = pp().getInt (D::pPingPong) > 0;
+            g.setColour (Colours::white.withAlpha (0.06f));
+            for (int b = 0; b <= 8; ++b) g.drawVerticalLine ((int) (a.getX() + a.getWidth() * b / 8.0f), a.getY(), a.getBottom());
+            float lvl = 1.0f;
+            for (int k = 0; k < 64 && lvl > 0.02f; ++k)
+            {
+                const double t = secs * k;
+                if (t > shown) break;
+                const float x = a.getX() + a.getWidth() * (float) (t / shown);
+                const float h = a.getHeight() * 0.5f * lvl;
+                const bool left = ! ping || k % 2 == 0;
+                g.setColour (k == 0 ? Colours::white : Theme::accent.withAlpha (0.4f + 0.6f * lvl));
+                if (ping) g.fillRect (x - 1.5f, left ? a.getCentreY() - h : a.getCentreY(), 3.0f, h);
+                else      g.fillRect (x - 1.5f, a.getCentreY() - h, 3.0f, 2.0f * h);
+                if (k > 0 || ! ping) lvl *= fb;
+                if (k == 0) lvl = fb;
+            }
+            g.setColour (Theme::muted);
+            g.setFont (FontOptions (10.5f));
+            g.drawText (pp().getInt (D::pSync) > 0 ? D::noteNames[pp().getInt (D::pNote)] : String (roundToInt (secs * 1000.0)) + " ms", a.withHeight (14.0f), Justification::topRight);
+        }
+    private:
+        pulse::Delay& delay;
+    };
+
+    /** Pitch correction: the detected note against the target. */
+    class PitchCorrectDisplay : public Polled
+    {
+    public:
+        explicit PitchCorrectDisplay (pulse::PitchCorrect& p) : Polled (p, 20), pc (p) {}
+        bool alwaysRepaint() const override { return true; }
+        void paint (Graphics& g) override
+        {
+            auto r = getLocalBounds().toFloat().reduced (2.0f);
+            paintPanel (g, r);
+            const float det = pc.detectedNote.load(), tgt = pc.targetNote.load();
+            g.setFont (FontOptions (26.0f, Font::bold));
+            g.setColour (det < 0 ? Theme::muted : Theme::text);
+            g.drawText (det < 0 ? String ("--") : MidiMessage::getMidiNoteName (roundToInt (tgt), true, true, 3), r.removeFromTop (r.getHeight() * 0.6f), Justification::centred);
+            g.setFont (FontOptions (11.0f));
+            g.setColour (Theme::muted);
+            if (det >= 0)
+            {
+                const float cents = (det - tgt) * 100.0f;
+                g.drawText ("in: " + String (cents >= 0 ? "+" : "") + String (roundToInt (cents)) + " ct", r, Justification::centredTop);
+            }
+        }
+    private:
+        pulse::PitchCorrect& pc;
+    };
+
+    /** FM: the selected algorithm as a diagram (carriers at the bottom). */
+    class FMDisplay : public Polled
+    {
+    public:
+        explicit FMDisplay (pulse::FMSynth& f) : Polled (f, 10) {}
+        void paint (Graphics& g) override
+        {
+            auto r = getLocalBounds().toFloat().reduced (2.0f);
+            paintPanel (g, r);
+            const auto& alg = pulse::FMSynth::algorithms()[(size_t) jlimit (0, (int) pulse::FMSynth::algorithms().size() - 1, pp().getInt (pulse::FMSynth::pAlgorithm))];
+            // depth of each operator in its modulation chain (carriers = 0)
+            int depth[4] = { 0, 0, 0, 0 };
+            for (int pass = 0; pass < 4; ++pass)
+                for (auto [from, to] : alg.mods) depth[from] = jmax (depth[from], depth[to] + 1);
+            int perRow[4] = { 0, 0, 0, 0 }, idx[4];
+            for (int i = 0; i < 4; ++i) idx[i] = perRow[depth[i]]++;
+            auto a = r.reduced (10.0f, 12.0f);
+            auto pos = [&] (int op)
+            {
+                const float rowY = a.getBottom() - 12.0f - depth[op] * (a.getHeight() - 24.0f) / 3.0f;
+                const float x = a.getX() + a.getWidth() * (idx[op] + 1.0f) / (perRow[depth[op]] + 1.0f);
+                return juce::Point<float> (x, rowY);
+            };
+            g.setColour (Theme::muted);
+            for (auto [from, to] : alg.mods) g.drawLine (Line<float> (pos (from), pos (to)), 1.5f);
+            for (int op = 0; op < 4; ++op)
+            {
+                auto c = pos (op);
+                const bool carrier = std::find (alg.outs.begin(), alg.outs.end(), op) != alg.outs.end();
+                g.setColour (carrier ? Theme::orange : Theme::accent);
+                g.fillRoundedRectangle (Rectangle<float> (22.0f, 18.0f).withCentre (c), 4.0f);
+                g.setColour (Colours::black);
+                g.setFont (FontOptions (11.0f, Font::bold));
+                g.drawText (String (op + 1), Rectangle<float> (22.0f, 18.0f).withCentre (c), Justification::centred);
+            }
+            g.setColour (Theme::muted);
+            g.setFont (FontOptions (10.0f));
+            g.drawText (alg.name, r.reduced (4.0f).removeFromTop (12.0f), Justification::centred);
+        }
+    };
+
+    //==============================================================================
     /** Tuner: note name, a cents needle and the frequency. */
     class TunerDisplay : public Polled
     {
@@ -799,6 +941,10 @@ namespace DeviceDisplays
     inline std::unique_ptr<Component> create (EditViewState& evs, te::Plugin& p)
     {
         if (auto s = dynamic_cast<pulse::Tuner*> (&p))          return std::make_unique<TunerDisplay> (*s);
+        if (auto s = dynamic_cast<pulse::Reverb*> (&p))         return std::make_unique<ReverbDisplay> (*s);
+        if (auto s = dynamic_cast<pulse::Delay*> (&p))          return std::make_unique<DelayDisplay> (*s);
+        if (auto s = dynamic_cast<pulse::PitchCorrect*> (&p))   return std::make_unique<PitchCorrectDisplay> (*s);
+        if (auto s = dynamic_cast<pulse::FMSynth*> (&p))        return std::make_unique<FMDisplay> (*s);
         if (auto s = dynamic_cast<pulse::Spectrum*> (&p))       return std::make_unique<SpectrumDisplay> (*s);
         if (auto s = dynamic_cast<pulse::WavetableSynth*> (&p)) return std::make_unique<WavetableDisplay> (*s);
         if (auto s = dynamic_cast<pulse::Simpler*> (&p))        return std::make_unique<SimplerDisplay> (*s);

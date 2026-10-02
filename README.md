@@ -4,7 +4,7 @@ A native Windows DAW built with C++, [JUCE](https://juce.com) and [Tracktion Eng
 
 ## Install
 
-Run `dist/PulseStudio-0.25.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
+Run `dist/PulseStudio-0.26.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
 
 ## Build
 
@@ -133,11 +133,16 @@ Pulse's own devices have cards with labelled sections and a live display. Every 
 | Device | What it does |
 | --- | --- |
 | **Wavetable** | Two wavetable oscillators. There are five table sets (basic shapes, pulse width, harmonics, vowels and sync saw), and **Position** morphs through each set. Also has up to 7-voice unison with detune and stereo spread, a sub oscillator, a 12/24 dB low-pass, band-pass or high-pass filter with its own envelope, an amp envelope, an LFO to position and cutoff, and glide. Tables are band-limited per octave, so high notes don't alias. |
-| **Simpler** | A sample instrument (one sample, or a multisample mapped by note names). Drag start, end and loop-start markers on the waveform, and loop with a crossfade. Also has root note, transpose and detune, ADSR, a filter, and velocity, gain and pan. Modes are Classic, One-shot and Mono. Drop a file from the browser or Explorer onto the waveform, or click *Load*. |
+| **Simpler** | A sample instrument (one sample, or a multisample mapped by note names). Drag start, end and loop-start markers on the waveform, and loop with a crossfade. Also has root note, transpose and detune, ADSR, a filter, and velocity, gain and pan. Modes are Classic, One-shot, Mono and **Granular** (grain size, density, spray and a scan position through the sample). Drop a file from the browser or Explorer onto the waveform, or click *Load*. |
 | **EQ Six** | A 6-band EQ: low and high cut (24 dB/oct), shelves, bells and notch. Drag the numbered nodes on the curve; scroll over a node to change Q, and double-click one to turn it on or off. A live spectrum shows behind the curve. |
 | **Glue Compressor** | A bus compressor with stepped attack and release (including Auto), 2:1, 4:1 and 10:1 ratios, a range limit, makeup gain, dry/wet and soft clip. It has a gain-reduction meter. |
 | **Saturator** | Seven shapes (analog, tape, tube, hard clip, foldback, sine fold and bit crush) with 4× oversampling, bias, a tone tilt and dry/wet. It shows the transfer curve. |
 | **Auto Filter** | A low-pass, band-pass, high-pass, notch or 24 dB low-pass filter with drive. The LFO is free-running or tempo-synced (1/16 to 4 bars) with six shapes and a stereo phase offset. An envelope follower and a dry/wet control round it out. |
+| **FM Synth** | Four operators (ratio, fine, level and ADSR each) in eight algorithms, shown as a diagram, from a classic 4>3>2>1 stack to fully additive. Feedback on operator 4, a filter, velocity and glide. |
+| **Pulse Reverb** | An 8-line feedback delay network with input diffusion: predelay, size, decay (RT60, up to 20 s), damping, low cut, chorus, width, freeze and dry/wet. The display shows the decay. |
+| **Pulse Delay** | Tempo-synced (1/32 to 1 bar, dotted and triplets) or free time, feedback with low / high cut, ping-pong, wobble, drive and dry/wet. The display shows the repeats. |
+| **Vocoder** | 16 bands. The track's audio (voice) shapes a carrier: another track through the sidechain (*SC*), or an internal saw or noise. Formant shift, attack, release and an unvoiced (noise) blend. |
+| **Pitch Correction** | Detects the note and pulls it to the nearest note of a key and scale (or chromatic). *Speed* sets how fast (Instant gives the hard-tuned effect); *Amount* and dry/wet set how much. |
 | **Utility** | Gain, stereo width (0-400 %, mid/side), mono, **bass mono** below a set frequency, channel mode (stereo, left, right, swap), phase invert, balance, a DC filter and mute. |
 | **Tuner** | A chromatic tuner on any track: the note, its frequency and a cents needle (green when in tune), with a reference pitch (415-466 Hz) and an option to mute the output while tuning. |
 | **Spectrum** | A large analyser: log-frequency spectrum with block size (1024-8192), averaging, range and peak hold (double-click to reset). Hover to read the frequency and note. |
@@ -256,7 +261,7 @@ All of these can be changed in *File → Keyboard shortcuts*. New: **Ctrl+P** co
 ## Command line
 
 - `--render out.wav` renders the last project offline and exits.
-- `--selftest report.txt` builds a scratch project and runs 149 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--selftest report.txt` builds a scratch project and runs 159 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
 - `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
 
 ## Code layout

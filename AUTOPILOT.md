@@ -56,7 +56,7 @@ when you start, touch it after each step, and delete it when you stop.
      draggable clip fades, MIDI loop-record takes.
    - ~~v0.25 Mixing~~ (done): sidechain picker, mixer groups / VCA, LUFS + true-peak master meter and export
      normalisation, mixer snapshots.
-   - v0.26 Instruments/FX: Pulse Reverb and Delay with displays, FM synth (Operator-like), granular mode in
+   - ~~v0.26 Instruments/FX~~ (done): Pulse Reverb and Delay with displays, FM synth (Operator-like), granular mode in
      Simpler, vocoder, pitch correction.
    - v0.27 Performance: Push encoder MIDI learn + drum bank + step seq on remapped notes, follow actions,
      per-scene tempo, per-clip launch quantize, record session to arrangement.
@@ -90,3 +90,4 @@ when you start, touch it after each step, and delete it when you stop.
 - 2026-10-02: v0.23.0 browser sidebar (collections / categories / places, one search box), piano roll notes and drum pad names. 143 checks pass.
 - 2026-10-02: v0.24.0 MIDI tools, audio quantize (own onset detector; the engine transient detector returns none), MIDI record modes (overdub / takes / replace). 146 checks pass.
 - 2026-10-02: v0.25.0 mixing: BS.1770 loudness (probe on master, export report), Glue sidechain + duck menu (needs guessSidechainRouting), linked faders, mixer snapshots. 149 checks pass.
+- 2026-10-02: v0.26.0 Pulse Reverb (FDN), Pulse Delay, Vocoder, Pitch Correction, FM Synth, Simpler granular, device displays. 159 checks pass.

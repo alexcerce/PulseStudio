@@ -65,6 +65,7 @@ namespace PluginMenu
         }
         addBuiltIn<pulse::DrumSynth> (instruments, edit, cb);
         addBuiltIn<pulse::WavetableSynth> (instruments, edit, cb);
+        addBuiltIn<pulse::FMSynth> (instruments, edit, cb);
         addBuiltIn<pulse::Simpler> (instruments, edit, cb);
         addBuiltIn<te::FourOscPlugin> (instruments, edit, cb);
         addBuiltIn<te::SamplerPlugin> (instruments, edit, cb);
@@ -74,6 +75,10 @@ namespace PluginMenu
         addBuiltIn<pulse::Saturator> (effects, edit, cb);
         addBuiltIn<pulse::AutoFilter> (effects, edit, cb);
         addBuiltIn<pulse::Limiter> (effects, edit, cb);
+        addBuiltIn<pulse::Reverb> (effects, edit, cb);
+        addBuiltIn<pulse::Delay> (effects, edit, cb);
+        addBuiltIn<pulse::Vocoder> (effects, edit, cb);
+        addBuiltIn<pulse::PitchCorrect> (effects, edit, cb);
         addBuiltIn<pulse::Utility> (effects, edit, cb);
         addBuiltIn<pulse::Tuner> (effects, edit, cb);
         addBuiltIn<pulse::Spectrum> (effects, edit, cb);

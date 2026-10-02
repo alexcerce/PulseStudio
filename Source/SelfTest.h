@@ -374,6 +374,7 @@ namespace SelfTest
                 // analysers only watch the signal: they must pass it through unchanged instead
                 const bool analyser = String (b.type) == pulse::Spectrum::xmlTypeName;
                 if (analyser) { responds = true; moved = "nothing (analyser, passes audio through)"; }
+                if (! responds && String (b.type) == pulse::PitchCorrect::xmlTypeName) { responds = true; moved = "nothing (the test tone is already in tune)"; }
                 rep.check (sane && responds, String ("Device works: ") + b.name,
                            "out " + String (base.first, 1) + " dBFS, " + (responds ? "responds to " + moved : "no audible change from any control"));
                 p->deleteFromParent();
@@ -1722,7 +1723,8 @@ namespace SelfTest
                 LookAndFeel::setDefaultLookAndFeel (&laf);
                 EditViewState evs (*edit, sm);
                 int shots = 0;
-                for (auto type : { pulse::Tuner::xmlTypeName, pulse::Spectrum::xmlTypeName })
+                for (auto type : { pulse::Tuner::xmlTypeName, pulse::Spectrum::xmlTypeName, pulse::Reverb::xmlTypeName, pulse::Delay::xmlTypeName,
+                                   pulse::FMSynth::xmlTypeName, pulse::PitchCorrect::xmlTypeName, pulse::Vocoder::xmlTypeName })
                 {
                     auto pl = edit->getPluginCache().createNewPlugin (type, {});
                     if (ut != nullptr) ut->pluginList.insertPlugin (pl, -1, nullptr);
@@ -1747,7 +1749,7 @@ namespace SelfTest
                     pl->deleteFromParent();
                 }
                 LookAndFeel::setDefaultLookAndFeel (nullptr);
-                rep.check (shots == 2, "Tuner and Spectrum cards draw");
+                rep.check (shots == 7, "Device cards draw (Tuner, Spectrum, Reverb, Delay, FM, Pitch Correction, Vocoder)");
             }
             rep.check (std::abs (a4 - 440.0) < 1.0 && std::abs (a2 - 110.0) < 0.5 && none == 0.0
                          && std::abs (pulse::Tuner::noteOf (a4) - 69.0) < 0.02,
@@ -2124,6 +2126,183 @@ namespace SelfTest
                 t1->getVolumePlugin()->setPan (0.0f);
             }
             rep.check (snapOk, "Mixer snapshots (store / recall)");
+        }
+
+        // --- Pulse Reverb / Delay / Vocoder / Pitch Correction / FM / granular -------------------------
+        {
+            rep.step ("new instruments and effects");
+            const double sr = 48000.0;
+            const int block = 480;
+            // runs audio (and MIDI) through a plugin block by block
+            auto runAudio = [&] (te::Plugin& fx, const AudioBuffer<float>& in, std::vector<std::pair<double, MidiMessage>> midiIn = {})
+            {
+                fx.initialise ({ te::TimePosition(), sr, block });
+                AudioBuffer<float> out (2, in.getNumSamples());
+                AudioBuffer<float> audio (2, block);
+                const te::MPESourceID src = te::createUniqueMPESourceID();
+                for (int start = 0; start + block <= in.getNumSamples(); start += block)
+                {
+                    audio.copyFrom (0, 0, in, 0, start, block);
+                    audio.copyFrom (1, 0, in, in.getNumChannels() > 1 ? 1 : 0, start, block);
+                    te::MidiMessageArray midi;
+                    const double t0 = start / sr, t1 = (start + block) / sr;
+                    for (auto& [t, m] : midiIn) if (t >= t0 && t < t1) midi.addMidiMessage (m, t - t0, src);
+                    te::PluginRenderContext fc (&audio, 0, block, &midi, 0.0, { te::TimePosition::fromSeconds (t0), te::TimePosition::fromSeconds (t1) },
+                                                true, false, true, false);
+                    fx.applyToBuffer (fc);
+                    out.copyFrom (0, start, audio, 0, 0, block);
+                    out.copyFrom (1, start, audio, 1, 0, block);
+                }
+                fx.deinitialise();
+                return out;
+            };
+            auto rmsDb = [&] (const AudioBuffer<float>& b, int ch, double t0, double t1)
+            {
+                const int a = (int) (t0 * sr), n = (int) ((t1 - t0) * sr);
+                return Decibels::gainToDecibels (b.getRMSLevel (ch, a, n), -200.0f);
+            };
+            auto make = [&] (const char* type) { return edit->getPluginCache().createNewPlugin (type, {}); };
+
+            // reverb: 1 s RT60 -> ~60 dB per second; silent before the predelay
+            {
+                auto rv = make (pulse::Reverb::xmlTypeName);
+                auto* r = dynamic_cast<pulse::Reverb*> (rv.get());
+                AudioBuffer<float> in (2, (int) (sr * 2.0));
+                in.clear();
+                in.setSample (0, (int) (0.1 * sr), 1.0f); in.setSample (1, (int) (0.1 * sr), 1.0f);
+                bool ok = false;
+                String info;
+                if (r != nullptr)
+                {
+                    r->set (pulse::Reverb::pMix, 1.0f); r->set (pulse::Reverb::pDecay, 1.0f); r->set (pulse::Reverb::pPredelay, 50.0f);
+                    r->set (pulse::Reverb::pMod, 0.0f);
+                    auto out = runAudio (*r, in);
+                    const float before = rmsDb (out, 0, 0.0, 0.14), early = rmsDb (out, 0, 0.35, 0.45), late = rmsDb (out, 0, 0.85, 0.95);
+                    const float slope = (early - late) / 0.5f;   // dB per second
+                    ok = before < -80.0f && early > -70.0f && slope > 35.0f && slope < 95.0f;
+                    info = "before " + String (before, 0) + " dB, decay " + String (slope, 0) + " dB/s";
+                }
+                rep.check (ok, "Pulse Reverb (RT60 and predelay)", info);
+            }
+
+            // delay: echoes at 250 ms, -6 dB per repeat; ping-pong alternates sides
+            {
+                auto dv = make (pulse::Delay::xmlTypeName);
+                auto* d = dynamic_cast<pulse::Delay*> (dv.get());
+                AudioBuffer<float> in (2, (int) (sr * 1.0));
+                in.clear();
+                in.setSample (0, 0, 1.0f); in.setSample (1, 0, 1.0f);
+                bool ok = false, pingOk = false;
+                String info;
+                if (d != nullptr)
+                {
+                    d->set (pulse::Delay::pSync, 0.0f); d->set (pulse::Delay::pTime, 250.0f); d->set (pulse::Delay::pFeedback, 0.5f);
+                    d->set (pulse::Delay::pMix, 1.0f); d->set (pulse::Delay::pLowCut, 20.0f); d->set (pulse::Delay::pHighCut, 20000.0f);
+                    auto out = runAudio (*d, in);
+                    auto peakAt = [&] (double t) { const int a = (int) ((t - 0.01) * sr); return out.getMagnitude (0, a, (int) (0.02 * sr)); };
+                    int maxIdx = 0; float maxV = 0;
+                    for (int i = (int) (0.2 * sr); i < (int) (0.3 * sr); ++i) if (std::abs (out.getSample (0, i)) > maxV) { maxV = std::abs (out.getSample (0, i)); maxIdx = i; }
+                    const float e1 = peakAt (0.25), e2 = peakAt (0.5);
+                    ok = std::abs (maxIdx / sr - 0.25) < 0.002 && std::abs (Decibels::gainToDecibels (e2 / jmax (1.0e-6f, e1)) + 6.0f) < 1.5f;
+                    info = "first echo " + String (maxIdx / sr * 1000.0, 1) + " ms, repeat " + String (Decibels::gainToDecibels (e2 / jmax (1.0e-6f, e1)), 1) + " dB";
+                    d->set (pulse::Delay::pPingPong, 1.0f);
+                    auto pp = runAudio (*d, in);
+                    const float l1 = pp.getMagnitude (0, (int) (0.24 * sr), (int) (0.02 * sr)), r1 = pp.getMagnitude (1, (int) (0.24 * sr), (int) (0.02 * sr));
+                    const float l2 = pp.getMagnitude (0, (int) (0.49 * sr), (int) (0.02 * sr)), r2 = pp.getMagnitude (1, (int) (0.49 * sr), (int) (0.02 * sr));
+                    pingOk = l1 > 10.0f * r1 && r2 > 10.0f * l2;
+                }
+                rep.check (ok && pingOk, "Pulse Delay (time, feedback, ping-pong)", info);
+            }
+
+            // vocoder: the output follows the voice (modulator), not the carrier
+            {
+                auto vv = make (pulse::Vocoder::xmlTypeName);
+                auto* v = dynamic_cast<pulse::Vocoder*> (vv.get());
+                AudioBuffer<float> in (2, (int) sr);
+                for (int i = 0; i < in.getNumSamples(); ++i)
+                {
+                    const float x = i < (int) (0.5 * sr) ? 0.5f * std::sin ((float) i * 0.05f) + 0.2f * std::sin ((float) i * 0.23f) : 0.0f;
+                    in.setSample (0, i, x); in.setSample (1, i, x);
+                }
+                bool ok = false;
+                String info;
+                if (v != nullptr)
+                {
+                    v->set (pulse::Vocoder::pCarrier, 1.0f);   // internal saw
+                    auto out = runAudio (*v, in);
+                    const float on = rmsDb (out, 0, 0.1, 0.45), off = rmsDb (out, 0, 0.7, 0.95);
+                    ok = on > -40.0f && on - off > 30.0f;
+                    info = String (on, 1) + " dB with voice, " + String (off, 1) + " dB without";
+                }
+                rep.check (ok, "Vocoder (16 bands, internal carrier)", info);
+            }
+
+            // pitch correction: 452 Hz (A4 + 47 ct) comes out at 440 Hz
+            {
+                auto pv = make (pulse::PitchCorrect::xmlTypeName);
+                auto* pc = dynamic_cast<pulse::PitchCorrect*> (pv.get());
+                AudioBuffer<float> in (2, (int) sr);
+                for (int i = 0; i < in.getNumSamples(); ++i)
+                {
+                    const float x = 0.4f * std::sin (MathConstants<float>::twoPi * 452.0f * (float) i / (float) sr);
+                    in.setSample (0, i, x); in.setSample (1, i, x);
+                }
+                double hz = 0;
+                if (pc != nullptr)
+                {
+                    pc->set (pulse::PitchCorrect::pSpeed, 0.0f);
+                    auto out = runAudio (*pc, in);
+                    hz = pulse::Tuner::detectPitch (out.getReadPointer (0, (int) (0.5 * sr)), 4096, sr);
+                }
+                rep.check (std::abs (hz - 440.0) < 3.0, "Pitch correction (to the nearest note)", "452 Hz in -> " + String (hz, 1) + " Hz out");
+            }
+
+            // FM synth: modulation adds brightness compared with a pure sine
+            {
+                auto fv = make (pulse::FMSynth::xmlTypeName);
+                auto* fm = dynamic_cast<pulse::FMSynth*> (fv.get());
+                float pure = 0, rich = 0;
+                if (fm != nullptr)
+                {
+                    AudioBuffer<float> silence (2, (int) (sr * 0.5));
+                    silence.clear();
+                    std::vector<std::pair<double, MidiMessage>> note { { 0.01, MidiMessage::noteOn (1, 57, (uint8) 110) } };
+                    auto brightness = [&] (const AudioBuffer<float>& b)
+                    {
+                        double e = 0, d = 0;
+                        for (int i = (int) (0.1 * sr); i < (int) (0.4 * sr); ++i)
+                        {
+                            const double x = b.getSample (0, i), dx = x - b.getSample (0, i - 1);
+                            e += x * x; d += dx * dx;
+                        }
+                        return e > 0 ? (float) std::sqrt (d / e) : 0.0f;
+                    };
+                    fm->set (pulse::FMSynth::pAlgorithm, 0.0f);
+                    fm->set (pulse::FMSynth::opParam (1, pulse::FMSynth::kLevel), 0.0f);
+                    pure = brightness (runAudio (*fm, silence, note));
+                    fm->set (pulse::FMSynth::opParam (1, pulse::FMSynth::kLevel), 0.9f);
+                    fm->set (pulse::FMSynth::opParam (1, pulse::FMSynth::kRatio), 3.0f);
+                    rich = brightness (runAudio (*fm, silence, note));
+                }
+                rep.check (pure > 0.0f && rich > pure * 2.0f, "FM synth (modulation adds harmonics)", String (pure, 3) + " -> " + String (rich, 3));
+            }
+
+            // Simpler granular mode
+            {
+                auto sv = make (pulse::Simpler::xmlTypeName);
+                auto* smp = dynamic_cast<pulse::Simpler*> (sv.get());
+                float lvl = -200.0f;
+                if (smp != nullptr)
+                {
+                    smp->setSampleFile (writeTestWav (dir.getChildFile ("grain_src.wav"), 2.0, 330.0));
+                    smp->set (pulse::Simpler::pMode, 3.0f);
+                    AudioBuffer<float> silence (2, (int) (sr * 0.6));
+                    silence.clear();
+                    auto out = runAudio (*smp, silence, { { 0.01, MidiMessage::noteOn (1, 60, (uint8) 110) } });
+                    lvl = rmsDb (out, 0, 0.1, 0.5);
+                }
+                rep.check (lvl > -40.0f, "Simpler granular mode", String (lvl, 1) + " dB");
+            }
         }
 
         // --- undo -------------------------------------------------------------------------------
