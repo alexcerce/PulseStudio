@@ -4,6 +4,19 @@
 #include "PulseSynths.h"
 #include "Timeline.h"
 
+/** Recently opened projects (newest first, no duplicates). */
+namespace RecentProjects
+{
+    inline StringArray push (StringArray list, const File& f, int maxItems = 12)
+    {
+        list.removeString (f.getFullPathName(), true);
+        list.insert (0, f.getFullPathName());
+        list.removeEmptyStrings();
+        while (list.size() > maxItems) list.remove (list.size() - 1);
+        return list;
+    }
+}
+
 /** Moving projects between machines: Collect All and Save, and project templates. */
 namespace Sharing
 {

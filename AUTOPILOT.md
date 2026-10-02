@@ -47,8 +47,8 @@ when you start, touch it after each step, and delete it when you stop.
    learn for Push encoders, better browser search/tags, recent projects, auto-update of README docs).
    Pick the most valuable next item, add it to this queue, implement it, test it, commit.
    - ~~v0.19.0 Utility / Tuner / Spectrum devices~~ (done)
-   - Next ideas: audio quantize (warp markers to transients on the grid), recent-projects list on the start
-     screen, browser tags / favourites, sidechain source picker on compressor cards, MIDI learn for Push encoders.
+   - ~~v0.20.0 browser search + favourites, File > Open recent~~ (done)
+   - Next ideas: audio quantize (warp markers to transients on the grid), sidechain source picker on compressor cards, MIDI learn for Push encoders.
 
 ## Log
 
@@ -62,3 +62,4 @@ when you start, touch it after each step, and delete it when you stop.
   migrate on load), Drum Synth instrument, Simpler multisample zones. 128 checks pass. Next: queue item 3 (cycle).
 - 2026-10-02: v0.19.0 Utility (width / mono / bass mono / phase / channels), Tuner (YIN pitch, cents needle),
   Spectrum analyser. 134 checks pass.
+- 2026-10-02: v0.20.0 browser search (recursive, background thread) and favourites, File > Open recent. 138 checks pass.

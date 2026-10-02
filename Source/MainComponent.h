@@ -342,6 +342,9 @@ private:
         TransportBar::Actions a;
         a.newProject     = [this] { newProject(); };
         a.openProject    = [this] { openProject(); };
+        a.recentProjects = [this] { return StringArray::fromLines (settings().getValue ("recentProjects")); };
+        a.openRecent     = [this] (const File& f) { if (f.existsAsFile()) { saveIfNeeded(); loadEdit (f, false); } };
+        a.clearRecent    = [this] { settings().setValue ("recentProjects", String()); };
         a.saveProject    = [this] { saveProject(); };
         a.exportWav      = [this] { exportWav(); };
         a.collectAll     = [this] { collectAll(); };
@@ -544,6 +547,7 @@ private:
         restoreViewState();
         CrashGuard::endLoading();   // the project's plugins are loaded
         settings().setValue ("lastEdit", file.getFullPathName());
+        settings().setValue ("recentProjects", RecentProjects::push (StringArray::fromLines (settings().getValue ("recentProjects")), file).joinIntoString ("\n"));
         updateWindowTitle();
         resized();
         offerRecoveryIfNeeded (file);

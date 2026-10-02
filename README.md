@@ -4,7 +4,7 @@ A native Windows DAW built with C++, [JUCE](https://juce.com) and [Tracktion Eng
 
 ## Install
 
-Run `dist/PulseStudio-0.19.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
+Run `dist/PulseStudio-0.20.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
 
 ## Build
 
@@ -162,6 +162,8 @@ Pulse's own devices have cards with labelled sections and a live display. Every 
   - **Chain presets:** saves and loads the whole device chain. Chain presets also appear in the browser, so you can drag one onto a track.
 - **Macros:** 8 per track. Right-click any device knob → *Map to Macro*; a blue dot marks mapped knobs.
 - **Browser:** files with preview, plus **Sync**. While the song plays, loops are time-stretched to the project tempo and start on the next bar. Tempo is detected from the file's tag, "120bpm" in the name, or the loop length.
+  - **Search:** type in the box under the place list to search the place and all its sub-folders (every word must appear in the file name, in any order; Esc clears). Results can be previewed and dragged like the folder tree.
+  - **Favourites:** right-click a file → *Add to favourites*. The *★ Favourites* place lists them (the search box filters it too).
 
 ### Mixer and routing
 - Faders, pan, meters and mute/solo, plus submix strips for groups.
@@ -183,6 +185,7 @@ Pulse's own devices have cards with labelled sections and a live display. Every 
 - **Export MIDI** (Ctrl+Shift+M): writes the selected MIDI clips, or every MIDI clip, to a `.mid` file. You get one track per Pulse track with the tempo map, and looped clips are written out in full. A track header's right-click menu exports that track's clips.
 
 ### Projects and sharing (File menu)
+- **Open recent:** the last 12 projects you opened (*Clear list* empties it).
 - **Collect all and save** copies every sample the project uses into a `<project> Samples` folder next to it, then points the project at the copies. That covers audio clips, audio takes, Simpler and Drum Rack samples. Zip the project folder and it opens on any machine. Missing files are listed.
 - **Templates:** *Save as template...* keeps your favourite setup (tracks, devices, routing, returns, even clips). *New Project...* then offers an empty project, the demo song or any of your templates. Templates live in `Documents/Pulse Studio/Templates`.
 
@@ -241,7 +244,7 @@ All of these can be changed in *File → Keyboard shortcuts*. New: **Ctrl+P** co
 ## Command line
 
 - `--render out.wav` renders the last project offline and exits.
-- `--selftest report.txt` builds a scratch project and runs 134 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--selftest report.txt` builds a scratch project and runs 138 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
 - `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
 
 ## Code layout
@@ -261,7 +264,7 @@ All app code is header-only in `Source/` and compiled through `Main.cpp`.
 | `LinkSync.h` | Ableton Link session |
 | `AudioToMidi.h` | Drum / melody / harmony detection and conversion |
 | `Stems.h` | Demucs setup, separation and stem import |
-| `Browser.h` | File browser with synced preview, device list |
+| `Browser.h` | File browser with synced preview, search, favourites and the device list |
 | `PianoRoll.h` | MIDI editor and controller lanes |
 | `DeviceChain.h` | Device rack: device cards, macros, presets |
 | `UtilityDevices.h` | Utility, Tuner and Spectrum devices |

@@ -121,9 +121,21 @@ namespace ClipImport
     }
 
     /** Files carried by a drag from the browser's file tree. */
+    /** A component that drags files (besides FileTreeComponent), e.g. the browser's search results. */
+    struct FileDragSource
+    {
+        virtual ~FileDragSource() = default;
+        virtual Array<File> getDraggedFiles() = 0;
+    };
+
     inline Array<File> filesFromDrag (const DragAndDropTarget::SourceDetails& details)
     {
         Array<File> files;
+
+        if (auto* src = dynamic_cast<FileDragSource*> (details.sourceComponent.get()))
+            for (auto& f : src->getDraggedFiles())
+                if (isImportable (f))
+                    files.add (f);
 
         if (auto* tree = dynamic_cast<FileTreeComponent*> (details.sourceComponent.get()))
             for (int i = 0; i < tree->getNumSelectedFiles(); ++i)

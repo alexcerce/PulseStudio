@@ -373,8 +373,145 @@ private:
 
 //==============================================================================
 /** Left-hand browser: file places + tree (audio/MIDI, with preview) and the device list. */
+/** Browser helpers: favourites (stored in the settings) and file search. */
+namespace BrowserSearch
+{
+    inline StringArray favourites (PropertiesFile& s)
+    {
+        auto l = StringArray::fromLines (s.getValue ("browserFavourites"));
+        l.removeEmptyStrings();
+        return l;
+    }
+
+    inline bool isFavourite (PropertiesFile& s, const File& f) { return favourites (s).contains (f.getFullPathName()); }
+
+    inline void setFavourite (PropertiesFile& s, const File& f, bool on)
+    {
+        auto l = favourites (s);
+        if (on) l.addIfNotAlreadyThere (f.getFullPathName());
+        else    l.removeString (f.getFullPathName());
+        s.setValue ("browserFavourites", l.joinIntoString ("\n"));
+    }
+
+    /** True when every word of the query appears in the name (case-insensitive). */
+    inline bool matches (const String& name, const StringArray& words)
+    {
+        const auto n = name.toLowerCase();
+        for (auto& w : words)
+            if (! n.contains (w)) return false;
+        return true;
+    }
+
+    inline StringArray queryWords (const String& q)
+    {
+        auto w = StringArray::fromTokens (q.toLowerCase(), " ", "\"");
+        w.removeEmptyStrings();
+        return w;
+    }
+
+    /** Recursive search for audio / MIDI files under a folder (bounded). */
+    inline Array<File> search (const File& root, const String& query, int maxResults = 500, const std::function<bool()>& cancelled = {})
+    {
+        Array<File> out;
+        const auto words = queryWords (query);
+        if (words.isEmpty() || ! root.isDirectory()) return out;
+        for (const auto& e : RangedDirectoryIterator (root, true, "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3;*.mid;*.midi", File::findFiles))
+        {
+            if (cancelled && cancelled()) break;
+            if (matches (e.getFile().getFileNameWithoutExtension(), words))
+            {
+                out.add (e.getFile());
+                if (out.size() >= maxResults) break;
+            }
+        }
+        return out;
+    }
+}
+
+/** A flat list of files (search results / favourites) that can be dragged like the file tree. */
+class FileResultsList : public ListBox,
+                        private ListBoxModel,
+                        public ClipImport::FileDragSource
+{
+public:
+    explicit FileResultsList (PropertiesFile& s) : settings (s)
+    {
+        setModel (this);
+        setRowHeight (22);
+        setMultipleSelectionEnabled (true);
+        setColour (ListBox::backgroundColourId, Theme::panel);
+    }
+
+    void setFiles (const Array<File>& f, const String& emptyText)
+    {
+        files = f;
+        empty = emptyText;
+        updateContent();
+        deselectAllRows();
+        repaint();
+    }
+
+    Array<File> getDraggedFiles() override
+    {
+        Array<File> out;
+        for (int i = 0; i < getNumSelectedRows(); ++i)
+            out.add (files[getSelectedRow (i)]);
+        return out;
+    }
+
+    std::function<void (const File&)> onSelect;
+    std::function<void (const File&, Component*)> onMenu;
+
+    void paintOverChildren (Graphics& g) override
+    {
+        if (files.isEmpty() && empty.isNotEmpty())
+        {
+            g.setColour (Theme::muted);
+            g.setFont (FontOptions (12.0f));
+            g.drawFittedText (empty, getLocalBounds().reduced (10), Justification::centredTop, 4);
+        }
+    }
+
+private:
+    int getNumRows() override { return files.size(); }
+
+    void paintListBoxItem (int row, Graphics& g, int w, int h, bool selected) override
+    {
+        if (! isPositiveAndBelow (row, files.size())) return;
+        auto f = files[row];
+        if (selected) g.fillAll (Theme::accent.withAlpha (0.25f));
+        const bool fav = BrowserSearch::isFavourite (settings, f);
+        g.setColour (fav ? Theme::yellow : Theme::muted.withAlpha (0.5f));
+        g.setFont (FontOptions (12.0f));
+        g.drawText (fav ? String (CharPointer_UTF8 ("\xe2\x98\x85")) : String (CharPointer_UTF8 ("\xe2\x99\xaa")), 4, 0, 16, h, Justification::centred);
+        g.setColour (Theme::text);
+        g.drawText (f.getFileName(), 22, 0, w - 26, h / 2 + 4, Justification::bottomLeft, true);
+        g.setColour (Theme::muted.withAlpha (0.7f));
+        g.setFont (FontOptions (10.0f));
+        g.drawText (f.getParentDirectory().getFileName(), 22, h / 2 + 2, w - 26, h / 2 - 2, Justification::topLeft, true);
+    }
+
+    var getDragSourceDescription (const SparseSet<int>&) override { return "PulseFiles"; }
+
+    void selectedRowsChanged (int last) override
+    {
+        if (onSelect && isPositiveAndBelow (last, files.size())) onSelect (files[last]);
+    }
+
+    void listBoxItemClicked (int row, const MouseEvent& e) override
+    {
+        if (e.mods.isPopupMenu() && onMenu && isPositiveAndBelow (row, files.size()))
+            onMenu (files[row], this);
+    }
+
+    PropertiesFile& settings;
+    Array<File> files;
+    String empty;
+};
+
 class Browser : public Component,
-                private FileBrowserListener
+                private FileBrowserListener,
+                private Timer
 {
 public:
     Browser (EditViewState& e, PropertiesFile& props)
@@ -422,6 +559,18 @@ public:
         addAndMakeVisible (tree);
         addChildComponent (plugins);
 
+        search.setTextToShowWhenEmpty ("Search this place...", Theme::muted);
+        search.setColour (TextEditor::backgroundColourId, Colour (0xff111317));
+        search.setColour (TextEditor::outlineColourId, Theme::line);
+        search.setTooltip ("Type words from the file name (searches all sub-folders). Esc clears.");
+        search.onTextChange = [this] { startTimer (250); };
+        search.onEscapeKey = [this] { search.clear(); startTimer (1); };
+        addAndMakeVisible (search);
+
+        results.onSelect = [this] (const File& f) { previewFile (f); };
+        results.onMenu = [this] (const File& f, Component* c) { showFileMenu (f, c); };
+        addChildComponent (results);
+
         rebuildPlaces();
         showFiles (true);
     }
@@ -429,6 +578,7 @@ public:
     ~Browser() override
     {
         tree.removeListener (this);
+        cancelSearch();
         previewer.stop();
         thread.stopThread (2000);
     }
@@ -461,7 +611,10 @@ public:
         top.removeFromRight (4);
         places.setBounds (top);
         r.removeFromTop (4);
+        search.setBounds (r.removeFromTop (24));
+        r.removeFromTop (4);
         tree.setBounds (r);
+        results.setBounds (r);
         plugins.setBounds (r.withTop (tabs.getBottom() + 6));
     }
 
@@ -470,7 +623,9 @@ private:
     {
         filesTab.setToggleState (files, dontSendNotification);
         devicesTab.setToggleState (! files, dontSendNotification);
-        tree.setVisible (files);
+        tree.setVisible (files && ! showingResults());
+        results.setVisible (files && showingResults());
+        search.setVisible (files);
         places.setVisible (files);
         preview.setVisible (files);
         syncBtn.setVisible (files);
@@ -500,6 +655,7 @@ private:
     void rebuildPlaces()
     {
         places.clear (dontSendNotification);
+        places.addItem (String (CharPointer_UTF8 ("\xe2\x98\x85 Favourites")), favouritesId);
         int id = 1;
         for (auto& f : placeFolders())
             places.addItem (f.getFileName(), id++);
@@ -508,7 +664,7 @@ private:
         places.addItem ("Add folder...", 1000);
 
         auto last = settings.getIntValue ("browserPlace", 1);
-        places.setSelectedId (jlimit (1, id - 1, last), dontSendNotification);
+        places.setSelectedId (last == favouritesId ? favouritesId : jlimit (1, id - 1, last), dontSendNotification);
         placeChosen();
     }
 
@@ -534,6 +690,13 @@ private:
             return;
         }
 
+        if (places.getSelectedId() == favouritesId)
+        {
+            settings.setValue ("browserPlace", favouritesId);
+            refreshResults();
+            return;
+        }
+
         auto folders = placeFolders();
         auto idx = places.getSelectedId() - 1;
         if (idx >= 0 && idx < folders.size())
@@ -541,19 +704,100 @@ private:
             settings.setValue ("browserPlace", places.getSelectedId());
             contents.setDirectory (folders[idx], true, true);
         }
+        refreshResults();
     }
 
-    // FileBrowserListener
-    void selectionChanged() override
+    static constexpr int favouritesId = 999;
+
+    bool showingResults() const { return places.getSelectedId() == favouritesId || search.getText().trim().isNotEmpty(); }
+
+    File currentFolder()
     {
-        auto f = tree.getSelectedFile();
+        auto folders = placeFolders();
+        auto idx = places.getSelectedId() - 1;
+        return idx >= 0 && idx < folders.size() ? folders[idx] : File();
+    }
+
+    void timerCallback() override
+    {
+        stopTimer();
+        refreshResults();
+    }
+
+    /** Shows the favourites and / or search results (or the folder tree when neither applies). */
+    void refreshResults()
+    {
+        cancelSearch();
+        const auto q = search.getText().trim();
+        const bool favs = places.getSelectedId() == favouritesId;
+        tree.setVisible (filesTab.getToggleState() && ! showingResults());
+        results.setVisible (filesTab.getToggleState() && showingResults());
+        if (! showingResults()) return;
+
+        if (favs)
+        {
+            Array<File> list;
+            const auto words = BrowserSearch::queryWords (q);
+            for (auto& p : BrowserSearch::favourites (settings))
+                if (File (p).existsAsFile() && (words.isEmpty() || BrowserSearch::matches (File (p).getFileNameWithoutExtension(), words)))
+                    list.add (File (p));
+            results.setFiles (list, "No favourites yet. Right-click a file > Add to favourites.");
+            return;
+        }
+
+        results.setFiles ({}, "Searching...");
+        const auto root = currentFolder();
+        const int token = ++searchToken;
+        searchThread = std::make_unique<std::thread> ([this, root, q, token, sp = SafePointer<Browser> (this)]
+        {
+            auto found = BrowserSearch::search (root, q, 500, [this, token] { return searchToken.load() != token; });
+            MessageManager::callAsync ([sp, found, token]
+            {
+                if (sp != nullptr && sp->searchToken.load() == token)
+                    sp->results.setFiles (found, found.isEmpty() ? "Nothing found." : String());
+            });
+        });
+    }
+
+    void cancelSearch()
+    {
+        ++searchToken;
+        if (searchThread != nullptr && searchThread->joinable()) searchThread->join();
+        searchThread.reset();
+    }
+
+    void previewFile (const File& f)
+    {
         if (preview.getToggleState() && f.existsAsFile() && ClipImport::isAudioFile (f))
             previewer.play (f, syncBtn.getToggleState() ? &evs.edit : nullptr);
         else
             previewer.stop();
     }
 
-    void fileClicked (const File&, const MouseEvent&) override {}
+    void showFileMenu (const File& f, Component* target)
+    {
+        PopupMenu m;
+        const bool fav = BrowserSearch::isFavourite (settings, f);
+        m.addItem (fav ? "Remove from favourites" : "Add to favourites", [this, f, fav]
+        {
+            BrowserSearch::setFavourite (settings, f, ! fav);
+            if (places.getSelectedId() == favouritesId) refreshResults();
+            results.repaint();
+        });
+        m.addItem ("Show in Explorer", [f] { f.revealToUser(); });
+        m.showMenuAsync (PopupMenu::Options().withTargetComponent (target).withMousePosition());
+    }
+
+    // FileBrowserListener
+    void selectionChanged() override
+    {
+        previewFile (tree.getSelectedFile());
+    }
+
+    void fileClicked (const File& f, const MouseEvent& e) override
+    {
+        if (e.mods.isPopupMenu() && f.existsAsFile()) showFileMenu (f, &tree);
+    }
     void fileDoubleClicked (const File&) override {}
     void browserRootChanged (const File&) override {}
 
@@ -568,5 +812,9 @@ private:
     TextButton filesTab { "Files" }, devicesTab { "Devices" };
     ToggleButton preview { "Preview" }, syncBtn { "Sync" };
     ComboBox places;
+    TextEditor search;
+    FileResultsList results { settings };
+    std::unique_ptr<std::thread> searchThread;
+    std::atomic<int> searchToken { 0 };
     std::shared_ptr<FileChooser> chooser;
 };

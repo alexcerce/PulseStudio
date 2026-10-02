@@ -14,6 +14,9 @@ public:
                               audioSettings, pluginManager, addInstrumentTrack, addAudioTrack,
                               toggleBrowser, toggleSession, collectAll, saveTemplate, openPalette, editShortcuts;
         std::function<bool()> isBrowserShown, isSessionShown;
+        std::function<StringArray()> recentProjects;
+        std::function<void (const File&)> openRecent;
+        std::function<void()> clearRecent;
         std::function<String()> controllerStatus;
         std::function<void()> toggleLink, cancelRender;
         std::function<float()> renderProgress;     // < 0 when idle
@@ -111,6 +114,22 @@ public:
             };
             add ("New Project...", {}, actions.newProject);
             add ("Open Project...", {}, actions.openProject);
+            {
+                PopupMenu recent;
+                auto list = actions.recentProjects ? actions.recentProjects() : StringArray();
+                for (auto& path : list)
+                {
+                    const File f (path);
+                    recent.addItem (f.getFileNameWithoutExtension() + "   (" + f.getParentDirectory().getFileName() + ")", f.existsAsFile(), false,
+                                    [this, f] { if (actions.openRecent) actions.openRecent (f); });
+                }
+                if (! list.isEmpty())
+                {
+                    recent.addSeparator();
+                    recent.addItem ("Clear list", [this] { if (actions.clearRecent) actions.clearRecent(); });
+                }
+                m.addSubMenu ("Open recent", recent, ! list.isEmpty());
+            }
             add ("Save", "Ctrl+S", actions.saveProject);
             add ("Collect all and save", {}, actions.collectAll);
             add ("Save as template...", {}, actions.saveTemplate);

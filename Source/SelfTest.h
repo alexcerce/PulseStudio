@@ -1750,6 +1750,54 @@ namespace SelfTest
                        "Tuner pitch detection", String (a4, 2) + " Hz, " + String (a2, 2) + " Hz, silence " + String (none, 1));
         }
 
+        // --- browser search, favourites, recent projects ----------------------------------------------
+        {
+            rep.step ("browser search");
+            auto lib = dir.getChildFile ("SearchLib");
+            lib.getChildFile ("Drums/Kicks").createDirectory();
+            lib.getChildFile ("Loops").createDirectory();
+            auto k1 = writeTestWav (lib.getChildFile ("Drums/Kicks/Deep Kick 01.wav"), 0.1, 60.0);
+            auto k2 = writeTestWav (lib.getChildFile ("Drums/Kicks/kick_punchy.wav"), 0.1, 60.0);
+            auto lp = writeTestWav (lib.getChildFile ("Loops/Funky Drum Loop 120.wav"), 0.1, 200.0);
+            lib.getChildFile ("Loops/notes.txt").replaceWithText ("kick");   // not audio: never listed
+
+            auto kicks = BrowserSearch::search (lib, "kick");
+            auto deep = BrowserSearch::search (lib, "DEEP kick");
+            auto drumLoop = BrowserSearch::search (lib, "loop drum");
+            auto none = BrowserSearch::search (lib, "snare");
+            rep.check (kicks.size() == 2 && deep.size() == 1 && deep[0] == k1 && drumLoop.size() == 1 && drumLoop[0] == lp && none.isEmpty(),
+                       "Browser search (sub-folders, all words, any order)",
+                       String (kicks.size()) + " / " + String (deep.size()) + " / " + String (drumLoop.size()) + " / " + String (none.size()));
+
+            PropertiesFile::Options po;
+            po.applicationName = "PulseSelfTestProps";
+            po.filenameSuffix = ".settings";
+            po.folderName = dir.getFullPathName();
+            PropertiesFile props (dir.getChildFile ("browser_test.settings"), po);
+            BrowserSearch::setFavourite (props, k2, true);
+            BrowserSearch::setFavourite (props, lp, true);
+            BrowserSearch::setFavourite (props, k2, true);   // no duplicates
+            const bool favAdded = BrowserSearch::favourites (props).size() == 2 && BrowserSearch::isFavourite (props, lp);
+            BrowserSearch::setFavourite (props, lp, false);
+            rep.check (favAdded && BrowserSearch::favourites (props).size() == 1 && ! BrowserSearch::isFavourite (props, lp), "Browser favourites");
+
+            // results list drags its selected files like the file tree
+            FileResultsList list (props);
+            list.setFiles ({ k1, k2, lp }, {});
+            list.selectRow (0);
+            list.selectRow (2, false, false);
+            DragAndDropTarget::SourceDetails sd ("PulseFiles", &list, {});
+            auto dragged = ClipImport::filesFromDrag (sd);
+            rep.check (dragged.size() == 2 && dragged.contains (k1) && dragged.contains (lp), "Drag files from search results", String (dragged.size()));
+
+            StringArray recent;
+            for (int i = 0; i < 15; ++i) recent = RecentProjects::push (recent, dir.getChildFile ("p" + String (i) + ".tracktionedit"));
+            recent = RecentProjects::push (recent, dir.getChildFile ("p10.tracktionedit"));
+            rep.check (recent.size() == 12 && File (recent[0]).getFileName() == "p10.tracktionedit" && File (recent[1]).getFileName() == "p14.tracktionedit"
+                         && recent.indexOf (dir.getChildFile ("p10.tracktionedit").getFullPathName()) == 0
+                         && [&recent] { auto c = recent; c.removeDuplicates (true); return c.size() == recent.size(); }(), "Recent projects list (newest first, 12 max, no duplicates)");
+        }
+
         // --- undo -------------------------------------------------------------------------------
         rep.check (um.canUndo(), "Undo history recorded");
 
