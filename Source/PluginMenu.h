@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Common.h"
+#include "PulseSynths.h"
 
 /** Popup menu listing built-in Tracktion devices plus every scanned VST3,
     grouped by manufacturer. Calls back with the newly created plugin. */
@@ -55,9 +56,16 @@ namespace PluginMenu
 
         if (drumRackFactory)
             instruments.addItem ("Drum Rack", [&edit, cb] { if (auto p = drumRackFactory (edit)) cb (p); });
+        addBuiltIn<pulse::WavetableSynth> (instruments, edit, cb);
+        addBuiltIn<pulse::Simpler> (instruments, edit, cb);
         addBuiltIn<te::FourOscPlugin> (instruments, edit, cb);
         addBuiltIn<te::SamplerPlugin> (instruments, edit, cb);
 
+        addBuiltIn<pulse::PulseEQ> (effects, edit, cb);
+        addBuiltIn<pulse::GlueCompressor> (effects, edit, cb);
+        addBuiltIn<pulse::Saturator> (effects, edit, cb);
+        addBuiltIn<pulse::AutoFilter> (effects, edit, cb);
+        effects.addSeparator();
         addBuiltIn<te::EqualiserPlugin> (effects, edit, cb);
         addBuiltIn<te::CompressorPlugin> (effects, edit, cb);
         addBuiltIn<te::ReverbPlugin> (effects, edit, cb);

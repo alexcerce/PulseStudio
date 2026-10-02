@@ -9,96 +9,8 @@
 #include "MidiLearn.h"
 #include "DrumRack.h"
 #include "StateControls.h"
-
-//==============================================================================
-/** Rotary bound to an AutomatableParameter, with a right-click menu
-    (MIDI Learn, Map to Macro). */
-class ParamKnob : public Component,
-                  public SettableTooltipClient,
-                  private Timer
-{
-public:
-    ParamKnob (EditViewState& e, te::AutomatableParameter& p, bool showName = true) : evs (e), param (&p)
-    {
-        auto range = p.getValueRange();
-        slider.setSliderStyle (Slider::RotaryHorizontalVerticalDrag);
-        slider.setTextBoxStyle (Slider::NoTextBox, false, 0, 0);
-        slider.setRange (range.getStart(), range.getEnd(), 0.0);
-        slider.setValue (p.getCurrentValue(), dontSendNotification);
-        slider.onDragStart = [this] { param->parameterChangeGestureBegin(); };
-        slider.onDragEnd   = [this] { param->parameterChangeGestureEnd(); };
-        slider.onValueChange = [this] { param->setParameter ((float) slider.getValue(), sendNotificationSync); };
-        if (auto def = p.getDefaultValue())
-            slider.setDoubleClickReturnValue (true, *def);
-        slider.addMouseListener (this, false);
-        addAndMakeVisible (slider);
-
-        name.setText (p.getParameterName(), dontSendNotification);
-        name.setFont (FontOptions (10.5f));
-        name.setColour (Label::textColourId, Theme::muted);
-        name.setJustificationType (Justification::centred);
-        name.setInterceptsMouseClicks (false, false);
-        value.setFont (FontOptions (10.5f));
-        value.setJustificationType (Justification::centred);
-        value.setInterceptsMouseClicks (false, false);
-        if (showName) addAndMakeVisible (name);
-        addAndMakeVisible (value);
-        startTimerHz (12);
-    }
-
-    void resized() override
-    {
-        auto r = getLocalBounds();
-        if (name.isVisible()) name.setBounds (r.removeFromTop (14));
-        value.setBounds (r.removeFromBottom (14));
-        slider.setBounds (r.reduced (8, 0));
-    }
-
-    void paintOverChildren (Graphics& g) override
-    {
-        // small dots: orange = MIDI mapped, blue = macro-controlled
-        if (evs.midiLearn != nullptr && evs.midiLearn->isMapped (*param))
-        {
-            g.setColour (Theme::orange);
-            g.fillEllipse (2.0f, 2.0f, 5.0f, 5.0f);
-        }
-        if (! param->getModifiers().isEmpty())
-        {
-            g.setColour (Theme::accent);
-            g.fillEllipse ((float) getWidth() - 7.0f, 2.0f, 5.0f, 5.0f);
-        }
-    }
-
-    void mouseDown (const MouseEvent& e) override
-    {
-        if (! e.mods.isPopupMenu()) return;
-
-        PopupMenu m;
-        m.addSectionHeader (MidiLearn::describe (*param));
-        if (evs.midiLearn != nullptr) evs.midiLearn->addToMenu (m, *param);
-        Macros::addToMenu (m, *param);
-        if (auto def = param->getDefaultValue())
-            m.addItem ("Reset to default", [this, v = *def] { param->setParameter (v, sendNotificationSync); });
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (this));
-    }
-
-    te::AutomatableParameter& getParam() { return *param; }
-    Label name;
-
-private:
-    void timerCallback() override
-    {
-        if (! slider.isMouseButtonDown())
-            slider.setValue (param->getCurrentValue(), dontSendNotification);
-        value.setText (param->getCurrentValueAsStringWithLabel(), dontSendNotification);
-        repaint();
-    }
-
-    EditViewState& evs;
-    te::AutomatableParameter::Ptr param;
-    Slider slider;
-    Label value;
-};
+#include "ParamKnob.h"
+#include "DeviceDisplays.h"
 
 //==============================================================================
 /** Shared look + header buttons for cards in the rack. */
@@ -171,6 +83,14 @@ public:
             updateScButton();
         }
 
+        // Pulse devices: labelled knob sections plus a visual display
+        if (auto* pp = dynamic_cast<pulse::PulsePlugin*> (plugin.get()))
+        {
+            buildPulseLayout (*pp);
+            startTimerHz (4);
+            return;
+        }
+
         // settings stored as plain state (e.g. all of Chorus / Phaser, the Delay time) come first
         for (auto& d : StateControls::forPlugin (*plugin))
             addAndMakeVisible (knobs.add (new StateControls::Control (*plugin, d)));
@@ -225,6 +145,26 @@ public:
         title.setBounds (head);
 
         r.removeFromTop (6);
+
+        if (! sections.empty())
+        {
+            r.removeFromBottom (4);
+            if (display != nullptr)
+            {
+                display->setBounds (r.removeFromLeft (displayWidth));
+                r.removeFromLeft (8);
+            }
+            for (auto& sec : sections)
+            {
+                auto area = r.removeFromLeft (sec.cols * knobW);
+                r.removeFromLeft (sectionGap);
+                sec.label->setBounds (area.removeFromTop (14));
+                for (int i = 0; i < (int) sec.knobs.size(); ++i)
+                    sec.knobs[(size_t) i]->setBounds (area.getX() + (i / pulseRows) * knobW, area.getY() + (i % pulseRows) * knobH, knobW, knobH);
+            }
+            return;
+        }
+
         if (more.isVisible())
             more.setBounds (r.removeFromBottom (18));
 
@@ -281,6 +221,45 @@ private:
         scBtn.setToggleState (active, dontSendNotification);
         scBtn.setTooltip (active ? "Sidechain input: " + src : "Sidechain input: none (click to choose a source track)");
     }
+
+    void buildPulseLayout (pulse::PulsePlugin& pp)
+    {
+        displayWidth = pp.getDisplayWidth();
+        display = DeviceDisplays::create (evs, pp);
+        if (display != nullptr)
+            addAndMakeVisible (*display);
+
+        int width = 12 + (display != nullptr ? displayWidth + 8 : 0);
+        for (auto& sec : pp.getSections())
+        {
+            PulseSection ps;
+            ps.label = std::make_unique<Label> (String(), sec.name.toUpperCase());
+            ps.label->setFont (FontOptions (10.0f, Font::bold));
+            ps.label->setColour (Label::textColourId, Theme::muted);
+            ps.label->setJustificationType (Justification::centredLeft);
+            addAndMakeVisible (*ps.label);
+            for (auto idx : sec.params)
+            {
+                auto* k = new ParamKnob (evs, *pp.param (idx));
+                knobs.add (k);
+                // drop the section prefix ("Osc 1 Position" in "Osc 1" -> "Position")
+                auto name = k->name.getText();
+                if (name.startsWithIgnoreCase (sec.name + " ")) k->name.setText (name.substring (sec.name.length() + 1), dontSendNotification);
+                addAndMakeVisible (k);
+                ps.knobs.push_back (k);
+            }
+            ps.cols = jmax (1, ((int) ps.knobs.size() + pulseRows - 1) / pulseRows);
+            width += ps.cols * knobW + sectionGap;
+            sections.push_back (std::move (ps));
+        }
+        setSize (jmax (290, width), 0);
+    }
+
+    struct PulseSection { std::unique_ptr<Label> label; std::vector<Component*> knobs; int cols = 1; };
+    std::vector<PulseSection> sections;
+    std::unique_ptr<Component> display;
+    int displayWidth = 0;
+    static constexpr int pulseRows = 2, sectionGap = 10;
 
     static constexpr int knobW = 64, knobH = 78;
     EditViewState& evs;

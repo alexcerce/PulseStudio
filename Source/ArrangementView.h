@@ -83,11 +83,14 @@ public:
             if (ac->getWarpTime())
                 drawWarpMarkers (g, *ac, body);
 
-        if (clip->isLooping() && dynamic_cast<te::MidiClip*> (clip.get()) != nullptr)
+        if (auto mc = dynamic_cast<te::MidiClip*> (clip.get()))
         {
+            StringArray tags;
+            if (mc->getGrooveTemplate().isNotEmpty()) tags.add ("GROOVE");
+            if (mc->isLooping()) tags.add ("LOOP");
             g.setColour (Colours::black.withAlpha (0.8f));
             g.setFont (FontOptions (10.5f));
-            g.drawText ("LOOP", header.reduced (5.0f, 0.0f), Justification::centredRight, false);
+            g.drawText (tags.joinIntoString ("  "), header.reduced (5.0f, 0.0f), Justification::centredRight, false);
         }
 
         g.setColour (selected ? Colours::white : col);
@@ -628,7 +631,10 @@ private:
             m.addSubMenu ("Takes", takes);
         }
         if (auto mc = dynamic_cast<te::MidiClip*> (clip.get()))
+        {
             m.addItem ("Open in Piano Roll", [this, mc] { if (evs.openPianoRoll) evs.openPianoRoll (mc); });
+            Groove::addToMenu (m, *mc);
+        }
 
         addLoopItems (m);
 

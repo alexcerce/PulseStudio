@@ -2,6 +2,7 @@
 
 #include "Common.h"
 #include "DrumRack.h"
+#include "PulseSynths.h"
 
 /** Shared helpers for turning files / plugin IDs into clips, tracks and devices. */
 namespace ClipImport
@@ -69,8 +70,14 @@ namespace ClipImport
         static const std::vector<BuiltIn> list
         {
             { "Drum Rack",    "drumrack",                          true },
+            { "Wavetable",    pulse::WavetableSynth::xmlTypeName,  true },
+            { "Simpler",      pulse::Simpler::xmlTypeName,         true },
             { "4OSC Synth",   te::FourOscPlugin::xmlTypeName,      true },
             { "Sampler",      te::SamplerPlugin::xmlTypeName,      true },
+            { "EQ Six",       pulse::PulseEQ::xmlTypeName,         false },
+            { "Glue Compressor", pulse::GlueCompressor::xmlTypeName, false },
+            { "Saturator",    pulse::Saturator::xmlTypeName,       false },
+            { "Auto Filter",  pulse::AutoFilter::xmlTypeName,      false },
             { "Equaliser",    te::EqualiserPlugin::xmlTypeName,    false },
             { "Compressor",   te::CompressorPlugin::xmlTypeName,   false },
             { "Reverb",       te::ReverbPlugin::xmlTypeName,       false },

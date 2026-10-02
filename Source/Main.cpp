@@ -31,6 +31,7 @@ public:
         if (auto i = args.indexOf ("--selftest"); i >= 0)
         {
             engine = std::make_unique<te::Engine> ("Pulse Studio Test", std::make_unique<PulseUIBehaviour>(), std::make_unique<PulseEngineBehaviour>());
+            pulse::registerDevices (*engine);
             auto report = File::getCurrentWorkingDirectory().getChildFile (i + 1 < args.size() ? args[i + 1].unquoted() : "selftest.txt");
             setApplicationReturnValue (SelfTest::run (*engine, report));
             quit();
@@ -44,6 +45,7 @@ public:
         LookAndFeel::setDefaultLookAndFeel (lookAndFeel.get());
         tooltips = std::make_unique<TooltipWindow> (nullptr, 600);
         engine = std::make_unique<te::Engine> (profile, std::make_unique<PulseUIBehaviour>(), std::make_unique<PulseEngineBehaviour>());
+        pulse::registerDevices (*engine);
         mainWindow = std::make_unique<MainWindow> (*engine);
 
         // Pulse Studio.exe --render out.wav : bounce the last project and exit

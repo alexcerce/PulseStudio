@@ -13,6 +13,7 @@
 #include "PluginWindow.h"
 #include "StateControls.h"
 #include "Workflow.h"
+#include "PulseSynths.h"
 
 /** "Pulse Studio.exe --selftest report.txt"
     Builds a scratch project in the temp folder, exercises the editing / routing / device
@@ -369,6 +370,82 @@ namespace SelfTest
                 s->flushPendingUpdates();
             }
             rep.check (measure (*inst).first > -60.0f, "Device works: Sampler");
+
+            // Pulse instruments
+            inst->pluginList[0]->deleteFromParent();
+            auto wt = edit->getPluginCache().createNewPlugin (pulse::WavetableSynth::xmlTypeName, {});
+            inst->pluginList.insertPlugin (wt, 0, nullptr);
+            if (auto w = dynamic_cast<pulse::WavetableSynth*> (wt.get()))
+            {
+                auto a = measure (*inst);
+                w->set (pulse::WavetableSynth::pPos1, 0.0f);
+                w->set (pulse::WavetableSynth::pPos2, 0.0f);
+                w->set (pulse::WavetableSynth::pSet2, 0.0f);
+                auto b = measure (*inst);
+                rep.check (a.first > -60.0f && a.first < 12.0f && differs (a, b), "Device works: Wavetable (morphing changes the sound)",
+                           String (a.first, 1) + " dBFS, " + String (a.zcr, 0) + " vs " + String (b.zcr, 0) + " crossings/s");
+            }
+            inst->pluginList[0]->deleteFromParent();
+
+            auto sp = edit->getPluginCache().createNewPlugin (pulse::Simpler::xmlTypeName, {});
+            inst->pluginList.insertPlugin (sp, 0, nullptr);
+            if (auto s = dynamic_cast<pulse::Simpler*> (sp.get()))
+            {
+                s->setSampleFile (writeTestWav (dir.getChildFile ("short.wav"), 0.25, 440.0));
+                ic->getSequence().getNotes()[0]->setStartAndLength (te::BeatPosition(), te::BeatDuration::fromBeats (4.0), nullptr);   // held for 2 s
+                auto tail = [&] (te::AudioTrack& t)   // peak from 1.0 to 1.9 s, long after the 0.25 s sample ends
+                {
+                    auto f = EditingOps::renderTrack (t, range, "tail");
+                    std::unique_ptr<AudioFormatReader> r (engine.getAudioFileFormatManager().readFormatManager.createReaderFor (f));
+                    if (r == nullptr) return 0.0f;
+                    Range<float> levels[2];
+                    const auto from = (int64) (r->sampleRate * 1.0), to = (int64) (r->sampleRate * 1.9);
+                    r->readMaxLevels (from, to - from, levels, 2);
+                    float peak = 0.0f;
+                    for (auto& l : levels) peak = jmax (peak, std::abs (l.getStart()), std::abs (l.getEnd()));
+                    return Decibels::gainToDecibels (peak, -200.0f);
+                };
+                const float body = measure (*inst).first;
+                const float unlooped = tail (*inst);
+                s->set (pulse::Simpler::pLoop, 1.0f);
+                s->set (pulse::Simpler::pLoopStart, 0.5f);
+                const float looped = tail (*inst);
+                rep.check (s->getSample() != nullptr && body > -40.0f, "Device works: Simpler", String (body, 1) + " dBFS");
+                rep.check (unlooped < -80.0f && looped > -40.0f, "Simpler loop sustains a held note",
+                           "tail " + String (unlooped, 1) + " dB unlooped, " + String (looped, 1) + " dB looped");
+            }
+            inst->pluginList[0]->deleteFromParent();
+        }
+
+        // --- groove and EQ maths ---------------------------------------------------------------
+        {
+            auto grooveTrack = ClipImport::createContentTrack (*edit, "Groove", true);
+            te::MidiClip::Ptr gc = grooveTrack->insertMIDIClip ("Eighths", { te::TimePosition(), bars (1) }, nullptr);
+            for (int i = 0; i < 8; ++i)
+                gc->getSequence().addNote (60, te::BeatPosition::fromBeats (i * 0.5), te::BeatDuration::fromBeats (0.25), 100, 0, nullptr);
+            String swing;
+            for (auto& n : Groove::names (engine))
+                if (n.containsIgnoreCase ("8th") && n.containsIgnoreCase ("swing")) { swing = n; break; }
+            Groove::set (*gc, swing, 1.0f);
+            const bool committed = swing.isNotEmpty() && Groove::commit (*gc);
+            auto& notes = gc->getSequence().getNotes();
+            const double onBeat = notes.size() == 8 ? notes[2]->getStartBeat().inBeats() : -1.0;
+            const double offBeat = notes.size() == 8 ? notes[3]->getStartBeat().inBeats() : -1.0;
+            rep.check (committed && std::abs (onBeat - 1.0) < 1.0e-3 && offBeat > 1.55, "Swing groove moves off-beat 8ths",
+                       "'" + swing + "': beat 1.5 -> " + String (offBeat, 3));
+            gc = nullptr;
+
+            auto eqp = edit->getPluginCache().createNewPlugin (pulse::PulseEQ::xmlTypeName, {});
+            if (auto eq = dynamic_cast<pulse::PulseEQ*> (eqp.get()))
+            {
+                using Q = pulse::PulseEQ;
+                eq->set (Q::idx (2, Q::pFreq), 1000.0f);
+                eq->set (Q::idx (2, Q::pGain), 12.0f);
+                eq->set (Q::idx (2, Q::pQ), 1.0f);
+                const double at1k = eq->responseDb (1000.0), at100 = eq->responseDb (100.0);
+                rep.check (std::abs (at1k - 12.0) < 0.6 && std::abs (at100) < 1.5, "EQ bell response",
+                           String (at1k, 2) + " dB at 1 kHz, " + String (at100, 2) + " dB at 100 Hz");
+            }
         }
 
         // --- workflow: looping, nudging, MIDI export, track presets, warp markers -------------

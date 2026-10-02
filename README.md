@@ -4,7 +4,7 @@ A native Windows DAW built with C++, [JUCE](https://juce.com) and [Tracktion Eng
 
 ## Install
 
-Run `dist/PulseStudio-0.4.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
+Run `dist/PulseStudio-0.5.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
 
 ## Build
 
@@ -77,6 +77,20 @@ The Push's built-in display isn't driven yet (it needs a separate USB driver lay
 - The selected track automatically receives live input from every connected MIDI controller.
 - **Piano roll** controller lanes: velocity, pitch bend, mod wheel, volume, pan, expression and sustain.
 
+### Instruments and effects
+Pulse's own devices have cards with labelled sections and a live display. Every knob can be automated, MIDI-learned and mapped to a macro. Knobs follow the parameter's natural scale (for example, 1 kHz sits at the middle of a frequency knob).
+
+| Device | What it does |
+| --- | --- |
+| **Wavetable** | Two wavetable oscillators. There are five table sets (basic shapes, pulse width, harmonics, vowels and sync saw), and **Position** morphs through each set. Also has up to 7-voice unison with detune and stereo spread, a sub oscillator, a 12/24 dB low-pass, band-pass or high-pass filter with its own envelope, an amp envelope, an LFO to position and cutoff, and glide. Tables are band-limited per octave, so high notes don't alias. |
+| **Simpler** | A one-sample instrument. Drag start, end and loop-start markers on the waveform, and loop with a crossfade. Also has root note, transpose and detune, ADSR, a filter, and velocity, gain and pan. Modes are Classic, One-shot and Mono. Drop a file from the browser or Explorer onto the waveform, or click *Load*. |
+| **EQ Six** | A 6-band EQ: low and high cut (24 dB/oct), shelves, bells and notch. Drag the numbered nodes on the curve; scroll over a node to change Q, and double-click one to turn it on or off. A live spectrum shows behind the curve. |
+| **Glue Compressor** | A bus compressor with stepped attack and release (including Auto), 2:1, 4:1 and 10:1 ratios, a range limit, makeup gain, dry/wet and soft clip. It has a gain-reduction meter. |
+| **Saturator** | Seven shapes (analog, tape, tube, hard clip, foldback, sine fold and bit crush) with 4× oversampling, bias, a tone tilt and dry/wet. It shows the transfer curve. |
+| **Auto Filter** | A low-pass, band-pass, high-pass, notch or 24 dB low-pass filter with drive. The LFO is free-running or tempo-synced (1/16 to 4 bars) with six shapes and a stereo phase offset. An envelope follower and a dry/wet control round it out. |
+
+**Groove / swing:** right-click a MIDI clip → *Groove* to pick a template (e.g. *Basic 8th Swing*, *Basic 16th Swing*) and an amount. The groove is applied as the clip plays. *Commit groove to notes* moves the notes for real.
+
 ### Sound design
 - **Drum Rack:** from the *+ Inst* menu, the browser or *+ Add device*.
   - 16 pads; drag samples onto them (several files fill consecutive pads). Click a pad to audition it.
@@ -135,7 +149,7 @@ The Push's built-in display isn't driven yet (it needs a separate USB driver lay
 ## Command line
 
 - `--render out.wav` renders the last project offline and exits.
-- `--selftest report.txt` builds a scratch project and runs 60 checks, including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--selftest report.txt` builds a scratch project and runs 69 checks, including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
 - `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
 
 ## Code layout
@@ -156,7 +170,9 @@ All app code is header-only in `Source/` and compiled through `Main.cpp`.
 | `DeviceChain.h` | Device rack: device cards, macros, Drum Rack editor, presets |
 | `DrumRack.h`, `Presets.h`, `Macros.h`, `MidiLearn.h` | Sound design and controller features |
 | `EditingOps.h` | Clipboard, split, time edits, bounce/flatten/freeze, grouping |
-| `Workflow.h` | Keyboard nudging, clip looping, warp markers, MIDI export, track presets |
+| `Workflow.h` | Keyboard nudging, clip looping, warp markers, MIDI export, track presets, groove |
+| `PulseDevices.h`, `PulseSynths.h` | Pulse's own devices (EQ, Glue, Saturator, Auto Filter, Wavetable, Simpler) |
+| `DeviceDisplays.h`, `ParamKnob.h` | Device card displays and knobs |
 | `ExportDialog.h`, `AudioSettings.h` | Export and audio/recording settings |
 | `Mixer.h`, `Routing.h` | Mixer strips, sends/returns |
 | `ClipImport.h`, `ClipProperties.h` | File import, audio clip panel |

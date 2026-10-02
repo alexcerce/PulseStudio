@@ -455,3 +455,74 @@ namespace Workflow
         });
     }
 }
+
+//==============================================================================
+/** Groove / swing for MIDI clips (uses the engine's groove templates). */
+namespace Groove
+{
+    inline StringArray names (te::Engine& e)   { return e.getGrooveTemplateManager().getTemplateNames(); }
+
+    inline void set (te::MidiClip& mc, const String& name, float strength)
+    {
+        mc.setGrooveTemplate (name);
+        mc.setGrooveStrength (strength);
+    }
+
+    /** Moves the notes to where the groove plays them, then clears the clip's groove. */
+    inline bool commit (te::MidiClip& mc)
+    {
+        auto* gt = mc.edit.engine.getGrooveTemplateManager().getTemplateByName (mc.getGrooveTemplate());
+        if (gt == nullptr || gt->isEmpty())
+            return false;
+
+        auto* um = &mc.edit.getUndoManager();
+        const float strength = mc.getGrooveStrength();
+        for (auto n : mc.getSequence().getNotes())
+        {
+            auto grooved = gt->beatsTimeToGroovyTime (n->getStartBeat(), strength);
+            n->setStartAndLength (grooved, n->getLengthBeats(), um);
+        }
+        mc.setGrooveTemplate ({});
+        return true;
+    }
+
+    inline void addToMenu (PopupMenu& m, te::MidiClip& mc)
+    {
+        te::Clip::Ptr holder (&mc);
+        auto withClip = [holder] (auto fn) { return [holder, fn] { if (auto c = dynamic_cast<te::MidiClip*> (holder.get())) fn (*c); }; };
+        const auto current = mc.getGrooveTemplate();
+        const float strength = mc.getGrooveStrength();
+
+        PopupMenu g;
+        g.addItem ("None", true, current.isEmpty(), withClip ([] (te::MidiClip& c)
+        {
+            c.edit.getUndoManager().beginNewTransaction ("Groove");
+            c.setGrooveTemplate ({});
+        }));
+        g.addSeparator();
+        for (auto& name : names (mc.edit.engine))
+            g.addItem (name, true, name == current, withClip ([name, strength] (te::MidiClip& c)
+            {
+                c.edit.getUndoManager().beginNewTransaction ("Groove");
+                set (c, name, strength > 0.01f ? strength : 0.5f);
+            }));
+
+        g.addSeparator();
+        PopupMenu amounts;
+        for (int pct : { 10, 25, 50, 75, 100 })
+            amounts.addItem (String (pct) + "%", current.isNotEmpty(), std::abs (strength * 100.0f - (float) pct) < 0.5f,
+                             withClip ([pct] (te::MidiClip& c)
+            {
+                c.edit.getUndoManager().beginNewTransaction ("Groove amount");
+                c.setGrooveStrength ((float) pct / 100.0f);
+            }));
+        g.addSubMenu ("Amount", amounts, current.isNotEmpty());
+        g.addItem ("Commit groove to notes", current.isNotEmpty(), false, withClip ([] (te::MidiClip& c)
+        {
+            c.edit.getUndoManager().beginNewTransaction ("Commit groove");
+            commit (c);
+        }));
+
+        m.addSubMenu ("Groove" + (current.isNotEmpty() ? " (" + current + ", " + String (roundToInt (strength * 100)) + "%)" : String()), g);
+    }
+}
