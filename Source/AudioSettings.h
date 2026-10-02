@@ -127,11 +127,12 @@ public:
             refresh();
         };
         logsBtn.onClick = [] { CrashGuard::crashFolder().revealToUser(); };
+        sandboxToggle.onClick = [this] { if (onSandboxChanged) onSandboxChanged (sandboxToggle.getToggleState()); };
         safeInfo.setText (CrashGuard::safeMode() ? "Running in SAFE MODE: no plugins are loaded this session. Restart normally to load them."
                                                  : "Safe mode: hold Shift while starting Pulse Studio to start without loading any plugins.",
                           dontSendNotification);
         safeInfo.setColour (Label::textColourId, CrashGuard::safeMode() ? Theme::orange : Theme::muted);
-        for (auto* c : std::initializer_list<Component*> { &enableBtn, &logsBtn, &safeInfo })
+        for (auto* c : std::initializer_list<Component*> { &enableBtn, &logsBtn, &safeInfo, &sandboxToggle })
             addAndMakeVisible (c);
         refresh();
     }
@@ -141,6 +142,8 @@ public:
         auto r = getLocalBounds().reduced (12);
         title.setBounds (r.removeFromTop (24));
         safeInfo.setBounds (r.removeFromBottom (40));
+        sandboxToggle.setBounds (r.removeFromBottom (28));
+        r.removeFromBottom (6);
         auto buttons = r.removeFromBottom (32);
         enableBtn.setBounds (buttons.removeFromLeft (160).reduced (0, 2));
         buttons.removeFromLeft (8);
@@ -169,6 +172,11 @@ private:
                     8, 0, w - 16, h, Justification::centredLeft, true);
     }
 
+public:
+    std::function<void (bool)> onSandboxChanged;
+    void setSandbox (bool b) { sandboxToggle.setToggleState (b, dontSendNotification); }
+private:
+    ToggleButton sandboxToggle { "Run new VST3 plugins in their own process (sandbox: a crash can't take Pulse down)" };
     Label title, safeInfo;
     ListBox list;
     TextButton enableBtn { "Re-enable selected" }, logsBtn { "Show crash logs" };
@@ -183,7 +191,10 @@ inline void showAudioSettingsDialog (te::Engine& engine, te::Edit& edit, Propert
     tabs->addTab ("Audio / MIDI", Theme::panel2,
                   new AudioDeviceSelectorComponent (engine.getDeviceManager().deviceManager, 0, 256, 0, 256, true, false, true, false), true);
     tabs->addTab ("Recording", Theme::panel2, new RecordingSettings (engine, edit, settings), true);
-    tabs->addTab ("Safety", Theme::panel2, new SafetySettings(), true);
+    auto* safety = new SafetySettings();
+    safety->setSandbox (engine.getPropertyStorage().getPropertiesFile().getBoolValue ("sandboxPlugins", false));
+    safety->onSandboxChanged = [&engine] (bool b) { engine.getPropertyStorage().getPropertiesFile().setValue ("sandboxPlugins", b); };
+    tabs->addTab ("Safety", Theme::panel2, safety, true);
     tabs->setSize (580, 660);
 
     DialogWindow::LaunchOptions o;

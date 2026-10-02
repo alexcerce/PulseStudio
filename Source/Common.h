@@ -88,8 +88,12 @@ namespace EngineHelpers
                     [[maybe_unused]] auto res = instance->setTarget (t.itemID, true, &t.edit.getUndoManager(), 0);
     }
 
+    /** True while an export renders in the background (playback must wait). */
+    inline std::atomic<bool>& renderBusy() { static std::atomic<bool> b { false }; return b; }
+
     inline void togglePlay (te::Edit& edit)
     {
+        if (renderBusy()) return;
         auto& tc = edit.getTransport();
 
         if (tc.isPlaying())
@@ -100,6 +104,7 @@ namespace EngineHelpers
 
     inline void toggleRecord (te::Edit& edit)
     {
+        if (renderBusy()) return;
         auto& tc = edit.getTransport();
 
         if (tc.isRecording())

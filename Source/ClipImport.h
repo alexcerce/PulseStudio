@@ -108,7 +108,7 @@ namespace ClipImport
 
         if (d.startsWith ("plugin:ext:"))
             if (auto desc = edit.engine.getPluginManager().knownPluginList.getTypeForIdentifierString (d.fromFirstOccurrenceOf ("plugin:ext:", false, false)))
-                return edit.getPluginCache().createNewPlugin (te::ExternalPlugin::xmlTypeName, *desc);
+                return sandbox::createPlugin (edit, *desc);
 
         return {};
     }

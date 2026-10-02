@@ -31,3 +31,32 @@ namespace CrashGuardWin
         }
     }
 }
+
+namespace CrashGuardWin
+{
+    /** No "has stopped working" dialog for this process: a crash just ends it (used by sandbox helpers). */
+    void disableCrashDialogs()
+    {
+        SetErrorMode (SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+        DWORD mode = 0;
+        if (GetThreadErrorMode != nullptr) SetThreadErrorMode (SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX, &mode);
+        // a last-chance handler that terminates straight away
+        SetUnhandledExceptionFilter ([] (EXCEPTION_POINTERS*) -> LONG { TerminateProcess (GetCurrentProcess(), 3); return EXCEPTION_EXECUTE_HANDLER; });
+    }
+}
+
+namespace CrashGuardWin
+{
+    int currentProcessId() { return (int) GetCurrentProcessId(); }
+
+    bool isProcessAlive (int pid)
+    {
+        if (pid <= 0) return false;
+        HANDLE h = OpenProcess (PROCESS_QUERY_LIMITED_INFORMATION, FALSE, (DWORD) pid);
+        if (h == nullptr) return false;
+        DWORD code = 0;
+        const bool alive = GetExitCodeProcess (h, &code) && code == STILL_ACTIVE;
+        CloseHandle (h);
+        return alive;
+    }
+}

@@ -4,7 +4,7 @@ A native Windows DAW built with C++, [JUCE](https://juce.com) and [Tracktion Eng
 
 ## Install
 
-Run `dist/PulseStudio-0.13.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
+Run `dist/PulseStudio-0.14.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
 
 ## Build
 
@@ -146,7 +146,7 @@ Pulse's own devices have cards with labelled sections and a live display. Every 
 - Faders, pan, meters and mute/solo, plus submix strips for groups.
 - **Return tracks** with **sends** on every track, and **sidechain** inputs (the **SC** button on devices that support it).
 - **Pre/post-fader sends:** right-click a send knob. Pre-fader sends get an orange label and keep sending when the fader is down, which is useful for headphone mixes and parallel effects.
-- **Latency:** each strip shows its plugin latency. Pulse compensates automatically, so everything stays in time.
+- **CPU and latency:** each strip shows the CPU its devices use (orange above 30%) and their latency. Pulse compensates automatically, so everything stays in time.
 - **Freeze (F):** renders a track to audio and switches off its plugins, to save CPU with heavy VST instruments. Click F again to unfreeze.
 - **Master Limiter:** a button on the master strip adds a look-ahead brickwall limiter before the master meter. Its Gain, Ceiling and (auto) Release are in the master device chain, and it's also available as a device on any track.
 - **Push 2 Mix mode:** press Mix repeatedly to cycle volume → pan → a send to every return (Shift+Mix goes back).
@@ -157,6 +157,7 @@ Pulse's own devices have cards with labelled sections and a live display. Every 
   - Normalise to a peak or to **LUFS**.
   - Range: whole song, loop range or the selected clips.
   - **Stems:** one file per track and return.
+- Exports run in the **background**. A progress bar with Cancel appears in the transport bar, and you can keep working. Playback waits until the export finishes.
 - **Export selection** (Ctrl+Shift+E): exports just the selected clips' time range (or the loop range).
 - **Export MIDI** (Ctrl+Shift+M): writes the selected MIDI clips, or every MIDI clip, to a `.mid` file. You get one track per Pulse track with the tempo map, and looped clips are written out in full. A track header's right-click menu exports that track's clips.
 
@@ -168,6 +169,9 @@ Pulse's own devices have cards with labelled sections and a live display. Every 
 - **Autosave every minute**, with recovery after a crash.
 - **Crash reports:** if Pulse Studio crashes, it saves a log with a stack trace. It also notes which plugin the crash happened in, or which plugin was loading at the time.
 - **After a crash:** the next launch offers to *disable that plugin*, start in **safe mode**, or continue. Disabled plugins aren't loaded, but their settings stay in your projects. Re-enable them in **Audio Settings → Safety**, which also opens the crash-log folder.
+- **Plugin sandbox:** turn on *Audio Settings → Safety → Run new VST3 plugins in their own process*, or use a device's ☰ menu → *Run in its own process*.
+  - Each sandboxed plugin then runs in a helper process. If it crashes, Pulse keeps running: an effect passes audio through, an instrument goes quiet, and its card shows **Restart**.
+  - Settings and automation work as usual. *Run inside Pulse* moves a plugin back.
 - **Safe mode:** hold **Shift** while starting, or run with `--safe-mode`. No plugins load, and the title bar says so.
 - **Per-project view:** zoom, scroll, snap, arrangement/session view, browser, bottom panel, panel size, selected track and collapsed groups are saved in the project. The window size and position are remembered too.
 - **Undo:** each knob drag is one undo step, and the Undo/Redo tooltips name the action.
@@ -205,7 +209,7 @@ Pulse's own devices have cards with labelled sections and a live display. Every 
 ## Command line
 
 - `--render out.wav` renders the last project offline and exits.
-- `--selftest report.txt` builds a scratch project and runs 95 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--selftest report.txt` builds a scratch project and runs 100 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
 - `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
 
 ## Code layout
@@ -230,6 +234,7 @@ All app code is header-only in `Source/` and compiled through `Main.cpp`.
 | `DeviceChain.h` | Device rack: device cards, macros, Drum Rack editor, presets |
 | `DrumRack.h`, `Presets.h`, `Macros.h`, `MidiLearn.h` | Sound design and controller features |
 | `MidiFx.h`, `Scales.h` | MIDI effects (Arpeggiator, Chord, Scale, Note Echo), shared scales |
+| `Sandbox.h`, `BackgroundRender.h` | Plugin sandbox (helper process), background exports |
 | `Sharing.h` | Collect All and Save, project templates |
 | `Timeline.h` | Markers, tempo / time signature maths, crossfades, comping |
 | `EditingOps.h` | Clipboard, split, time edits, bounce/flatten/freeze, grouping |

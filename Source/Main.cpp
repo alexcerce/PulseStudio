@@ -4,6 +4,7 @@
 #include "MainComponent.h"
 #include "SelfTest.h"
 #include "CrashGuard.h"
+#include "Sandbox.h"
 
 //==============================================================================
 /** Plugin scans run in a child process, so a crashing plugin can't take the app down. */
@@ -37,6 +38,10 @@ public:
     {
         // When launched as the plugin-scanner child process, do nothing else.
         if (te::PluginManager::startChildProcessPluginScan (commandLine))
+            return;
+
+        // When launched as a plugin sandbox helper, just host that plugin.
+        if (sandbox::startWorkerIfRequested (commandLine))
             return;
 
         auto args = StringArray::fromTokens (getCommandLineParameters(), true);

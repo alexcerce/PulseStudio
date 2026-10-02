@@ -22,6 +22,7 @@
 #include "Push2.h"
 #include "CrashGuard.h"
 #include "Sharing.h"
+#include "BackgroundRender.h"
 
 //==============================================================================
 /** Owns the current Edit and lays out transport, browser, arrangement/session and the
@@ -272,6 +273,9 @@ private:
         a.saveProject    = [this] { saveProject(); };
         a.exportWav      = [this] { exportWav(); };
         a.collectAll     = [this] { collectAll(); };
+        a.cancelRender   = [] { BackgroundRender::instance().cancel(); };
+        a.renderProgress = [] { auto& r = BackgroundRender::instance(); return r.isBusy() ? r.getProgress() : -1.0f; };
+        a.renderStatus   = [] { return BackgroundRender::instance().getStatus(); };
         a.saveTemplate   = [this] { saveAsTemplate(); };
         a.exportSelection = [this] { exportSelection(); };
         a.exportMidi     = [this] { exportMidi(); };
@@ -471,6 +475,7 @@ private:
     void closeEdit()
     {
         if (edit == nullptr) return;
+        BackgroundRender::instance().cancelAndWait();
         selectionManager.removeChangeListener (this);
         selectionManager.deselectAll();
         edit->getTransport().stop (false, true);

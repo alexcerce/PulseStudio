@@ -22,6 +22,8 @@
 #include "Timeline.h"
 #include "Scales.h"
 #include "Sharing.h"
+#include "Sandbox.h"
+#include "BackgroundRender.h"
 
 /** "Pulse Studio.exe --selftest report.txt"
     Builds a scratch project in the temp folder, exercises the editing / routing / device
@@ -952,6 +954,103 @@ namespace SelfTest
             templateFile.deleteFile();
             extC = nullptr;
             outside.deleteRecursively();
+        }
+
+        // --- plugin sandbox (real VST3 in a helper process) --------------------------------------------
+        {
+            File vst;
+            for (auto name : { "Replika.vst3", "Phasis.vst3", "Choral.vst3", "Flair.vst3" })
+                if (auto f = File ("C:/Program Files/Common Files/VST3").getChildFile (name); f.exists()) { vst = f; break; }
+
+            if (vst == File())
+            {
+                rep.lines.add ("NOTE  no VST3 effect found for the sandbox test - skipped");
+            }
+            else
+            {
+                rep.step ("sandboxing " + vst.getFileName());
+                auto sbTrack = ClipImport::createContentTrack (*edit, "Sandbox", false);
+                ClipImport::importFile (*sbTrack, *edit, writeTestWav (dir.getChildFile ("sandbox.wav"), 1.0, 220.0), te::TimePosition());
+                auto sp = edit->getPluginCache().createNewPlugin (pulse::SandboxedPlugin::createState (nullptr, vst));
+                sbTrack->pluginList.insertPlugin (sp, 0, nullptr);
+                auto* sb = dynamic_cast<pulse::SandboxedPlugin*> (sp.get());
+                const te::TimeRange one { te::TimePosition(), te::TimePosition::fromSeconds (1.0) };
+
+                const bool loaded = sb != nullptr && sb->isLoaded();
+                const float peak = loaded ? peakDb (engine, EditingOps::renderTrack (*sbTrack, one, "sandbox")) : -200.0f;
+                rep.check (loaded && sb->numParams() > 0 && peak > -40.0f, "Sandboxed VST3 processes audio in its own process",
+                           sb != nullptr ? sb->getName() + ", " + String (sb->numParams()) + " params, " + String (peak, 1) + " dBFS, late blocks "
+                                             + String (sb->getLateBlocks()) + (loaded ? String() : " - " + sb->getStatus()) : String ("not created"));
+
+                if (loaded)
+                {
+                    sb->flushPluginStateToValueTree();
+                    rep.check (sb->state[pulse::SandboxedPlugin::stateID].toString().length() > 10, "Sandboxed plugin state saved with the project");
+
+                    sb->crashHelperForTest();
+                    for (int i = 0; i < 100 && ! sb->hasCrashed(); ++i)
+                        MessageManager::getInstance()->runDispatchLoopUntil (50);
+                    const bool crashed = sb->hasCrashed();
+                    const float after = peakDb (engine, EditingOps::renderTrack (*sbTrack, one, "sandbox-crashed"));
+                    sb->restart();
+                    rep.check (crashed && after > -40.0f && sb->isLoaded() && ! sb->hasCrashed(),
+                               "Helper crash is contained (audio passes through, restart works)",
+                               String ("crashed ") + (crashed ? "yes" : "no") + ", " + String (after, 1) + " dBFS while down");
+                }
+                sp = nullptr;
+            }
+        }
+
+        // --- background export -------------------------------------------------------------------------
+        {
+            auto& br = BackgroundRender::instance();
+            auto bgTrack = ClipImport::createContentTrack (*edit, "BgRender", false);
+            ClipImport::importFile (*bgTrack, *edit, writeTestWav (dir.getChildFile ("bg.wav"), 2.0, 180.0), te::TimePosition());
+
+            auto makeParams = [&] (const File& f)
+            {
+                te::Renderer::Parameters p (*edit);
+                p.tracksToDo = te::toBitSet (juce::Array<te::Track*> { bgTrack });
+                p.destFile = f;
+                p.audioFormat = engine.getAudioFileFormatManager().getWavFormat();
+                p.bitDepth = 24;
+                p.sampleRateForAudio = 48000.0;
+                p.time = { te::TimePosition(), te::TimePosition::fromSeconds (2.0) };
+                p.usePlugins = true;
+                p.useMasterPlugins = false;
+                return p;
+            };
+
+            auto out = dir.getChildFile ("background.wav");
+            out.deleteFile();
+            int doneOk = -1; bool doneCancelled = true;
+            BackgroundRender::Job job;
+            job.name = "Self-test export";
+            job.renders.push_back (makeParams (out));
+            job.onDone = [&] (int ok, int, bool c) { doneOk = ok; doneCancelled = c; };
+            const bool started = br.start (std::move (job));
+            bool playBlocked = false;
+            if (started)
+            {
+                EngineHelpers::togglePlay (*edit);
+                playBlocked = ! edit->getTransport().isPlaying();
+            }
+            for (int i = 0; i < 1200 && doneOk < 0; ++i)
+                MessageManager::getInstance()->runDispatchLoopUntil (25);
+            rep.check (started && playBlocked && doneOk == 1 && ! doneCancelled && peakDb (engine, out) > -40.0f,
+                       "Background export (app stays responsive, playback waits)", String (peakDb (engine, out), 1) + " dBFS");
+
+            // cancel
+            int cancelOk = -1; bool cancelled = false;
+            BackgroundRender::Job job2;
+            job2.name = "Self-test cancel";
+            for (int i = 0; i < 4; ++i) job2.renders.push_back (makeParams (dir.getChildFile ("cancel" + String (i) + ".wav")));
+            job2.onDone = [&] (int ok, int, bool c) { cancelOk = ok; cancelled = c; };
+            br.start (std::move (job2));
+            br.cancel();
+            for (int i = 0; i < 1200 && cancelOk < 0; ++i)
+                MessageManager::getInstance()->runDispatchLoopUntil (25);
+            rep.check (cancelled && cancelOk < 4 && ! br.isBusy(), "Cancel a background export", String (cancelOk) + " of 4 finished before cancelling");
         }
 
         // --- undo -------------------------------------------------------------------------------

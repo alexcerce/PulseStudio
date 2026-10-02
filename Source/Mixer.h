@@ -301,8 +301,17 @@ private:
             for (auto p : at->pluginList) { if (p->isEnabled()) secs += p->getLatencySeconds(); }
         if (track == nullptr)
             for (auto p : evs.edit.getMasterPluginList()) { if (p->isEnabled()) secs += p->getLatencySeconds(); }
-        latency.setText (secs > 0.00005 ? "latency " + String (secs * 1000.0, 1) + " ms" : String(), dontSendNotification);
-        latency.setTooltip ("Plugin latency on this channel. Pulse delays the other tracks to keep everything in time.");
+        double cpu = 0;
+        if (auto at = audioTrack())
+            for (auto p : at->pluginList) cpu += p->getCpuUsage();
+        if (track == nullptr)
+            for (auto p : evs.edit.getMasterPluginList()) cpu += p->getCpuUsage();
+        String info;
+        if (cpu > 0.0005) info << "CPU " << roundToInt (cpu * 100.0) << "%";
+        if (secs > 0.00005) info << (info.isNotEmpty() ? "  " : "") << String (secs * 1000.0, 1) << " ms";
+        latency.setText (info, dontSendNotification);
+        latency.setColour (Label::textColourId, cpu > 0.3 ? Theme::orange : Theme::muted);
+        latency.setTooltip ("CPU used by this channel's devices, and their latency (Pulse delays the other tracks to keep everything in time).");
         repaint();
     }
 

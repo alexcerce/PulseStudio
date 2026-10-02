@@ -15,7 +15,9 @@ public:
                               toggleBrowser, toggleSession, collectAll, saveTemplate;
         std::function<bool()> isBrowserShown, isSessionShown;
         std::function<String()> controllerStatus;
-        std::function<void()> toggleLink;
+        std::function<void()> toggleLink, cancelRender;
+        std::function<float()> renderProgress;     // < 0 when idle
+        std::function<String()> renderStatus;
         std::function<bool()> isLinkEnabled;
         std::function<String()> linkStatus;
     };
@@ -119,6 +121,9 @@ public:
             m.showMenuAsync (PopupMenu::Options().withTargetComponent (&fileBtn));
         };
         addAndMakeVisible (fileBtn);
+        addChildComponent (cancelRenderBtn);
+        cancelRenderBtn.setFlat (true);
+        cancelRenderBtn.onClick = [this] { if (actions.cancelRender) actions.cancelRender(); };
 
         addAction (browserBtn, actions.toggleBrowser, "Show / hide the browser (B)");
         addAction (viewBtn, actions.toggleSession, "Switch between Arrangement and Session view (Tab)");
@@ -153,6 +158,19 @@ public:
         g.setColour (Theme::muted);
         g.setFont (FontOptions (12.0f));
         g.drawText ("Studio", 86, 1, 50, getHeight(), Justification::centredLeft);
+
+        if (renderShown)
+        {
+            auto pill = renderArea.toFloat().withRight ((float) cancelRenderBtn.getRight());
+            g.setColour (Colour (0xff0d0f12));
+            g.fillRoundedRectangle (pill, 6.0f);
+            g.setColour (Theme::accent.withAlpha (0.6f));
+            g.fillRoundedRectangle (pill.withWidth (pill.getWidth() * jlimit (0.0f, 1.0f, renderFraction)), 6.0f);
+            g.setColour (Theme::text);
+            g.setFont (FontOptions (12.0f));
+            g.drawText (renderText + "  " + String (roundToInt (renderFraction * 100)) + "%", pill.reduced (8.0f, 0.0f).withTrimmedRight (20.0f),
+                        Justification::centredLeft, true);
+        }
 
         auto lcd = lcdArea.toFloat();
         g.setGradientFill (ColourGradient (Colour (0xff07090b), 0, lcd.getY(), Colour (0xff0d1013), 0, lcd.getBottom(), false));
@@ -199,6 +217,8 @@ public:
         viewBtn.setBounds (r.removeFromLeft (84)); r.removeFromLeft (8);
 
         cpuLabel.setBounds (r.removeFromRight (62));
+        renderArea = cpuLabel.getBounds().withX (cpuLabel.getX() - 170).withWidth (166).reduced (0, 6);
+        cancelRenderBtn.setBounds (renderArea.removeFromRight (22));
         r.removeFromRight (6);
         pluginsBtn.setBounds (r.removeFromRight (80)); r.removeFromRight (4);
         audioBtn.setBounds (r.removeFromRight (72));  r.removeFromRight (4);
@@ -266,6 +286,20 @@ private:
         undoBtn.setTooltip (um.canUndo() ? "Undo " + um.getUndoDescription() + " (Ctrl+Z)" : String ("Nothing to undo"));
         redoBtn.setTooltip (um.canRedo() ? "Redo " + um.getRedoDescription() + " (Ctrl+Y)" : String ("Nothing to redo"));
 
+        // background export progress
+        const float rp = actions.renderProgress ? actions.renderProgress() : -1.0f;
+        const bool shown = rp >= 0.0f;
+        if (shown != renderShown || (shown && (std::abs (rp - renderFraction) > 0.004f)))
+        {
+            renderShown = shown;
+            renderFraction = jmax (0.0f, rp);
+            renderText = actions.renderStatus ? actions.renderStatus() : String();
+            cancelRenderBtn.setVisible (shown);
+            repaint();
+        }
+        playBtn.setEnabled (! shown);
+        recBtn.setEnabled (! shown);
+
         auto cpu = engine.getDeviceManager().getCpuUsage();
         cpuLabel.setText ("CPU " + String (roundToInt (cpu * 100.0)) + "%", dontSendNotification);
 
@@ -278,7 +312,11 @@ private:
     te::Engine& engine;
     te::Edit* edit = nullptr;
     Actions actions;
-    Rectangle<int> lcdArea;
+    Rectangle<int> lcdArea, renderArea;
+    IconButton cancelRenderBtn { Icons::Type::close, "Cancel the export" };
+    bool renderShown = false;
+    float renderFraction = 0.0f;
+    String renderText;
     double dragStartBpm = -1.0;
 
     IconButton stopBtn { Icons::Type::stop }, playBtn { Icons::Type::play }, recBtn { Icons::Type::record },

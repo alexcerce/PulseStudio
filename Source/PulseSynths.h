@@ -2,6 +2,7 @@
 
 #include "PulseDevices.h"
 #include "MidiFx.h"
+#include "Sandbox.h"
 
 /** Pulse's instruments: a wavetable synth and a Simpler-style sampler. */
 namespace pulse
@@ -787,6 +788,7 @@ namespace pulse
         pm.createBuiltInType<ChordFx>();
         pm.createBuiltInType<ScaleFx>();
         pm.createBuiltInType<NoteEcho>();
+        pm.createBuiltInType<SandboxedPlugin>();
         engine.getGrooveTemplateManager().useParameterizedGrooves (true);
     }
 }

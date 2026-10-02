@@ -3,6 +3,7 @@
 #include "Common.h"
 #include "Routing.h"
 #include "EditingOps.h"
+#include "BackgroundRender.h"
 
 /** Export settings: format, bit depth, sample rate, normalisation, range and stems. */
 class ExportDialog : public Component
@@ -176,8 +177,27 @@ private:
         EditingOps::waitForClipProxies (edit);
         auto p = baseParams();
         p.destFile = f;
-        auto result = te::Renderer::renderToFile ("Exporting mixdown", p);
-        finish (result.existsAsFile(), result.existsAsFile() ? "Exported " + f.getFileName() : "Export failed.");
+        BackgroundRender::Job job;
+        job.name = "Exporting " + f.getFileName();
+        job.renders.push_back (p);
+        job.onDone = [f] (int ok, int, bool cancelled)
+        {
+            if (cancelled) return;
+            AlertWindow::showMessageBoxAsync (ok > 0 ? MessageBoxIconType::InfoIcon : MessageBoxIconType::WarningIcon, "Export",
+                                              ok > 0 ? "Exported " + f.getFileName() : String ("Export failed."));
+            if (ok > 0) f.revealToUser();
+        };
+        startJob (std::move (job));
+    }
+
+    void startJob (BackgroundRender::Job job)
+    {
+        if (! BackgroundRender::instance().start (std::move (job)))
+        {
+            AlertWindow::showMessageBoxAsync (MessageBoxIconType::InfoIcon, "Export", "Another export is still running.");
+            return;
+        }
+        close();   // carries on in the background (progress in the transport bar)
     }
 
     void exportStems (const File& folder)
@@ -188,7 +208,10 @@ private:
 
         auto tracks = EngineHelpers::getUserTracks (edit);
         tracks.addArray (Routing::getReturnTracks (edit));
+        ignoreUnused (ok);
 
+        BackgroundRender::Job job;
+        job.name = "Exporting stems";
         for (auto t : tracks)
         {
             ++total;
@@ -196,12 +219,16 @@ private:
             p.useMasterPlugins = false;
             p.tracksToDo = te::toBitSet (juce::Array<te::Track*> { t });
             p.destFile = folder.getChildFile (File::createLegalFileName (String (total).paddedLeft ('0', 2) + " " + t->getName()) + extension());
-            if (te::Renderer::renderToFile ("Exporting " + t->getName(), p).existsAsFile())
-                ++ok;
+            job.renders.push_back (p);
         }
-
-        finish (ok == total, String (ok) + " of " + String (total) + " stems exported to " + folder.getFileName());
-        if (ok > 0) folder.revealToUser();
+        job.onDone = [folder] (int done, int count, bool cancelled)
+        {
+            if (cancelled) return;
+            AlertWindow::showMessageBoxAsync (done == count ? MessageBoxIconType::InfoIcon : MessageBoxIconType::WarningIcon, "Export",
+                                              String (done) + " of " + String (count) + " stems exported to " + folder.getFileName());
+            if (done > 0) folder.revealToUser();
+        };
+        startJob (std::move (job));
     }
 
     void finish (bool ok, const String& msg)

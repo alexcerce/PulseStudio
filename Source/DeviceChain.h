@@ -66,7 +66,9 @@ public:
         title.setFont (FontOptions (13.5f, Font::bold));
         title.setInterceptsMouseClicks (false, false);
 
-        editBtn.onClick  = [this] { plugin->showWindowExplicitly(); };
+        editBtn.onClick  = [this] { openEditor(); };
+        restartBtn.onClick = [this] { if (auto sb = dynamic_cast<pulse::SandboxedPlugin*> (plugin.get())) { sb->restart(); updateSandboxStatus(); } };
+        restartBtn.setTooltip ("Restart the plugin's helper process");
         leftBtn.onClick  = [this] { move (*plugin, -1); };
         rightBtn.onClick = [this] { move (*plugin, 1); };
         removeBtn.onClick = [this] { plugin->deleteFromParent(); };
@@ -77,6 +79,8 @@ public:
         for (auto* c : std::initializer_list<Component*> { &power, &title, &presetBtn, &editBtn, &leftBtn, &rightBtn, &removeBtn })
             addAndMakeVisible (c);
         for (auto* b : { &presetBtn, &leftBtn, &rightBtn, &removeBtn }) b->setFlat (true);
+        addChildComponent (restartBtn);
+        restartBtn.setColour (TextButton::buttonColourId, Theme::red.withAlpha (0.6f));
 
         if (plugin->canSidechain())
         {
@@ -160,6 +164,7 @@ public:
         editBtn.setBounds (head.removeFromRight (38));   head.removeFromRight (2);
         presetBtn.setBounds (head.removeFromRight (24));
         if (scBtn.isVisible()) { head.removeFromRight (2); scBtn.setBounds (head.removeFromRight (30)); }
+        if (restartBtn.isVisible()) { head.removeFromRight (2); restartBtn.setBounds (head.removeFromRight (58)); }
         title.setBounds (head);
 
         r.removeFromTop (6);
@@ -196,11 +201,29 @@ public:
         }
     }
 
-    void mouseDoubleClick (const MouseEvent&) override { plugin->showWindowExplicitly(); }
+    void mouseDoubleClick (const MouseEvent&) override { openEditor(); }
 
 private:
+    void openEditor()
+    {
+        if (auto sb = dynamic_cast<pulse::SandboxedPlugin*> (plugin.get())) sb->showEditor();
+        else plugin->showWindowExplicitly();
+    }
+
+    void updateSandboxStatus()
+    {
+        auto sb = dynamic_cast<pulse::SandboxedPlugin*> (plugin.get());
+        if (sb == nullptr) return;
+        sb->syncParametersFromPlugin();
+        restartBtn.setVisible (sb->hasCrashed() || ! sb->isLoaded());
+        title.setText (sb->getName() + (sb->hasCrashed() ? "  (crashed)" : "  (sandboxed)"), dontSendNotification);
+        title.setColour (Label::textColourId, sb->hasCrashed() ? Theme::red : Theme::text);
+        title.setTooltip (sb->getStatus());
+    }
+
     void timerCallback() override
     {
+        updateSandboxStatus();
         if (power.getToggleState() != plugin->isEnabled())
         {
             power.setToggleState (plugin->isEnabled(), dontSendNotification);
@@ -228,6 +251,18 @@ private:
                 });
         }
         m.addSeparator();
+        if (auto ext = dynamic_cast<te::ExternalPlugin*> (plugin.get()))
+            m.addItem ("Run in its own process (sandbox)", [p = plugin, ext]
+            {
+                p->edit.getUndoManager().beginNewTransaction ("Sandbox plugin");
+                sandbox::moveToSandbox (*ext);
+            });
+        if (auto sb = dynamic_cast<pulse::SandboxedPlugin*> (plugin.get()))
+            m.addItem ("Run inside Pulse (no sandbox)", [p = plugin, sb]
+            {
+                p->edit.getUndoManager().beginNewTransaction ("Unsandbox plugin");
+                sandbox::moveInProcess (*sb);
+            });
         m.addItem ("Show presets folder", [p = plugin] { Presets::deviceFolder (*p).revealToUser(); });
         m.showMenuAsync (PopupMenu::Options().withTargetComponent (&presetBtn));
     }
@@ -286,7 +321,7 @@ private:
     IconButton power { Icons::Type::power, "Device on / off", Theme::green },
                leftBtn { Icons::Type::chevronLeft, "Move left" }, rightBtn { Icons::Type::chevronRight, "Move right" },
                removeBtn { Icons::Type::close, "Remove device" }, presetBtn { Icons::Type::menu, "Device presets" };
-    TextButton editBtn { "Edit" }, scBtn { "SC" };
+    TextButton editBtn { "Edit" }, scBtn { "SC" }, restartBtn { "Restart" };
     Label title, more;
     OwnedArray<Component> knobs;   // state controls, the Delay's Sync button, then parameter knobs
 };

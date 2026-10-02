@@ -41,7 +41,7 @@ namespace PluginMenu
 
             m.addItem (desc.name, [&edit, desc, cb]
             {
-                if (auto p = edit.getPluginCache().createNewPlugin (te::ExternalPlugin::xmlTypeName, desc))
+                if (auto p = sandbox::createPlugin (edit, desc))
                     cb (p);
             });
         }
