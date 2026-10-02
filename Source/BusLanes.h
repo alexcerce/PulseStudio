@@ -280,15 +280,10 @@ namespace BusLanes
             {
                 evs.edit.getUndoManager().beginNewTransaction ("Add device");
                 auto& list = pluginList();
-                if (track == nullptr)
-                {
-                    const int idx = list.indexOf (masterEnd());
-                    list.insertPlugin (p, idx >= 0 ? idx : list.size(), nullptr);
-                }
-                else PluginMenu::insertPlugin (track, list, p, nullptr);
+                if (! PluginMenu::insertPlugin (track, list, p, nullptr)) return;
                 if (evs.showDevices) evs.showDevices (track);
                 if (evs.openDeviceEditor && dynamic_cast<te::ExternalPlugin*> (p.get()) != nullptr) evs.openDeviceEditor (*p);
-            });
+            }, PluginMenu::Allowed { false, false });
         }
 
         void showMenu()

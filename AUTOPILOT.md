@@ -179,3 +179,8 @@ when you start, touch it after each step, and delete it when you stop.
 - 2026-10-02: v0.50.0 export: MP3 via Windows Media Foundation (Mp3EncoderWin.cpp, system libs only), "Streaming ready"
   (-14 LUFS + offline true-peak limiter to -1 dBTP, ExportTools.h), stems in MP3. FLAC / OGG / MIDI export already
   existed. 212 checks pass.
+- 2026-10-02: v0.51.0 drop audit: PluginMenu::refusal / kindOf / allowedFor used by insertPlugin and placeDevice (all insert
+  paths), filtered + menus, instrument replace, drum pad rules, audio files on instrument tracks -> new track (arrangement
+  and session), chain presets load instruments first. 213 checks pass.
+- Owner request (2026-10-02): better horizontal scrolling in the arrangement; the Wavetable synth's window must look very
+  pro (Vital / Serum-like, not a copy), graph-first like the FabFilter-style panels. Next: v0.52.

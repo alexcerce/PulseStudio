@@ -3917,6 +3917,48 @@ namespace SelfTest
                        "true peak " + String (beforeTp, 1) + " -> " + String (afterTp, 2) + " dBTP, MP3 " + (err.isEmpty() ? String (size / 1024) + " KB" : err));
         }
 
+        // --- v0.51: what may be dropped where -------------------------------------------------------------
+        {
+            rep.step ("drop rules");
+            StringArray refused;
+            PluginMenu::onRefused = [&refused] (const String& why) { refused.add (why); };
+            auto make = [&] (const char* type) { return edit->getPluginCache().createNewPlugin (type, {}); };
+            auto ret = Routing::createReturnTrack (*edit, "RuleReturn");
+            auto plain = ClipImport::createContentTrack (*edit, "RulePlain", false);
+            auto& master = edit->getMasterPluginList();
+            const int masterBefore = master.size();
+            // instruments and MIDI effects: not on returns or the master
+            const bool r1 = ! PluginMenu::insertPlugin (ret, ret->pluginList, make (pulse::WavetableSynth::xmlTypeName), nullptr);
+            const bool r2 = ! PluginMenu::insertPlugin (nullptr, master, make (pulse::Arpeggiator::xmlTypeName), nullptr);
+            const bool r3 = ! PluginMenu::insertPlugin (ret, ret->pluginList, DrumRack::create (*edit), nullptr);
+            const bool okFx = PluginMenu::insertPlugin (ret, ret->pluginList, make (pulse::Reverb::xmlTypeName), nullptr);
+            // MIDI effects need an instrument
+            const bool r4 = ! PluginMenu::insertPlugin (plain, plain->pluginList, make (pulse::ChordFx::xmlTypeName), nullptr);
+            PluginMenu::insertPlugin (plain, plain->pluginList, make (pulse::WavetableSynth::xmlTypeName), nullptr);
+            const bool okMidi = PluginMenu::insertPlugin (plain, plain->pluginList, make (pulse::ChordFx::xmlTypeName), nullptr);
+            // a second instrument replaces the first
+            PluginMenu::insertPlugin (plain, plain->pluginList, make (pulse::FMSynth::xmlTypeName), nullptr);
+            int synths = 0;
+            for (auto p : plain->pluginList) if (p->isSynth()) ++synths;
+            const bool replaced = synths == 1 && plain->pluginList.findFirstPluginOfType<pulse::FMSynth>() != nullptr;
+            // moving an instrument onto the master is refused
+            auto* fm = plain->pluginList.findFirstPluginOfType<pulse::FMSynth>();
+            DragDrop::placeDevice (*fm, nullptr, master, nullptr, false);
+            const bool stayed = fm->getOwnerTrack() == plain && master.size() == masterBefore;
+            // audio files dropped on an instrument track get their own track; MIDI files don't
+            const bool ownTrack = ClipImport::needsOwnAudioTrack (*plain, File ("C:/x/loop.wav")) && ! ClipImport::needsOwnAudioTrack (*plain, File ("C:/x/riff.mid"))
+                                  && ! ClipImport::needsOwnAudioTrack (*ret, File ("C:/x/loop.wav"));
+            // the menu for a return offers no instruments or MIDI effects
+            const auto allowRet = PluginMenu::allowedFor (ret->pluginList, ret), allowPlain = PluginMenu::allowedFor (plain->pluginList, plain);
+            const bool menus = ! allowRet.instruments && ! allowRet.midiEffects && allowPlain.instruments && allowPlain.midiEffects;
+            PluginMenu::onRefused = nullptr;
+            rep.check (r1 && r2 && r3 && okFx && r4 && okMidi && replaced && stayed && ownTrack && menus && refused.size() == 5,
+                       "Drops make sense (no instruments on returns / master, MIDI effects need an instrument, one instrument per track)",
+                       String (refused.size()) + " refused: " + refused[0].upToFirstOccurrenceOf (":", false, false));
+            edit->deleteTrack (ret);
+            edit->deleteTrack (plain);
+        }
+
         // --- sharing: project zip, crash bundle, update check -----------------------------------------
         {
             rep.step ("sharing tools");

@@ -597,9 +597,21 @@ private:
     void importFile (const File& f)
     {
         evs.edit.getUndoManager().beginNewTransaction ("Import into slot");
-        if (auto c = slot->getClip()) c->removeFromParent();
+        auto* target = slot;
+        if (auto at = dynamic_cast<te::AudioTrack*> (&slot->track); at != nullptr && ClipImport::needsOwnAudioTrack (*at, f))
+        {
+            // audio on an instrument track's slot: the same scene on a new audio track
+            const int index = at->getClipSlotList().getClipSlots().indexOf (slot);
+            if (auto t = ClipImport::createContentTrack (evs.edit, f.getFileNameWithoutExtension(), false))
+            {
+                t->getClipSlotList().ensureNumberOfSlots (jmax (index + 1, at->getClipSlotList().getClipSlots().size()));
+                target = t->getClipSlotList().getClipSlots()[index];
+            }
+        }
+        else if (auto c = slot->getClip()) c->removeFromParent();
+        if (target == nullptr) return;
 
-        if (auto clip = ClipImport::importFile (*slot, evs.edit, f, te::TimePosition()))
+        if (auto clip = ClipImport::importFile (*target, evs.edit, f, te::TimePosition()))
             if (auto ac = dynamic_cast<te::AudioClipBase*> (clip.get()))
                 ac->setAutoTempo (true);   // loops follow the project tempo
     }

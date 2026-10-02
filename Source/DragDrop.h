@@ -88,6 +88,12 @@ namespace DragDrop
     {
         auto& edit = p.edit;
         if (before == &p) return;
+        if (dest.indexOf (&p) < 0)   // going to another chain: may it go there?
+            if (const auto why = PluginMenu::refusal (p, destTrack, dest); why.isNotEmpty())
+            {
+                if (PluginMenu::onRefused) PluginMenu::onRefused (why);
+                return;
+            }
         edit.getUndoManager().beginNewTransaction (copy ? "Copy device" : "Move device");
 
         if (! copy && dest.indexOf (&p) >= 0)   // reorder within the same chain

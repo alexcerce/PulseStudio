@@ -1203,10 +1203,9 @@ private:
         PluginMenu::show (evs.edit, &addBtn, [this, list, track = currentTrack()] (te::Plugin::Ptr p)
         {
             evs.edit.getUndoManager().beginNewTransaction ("Add device");
-            PluginMenu::insertPlugin (track, *list, p, nullptr);
-            if (dynamic_cast<te::ExternalPlugin*> (p.get()) != nullptr)
+            if (PluginMenu::insertPlugin (track, *list, p, nullptr) && dynamic_cast<te::ExternalPlugin*> (p.get()) != nullptr)
                 p->showWindowExplicitly();
-        });
+        }, PluginMenu::allowedFor (*list, currentTrack()));
     }
 
     void showChainMenu()

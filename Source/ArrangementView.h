@@ -1147,7 +1147,16 @@ private:
         Array<File> files;
         for (auto& p : paths) files.add (File (p));
         evs.edit.getUndoManager().beginNewTransaction ("Import files");
-        ClipImport::importFiles (*track, evs.edit, files, start);
+        // audio on an instrument track would never be heard: it gets its own audio track
+        Array<File> here, ownTrack;
+        for (auto& f : files) (ClipImport::needsOwnAudioTrack (*track, f) ? ownTrack : here).add (f);
+        if (! here.isEmpty()) ClipImport::importFiles (*track, evs.edit, here, start);
+        for (auto& f : ownTrack)
+            if (auto t = ClipImport::createContentTrack (evs.edit, f.getFileNameWithoutExtension(), false))
+            {
+                ClipImport::importFile (*t, evs.edit, f, start);
+                evs.selectionManager.selectOnly (t);
+            }
     }
 
     void setDropHighlight (bool b)

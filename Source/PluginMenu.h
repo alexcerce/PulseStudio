@@ -47,7 +47,58 @@ namespace PluginMenu
         }
     }
 
-    inline void show (te::Edit& edit, Component* target, Callback cb)
+    //==============================================================================
+    // What may go where
+    enum class Kind { instrument, midiEffect, audioEffect };
+
+    inline Kind kindOf (te::Plugin& p)
+    {
+        if (dynamic_cast<pulse::PulseMidiEffect*> (&p) != nullptr) return Kind::midiEffect;
+        if (p.isSynth()) return Kind::instrument;
+        if (auto ri = dynamic_cast<te::RackInstance*> (&p); ri != nullptr && ri->type != nullptr && (bool) ri->type->state.getProperty ("pulseDrumRack"))
+            return Kind::instrument;
+        return Kind::audioEffect;
+    }
+
+    /** A chain that takes audio effects only: the master, return tracks and group (folder) tracks. */
+    inline bool isAudioOnlyChain (te::PluginList& list, te::Track* track)
+    {
+        if (&list == &list.getEdit().getMasterPluginList()) return true;
+        if (dynamic_cast<te::FolderTrack*> (track) != nullptr) return true;
+        return list.size() > 0 && dynamic_cast<te::AuxReturnPlugin*> (list[0]) != nullptr;
+    }
+
+    inline te::Plugin* instrumentIn (te::PluginList& list)
+    {
+        for (auto p : list) if (kindOf (*p) == Kind::instrument) return p;
+        return nullptr;
+    }
+
+    /** Why a device can't go into a chain (empty = it can). */
+    inline String refusal (te::Plugin& p, te::Track* track, te::PluginList& list)
+    {
+        const auto k = kindOf (p);
+        if (isAudioOnlyChain (list, track) && k != Kind::audioEffect)
+            return String (k == Kind::instrument ? "Instruments" : "MIDI effects") + " can't go on "
+                   + (&list == &list.getEdit().getMasterPluginList() ? "the master" : dynamic_cast<te::FolderTrack*> (track) != nullptr ? "a group" : "a return track")
+                   + ": it only takes audio effects. Put " + p.getName() + " on an instrument track instead.";
+        if (k == Kind::midiEffect && instrumentIn (list) == nullptr)
+            return "MIDI effects change the notes going into an instrument, and this track has none. Add an instrument first, then " + p.getName() + ".";
+        return {};
+    }
+
+    /** Shows why something was refused (set by the app: a message box). */
+    inline std::function<void (const String&)> onRefused;
+
+    /** What a menu for a chain should offer. */
+    struct Allowed { bool instruments = true, midiEffects = true; };
+    inline Allowed allowedFor (te::PluginList& list, te::Track* track)
+    {
+        if (isAudioOnlyChain (list, track)) return { false, false };
+        return { true, instrumentIn (list) != nullptr };
+    }
+
+    inline void show (te::Edit& edit, Component* target, Callback cb, Allowed allowed = {})
     {
         auto& list = edit.engine.getPluginManager().knownPluginList;
         auto tree = list.createTree (list.getTypes(), KnownPluginList::sortByManufacturer);
@@ -104,9 +155,11 @@ namespace PluginMenu
 
         PopupMenu m;
         m.addSectionHeader ("Built-in");
-        m.addSubMenu ("Instruments", instruments);
-        m.addSubMenu ("MIDI Effects", midiFx);
+        if (allowed.instruments) m.addSubMenu ("Instruments", instruments);
+        if (allowed.midiEffects) m.addSubMenu ("MIDI Effects", midiFx);
+        else if (allowed.instruments) m.addItem ("MIDI Effects (add an instrument first)", false, false, nullptr);
         m.addSubMenu ("Audio Effects", effects);
+        if (! allowed.instruments) m.addItem ("(this chain takes audio effects only)", false, false, nullptr);
         m.addSectionHeader ("VST3");
 
         if (vstInst.getNumItems() + vstFx.getNumItems() == 0)
@@ -115,7 +168,7 @@ namespace PluginMenu
         }
         else
         {
-            m.addSubMenu ("Instruments", vstInst);
+            if (allowed.instruments) m.addSubMenu ("Instruments", vstInst);
             m.addSubMenu ("Audio Effects", vstFx);
         }
 
@@ -142,9 +195,25 @@ namespace PluginMenu
         Simpler a factory sound). */
     inline std::function<void (te::Plugin&)> onInserted;
 
-    /** Instruments go at the very front of the chain. */
-    inline void insertPlugin (te::Track* track, te::PluginList& list, te::Plugin::Ptr p, te::SelectionManager* sm)
+    /** Instruments go at the very front of the chain (a second instrument replaces the first).
+        Devices that make no sense in the chain are refused (see refusal); returns false then. */
+    inline bool insertPlugin (te::Track* track, te::PluginList& list, te::Plugin::Ptr p, te::SelectionManager* sm)
     {
+        if (p == nullptr) return false;
+        if (const auto why = refusal (*p, track, list); why.isNotEmpty())
+        {
+            if (onRefused) onRefused (why);
+            return false;
+        }
+        if (kindOf (*p) == Kind::instrument)
+            if (auto old = instrumentIn (list))
+            {
+                const int at = list.indexOf (old);
+                old->deleteFromParent();   // swapped (undoable)
+                list.insertPlugin (p, at, sm);
+                if (onInserted) onInserted (*p);
+                return true;
+            }
         // On a return track slot 0 holds the Aux Return, so nothing may go in front of it.
         const bool isReturn = dynamic_cast<te::AuxReturnPlugin*> (list[0]) != nullptr;
         if (dynamic_cast<pulse::PulseMidiEffect*> (p.get()) != nullptr)
@@ -154,9 +223,10 @@ namespace PluginMenu
                 if (list[i]->isSynth()) { index = i; break; }   // just before the instrument
                 else if (dynamic_cast<pulse::PulseMidiEffect*> (list[i]) != nullptr) index = i + 1;
             list.insertPlugin (p, index, sm);
-            return;
+            return true;
         }
         list.insertPlugin (p, p->isSynth() ? (isReturn ? 1 : 0) : insertIndexFor (list, track), sm);
         if (onInserted && p != nullptr) onInserted (*p);
+        return true;
     }
 }

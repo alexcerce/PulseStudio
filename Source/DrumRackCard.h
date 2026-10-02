@@ -925,8 +925,12 @@ private:
                 ignoreUnused (ds);
                 DrumRack::loadSynth (*rack, slot, pulse::DrumVoice::kick);
             }
-            else if (! p->isSynth())
+            else if (PluginMenu::kindOf (*p) == PluginMenu::Kind::audioEffect)
                 DrumRack::addEffect (*rack, slot, p);
+            else if (PluginMenu::onRefused)
+                PluginMenu::onRefused (PluginMenu::kindOf (*p) == PluginMenu::Kind::midiEffect
+                                         ? "MIDI effects can't go on a drum pad. Put " + p->getName() + " before the Drum Rack on the track instead."
+                                         : "A drum pad plays samples or the Drum Synth. Drop a sample, the Drum Synth, or an audio effect on it.");
             select (slot);
             repaintPads();
         }

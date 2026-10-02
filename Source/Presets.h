@@ -112,13 +112,16 @@ namespace Presets
         for (auto p : userChain (list, track))
             p->deleteFromParent();
 
+        // instruments first, so the MIDI effects in the chain find theirs
+        juce::Array<te::Plugin::Ptr> made;
         for (auto v : chain)
         {
             auto state = v.createCopy();
             te::EditItemID::remapIDs (state, nullptr, list.getEdit());
-            if (auto p = list.getEdit().getPluginCache().createNewPlugin (state))
-                PluginMenu::insertPlugin (track, list, p, nullptr);
+            if (auto p = list.getEdit().getPluginCache().createNewPlugin (state)) made.add (p);
         }
+        for (auto& p : made) if (PluginMenu::kindOf (*p) == PluginMenu::Kind::instrument) PluginMenu::insertPlugin (track, list, p, nullptr);
+        for (auto& p : made) if (PluginMenu::kindOf (*p) != PluginMenu::Kind::instrument) PluginMenu::insertPlugin (track, list, p, nullptr);
     }
 
     //==============================================================================

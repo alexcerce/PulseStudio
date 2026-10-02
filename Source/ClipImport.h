@@ -193,6 +193,16 @@ namespace ClipImport
         return fixed;
     }
 
+    /** Audio on a track whose instrument would ignore it: true for audio files dropped on a
+        track that has an instrument (they go onto a new audio track instead). */
+    inline bool needsOwnAudioTrack (te::AudioTrack& t, const File& f)
+    {
+        if (isMidiFile (f)) return false;
+        for (auto p : t.pluginList)
+            if (p->isSynth() || dynamic_cast<te::RackInstance*> (p) != nullptr) return true;
+        return false;
+    }
+
     inline te::Plugin::Ptr createPluginFromDescription (te::Edit& edit, const String& d)
     {
         if (d == "plugin:builtin:drumrack")

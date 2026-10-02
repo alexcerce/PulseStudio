@@ -68,6 +68,7 @@ public:
 
         PluginMenu::drumRackFactory = [] (te::Edit& ed, bool kit) { return DrumRack::create (ed, kit); };
         WavetableUI::installModDrop();
+        PluginMenu::onRefused = [] (const String& why) { AlertWindow::showMessageBoxAsync (MessageBoxIconType::InfoIcon, "Can't add that here", why); };
         PluginMenu::onInserted = [] (te::Plugin& p) { if (auto s = dynamic_cast<pulse::Simpler*> (&p)) FactorySounds::fillSimpler (*s); };
         drumLibraryFolders = [this]
         {
