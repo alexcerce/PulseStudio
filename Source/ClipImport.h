@@ -3,6 +3,7 @@
 #include "Common.h"
 #include "DrumRack.h"
 #include "PulseSynths.h"
+#include "FactoryPresets.h"
 
 /** Shared helpers for turning files / plugin IDs into clips, tracks and devices. */
 namespace ClipImport
@@ -114,6 +115,14 @@ namespace ClipImport
             return DrumRack::create (edit);
         if (d == "plugin:builtin:drumrackkit")
             return DrumRack::create (edit, true);
+
+        if (d.startsWith ("plugin:factory:"))   // plugin:factory:<type>:<preset>
+        {
+            auto rest = d.fromFirstOccurrenceOf ("plugin:factory:", false, false);
+            auto p = edit.getPluginCache().createNewPlugin (rest.upToFirstOccurrenceOf (":", false, false), {});
+            if (p != nullptr) FactoryPresets::apply (*p, rest.fromFirstOccurrenceOf (":", false, false));
+            return p;
+        }
 
         if (d.startsWith ("plugin:builtin:"))
             return edit.getPluginCache().createNewPlugin (d.fromFirstOccurrenceOf ("plugin:builtin:", false, false), {});

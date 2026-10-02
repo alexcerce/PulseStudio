@@ -8,6 +8,7 @@
 #include "Presets.h"
 #include "Macros.h"
 #include "Meters.h"
+#include "FactoryContent.h"
 #include "ClipGain.h"
 #include "PushMap.h"
 #include "AudioSettings.h"
@@ -2607,6 +2608,147 @@ namespace SelfTest
                 edit->deleteTrack (gtTrack);
             }
             rep.check (grooveOk, "Extract a groove from a clip and apply it", gInfo);
+        }
+
+        // --- factory content: presets, kits, templates ---------------------------------------------------
+        {
+            rep.step ("factory content");
+            int presets = 0, missing = 0, silent = 0;
+            StringArray problems;
+            for (auto& [type, list] : FactoryPresets::all())
+                for (auto& pr : list)
+                {
+                    auto p = edit->getPluginCache().createNewPlugin (type, {});
+                    if (p == nullptr) { problems.add (type); continue; }
+                    ++presets;
+                    for (auto& [id, v] : pr.values)
+                        if (p->getAutomatableParameterByID (id) == nullptr) { ++missing; problems.add (type + "." + id); }
+                    FactoryPresets::apply (*p, pr.name);
+                    if (p->isSynth() && type != pulse::DrumSynth::xmlTypeName)
+                    {
+                        // a held chord must make sound
+                        const double sr = 48000.0;
+                        const int block = 480;
+                        p->initialise ({ te::TimePosition(), sr, block });
+                        AudioBuffer<float> audio (2, block);
+                        float peak = 0;
+                        const auto src = te::createUniqueMPESourceID();
+                        for (int k = 0; k < 100; ++k)
+                        {
+                            audio.clear();
+                            te::MidiMessageArray midi;
+                            if (k == 0) for (int n : { 48, 55, 60 }) midi.addMidiMessage (MidiMessage::noteOn (1, n, (uint8) 100), 0.0, src);
+                            te::PluginRenderContext fc (&audio, 0, block, &midi, 0.0, { te::TimePosition::fromSeconds (k * 0.01), te::TimePosition::fromSeconds ((k + 1) * 0.01) },
+                                                        true, false, true, false);
+                            p->applyToBuffer (fc);
+                            peak = jmax (peak, audio.getMagnitude (0, 0, block));
+                        }
+                        p->deinitialise();
+                        if (Decibels::gainToDecibels (peak) < -40.0f) { ++silent; problems.add (String (pr.name) + " silent"); }
+                    }
+                }
+            rep.check (presets >= 50 && missing == 0 && silent == 0, "Factory presets (every id exists, every sound plays)",
+                       String (presets) + " presets" + (problems.isEmpty() ? String() : ": " + problems.joinIntoString (", ")));
+
+            auto rp = DrumRack::create (*edit, false);
+            bool kitOk = false;
+            if (auto rack = DrumRack::rackOf (rp.get()))
+            {
+                DrumRack::fillSynthKit (*rack, 1);
+                const float decay808 = DrumRack::source (*rack, 36)->get (pulse::DrumPad::pSynthDecay);
+                DrumRack::fillSynthKit (*rack, 2);
+                const float decay909 = DrumRack::source (*rack, 36)->get (pulse::DrumPad::pSynthDecay);
+                kitOk = decay808 > 1.5f && decay909 < 1.0f && DrumRack::usedPads (*rack).size() == 11;
+            }
+            rep.check (kitOk, "Drum kit styles (808 / 909 / lo-fi / electro)");
+
+            FactoryContent::folder (engine).deleteRecursively();
+            const int written = FactoryContent::ensureTemplates (engine);
+            auto files = FactoryContent::templates (engine);
+            int opened = 0;
+            float housePeak = -200.0f;
+            for (auto& f : files)
+                if (auto ed = te::loadEditFromFile (engine, f); ed != nullptr && EngineHelpers::getUserTracks (*ed).size() >= 3)
+                {
+                    ++opened;
+                    if (f.getFileNameWithoutExtension() == "House")
+                    {
+                        ed->getTransport().ensureContextAllocated();
+                        EditingOps::waitForClipProxies (*ed);
+                        auto out = dir.getChildFile ("house_template.wav");
+                        out.deleteFile();
+                        te::Renderer::renderToFile (*ed, out, false);
+                        housePeak = peakDb (engine, out);
+                    }
+                }
+            rep.check (written == 4 && files.size() == 4 && opened == 4 && housePeak > -30.0f, "Factory project templates (House, Hip-Hop, Ambient, Empty)",
+                       String (opened) + " open, House renders at " + String (housePeak, 1) + " dBFS");
+        }
+
+        // --- drawn wavetable -------------------------------------------------------------------------------
+        {
+            rep.step ("user wavetable");
+            using W = pulse::WavetableSynth;
+            std::vector<float> sine (128), square (128);
+            for (int i = 0; i < 128; ++i) { sine[(size_t) i] = std::sin (MathConstants<float>::twoPi * i / 128.0f); square[(size_t) i] = i < 64 ? 1.0f : -1.0f; }
+            auto table = pulse::WavetableBank::buildUser (sine, square);
+            float err = 0;
+            const auto* t0 = table->table (0, 0);
+            for (int i = 0; i < pulse::WavetableBank::tableSize; ++i)
+                err = jmax (err, std::abs (t0[i] - 0.9f * std::sin (MathConstants<float>::twoPi * i / (float) pulse::WavetableBank::tableSize)));
+            // a top-octave level keeps few harmonics: the square's last frame is smoothed there
+            const auto* hiLevel = table->table (15, 9);
+            float ripple = 0;
+            for (int i = 1; i < pulse::WavetableBank::tableSize; ++i) ripple = jmax (ripple, std::abs (hiLevel[i] - hiLevel[i - 1]));
+
+            auto wv = edit->getPluginCache().createNewPlugin (W::xmlTypeName, {});
+            float sineB = 0, squareB = 0;
+            if (auto* w = dynamic_cast<W*> (wv.get()))
+            {
+                const double sr = 48000.0;
+                const int block = 480;
+                auto render = [&] (float pos)
+                {
+                    w->set (W::pSet1, (float) pulse::WavetableBank::userSet); w->set (W::pPos1, pos); w->set (W::pMix, 0.0f);
+                    w->set (W::pVoices, 1.0f); w->set (W::pFilterType, 0.0f); w->set (W::pCutoff, 20000.0f); w->set (W::pFilterEnv, 0.0f);
+                    w->set (W::pLfoPos, 0.0f); w->set (W::pSub, 0.0f);
+                    w->initialise ({ te::TimePosition(), sr, block });
+                    AudioBuffer<float> audio (2, block);
+                    double e = 0, d = 0;
+                    const auto src = te::createUniqueMPESourceID();
+                    float prev = 0;
+                    for (int k = 0; k < 40; ++k)
+                    {
+                        audio.clear();
+                        te::MidiMessageArray midi;
+                        if (k == 0) midi.addMidiMessage (MidiMessage::noteOn (1, 57, (uint8) 100), 0.0, src);
+                        te::PluginRenderContext fc (&audio, 0, block, &midi, 0.0, { te::TimePosition::fromSeconds (k * 0.01), te::TimePosition::fromSeconds ((k + 1) * 0.01) }, true, false, true, false);
+                        w->applyToBuffer (fc);
+                        if (k > 10)
+                            for (int i = 0; i < block; ++i) { const float x = audio.getSample (0, i); e += x * x; d += (x - prev) * (x - prev); prev = x; }
+                        else prev = audio.getSample (0, block - 1);
+                    }
+                    w->deinitialise();
+                    return e > 0 ? (float) std::sqrt (d / e) : 0.0f;
+                };
+                w->setUserWave (0, sine);
+                w->setUserWave (1, square);
+                sineB = render (0.0f);
+                squareB = render (1.0f);
+
+                PulseLookAndFeel laf;
+                LookAndFeel::setDefaultLookAndFeel (&laf);
+                {
+                    DeviceDisplays::WaveDrawEditor ed (*w);
+                    auto img = ed.createComponentSnapshot (ed.getLocalBounds());
+                    auto f = dir.getChildFile ("wavedraw.png");
+                    f.deleteFile();
+                    if (auto os = f.createOutputStream()) { PNGImageFormat png; png.writeImageToStream (img, *os); }
+                }
+                LookAndFeel::setDefaultLookAndFeel (nullptr);
+            }
+            rep.check (err < 0.01f && ripple < 0.05f && sineB > 0.0f && squareB > sineB * 2.0f, "Drawn wavetable (band-limited, morphs start -> end)",
+                       "sine error " + String (err, 4) + ", brightness " + String (sineB, 3) + " -> " + String (squareB, 3));
         }
 
         // --- undo -------------------------------------------------------------------------------

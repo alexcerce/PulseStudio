@@ -40,10 +40,196 @@ namespace DeviceDisplays
     };
 
     //==============================================================================
-    class WavetableDisplay : public Polled
+    /** Draw your own wavetable: two single cycles (Start and End of the Position sweep). Drag to
+        draw; the buttons give starting shapes. */
+    class WaveDrawEditor : public Component
     {
     public:
-        explicit WavetableDisplay (pulse::WavetableSynth& s) : Polled (s) {}
+        explicit WaveDrawEditor (pulse::WavetableSynth& s) : holder (&s), synth (&s)
+        {
+            waves[0] = s.getUserWave (0);
+            waves[1] = s.getUserWave (1);
+            for (int i = 0; i < 2; ++i)
+            {
+                auto* b = tabs.add (new TextButton (i == 0 ? "Start (Position 0%)" : "End (Position 100%)"));
+                b->setClickingTogglesState (false);
+                b->onClick = [this, i] { current = i; updateTabs(); repaint(); };
+                addAndMakeVisible (b);
+            }
+            const char* shapes[] = { "Sine", "Triangle", "Saw", "Square", "Noise", "Smooth", "Normalise", "Copy to other" };
+            for (int i = 0; i < 8; ++i)
+            {
+                auto* b = tools.add (new TextButton (shapes[i]));
+                b->onClick = [this, i] { applyTool (i); };
+                addAndMakeVisible (b);
+            }
+            for (int osc = 0; osc < 2; ++osc)
+            {
+                auto* b = useBtns.add (new TextButton ("Use on Osc " + String (osc + 1)));
+                b->setTooltip ("Switch oscillator " + String (osc + 1) + " to the drawn table");
+                b->onClick = [this, osc]
+                {
+                    synth->edit.getUndoManager().beginNewTransaction ("Use drawn wavetable");
+                    synth->set (osc == 0 ? pulse::WavetableSynth::pSet1 : pulse::WavetableSynth::pSet2, (float) pulse::WavetableBank::userSet);
+                };
+                addAndMakeVisible (b);
+            }
+            updateTabs();
+            setSize (520, 300);
+        }
+
+        void paint (Graphics& g) override
+        {
+            g.fillAll (Theme::panel);
+            auto r = drawArea().toFloat();
+            Graphs::panel (g, r);
+            g.setColour (Colours::white.withAlpha (0.08f));
+            g.drawHorizontalLine ((int) r.getCentreY(), r.getX(), r.getRight());
+            for (int q = 1; q < 4; ++q) g.drawVerticalLine ((int) (r.getX() + r.getWidth() * q / 4.0f), r.getY(), r.getBottom());
+            // the other cycle, faint
+            auto drawWave = [&] (const std::vector<float>& w, Colour c, float thickness)
+            {
+                Path p;
+                for (int i = 0; i <= (int) w.size(); ++i)
+                {
+                    const float x = r.getX() + r.getWidth() * (float) i / (float) w.size();
+                    const float y = r.getCentreY() - w[(size_t) (i % (int) w.size())] * r.getHeight() * 0.45f;
+                    if (i == 0) p.startNewSubPath (x, y); else p.lineTo (x, y);
+                }
+                g.setColour (c);
+                g.strokePath (p, PathStrokeType (thickness));
+            };
+            drawWave (waves[1 - current], Theme::muted.withAlpha (0.4f), 1.0f);
+            drawWave (waves[current], current == 0 ? Theme::accent : Theme::orange, 2.0f);
+            g.setColour (Theme::muted);
+            g.setFont (FontOptions (11.0f));
+            g.drawText ("Drag to draw. Position morphs from Start to End.", r.reduced (6.0f).removeFromBottom (14.0f), Justification::bottomLeft);
+        }
+
+        void resized() override
+        {
+            auto r = getLocalBounds().reduced (10);
+            auto top = r.removeFromTop (24);
+            for (auto* t : tabs) t->setBounds (top.removeFromLeft (150).reduced (1, 0));
+            auto bottom = r.removeFromBottom (24);
+            auto useArea = bottom.removeFromRight (220);
+            for (auto* b : useBtns) b->setBounds (useArea.removeFromLeft (110).reduced (2, 0));
+            r.removeFromBottom (6);
+            auto toolRow = r.removeFromBottom (24);
+            const int w = toolRow.getWidth() / tools.size();
+            for (auto* t : tools) t->setBounds (toolRow.removeFromLeft (w).reduced (1, 0));
+            r.removeFromBottom (6);
+            r.removeFromTop (6);
+            area = r;
+        }
+
+        void mouseDown (const MouseEvent& e) override
+        {
+            if (! drawArea().contains (e.getPosition())) return;
+            synth->edit.getUndoManager().beginNewTransaction ("Draw wavetable");
+            last = e.position;
+            paintAt (e.position, e.position);
+        }
+
+        void mouseDrag (const MouseEvent& e) override
+        {
+            paintAt (last, e.position);
+            last = e.position;
+        }
+
+        void mouseUp (const MouseEvent&) override { commit(); }
+
+    private:
+        Rectangle<int> drawArea() const { return area; }
+
+        /** Sets the points between two mouse positions (so fast drags leave no gaps). */
+        void paintAt (juce::Point<float> a, juce::Point<float> b)
+        {
+            auto r = drawArea().toFloat();
+            auto& w = waves[current];
+            const int n = (int) w.size();
+            auto idx = [&] (float x) { return jlimit (0, n - 1, (int) ((x - r.getX()) / r.getWidth() * n)); };
+            auto val = [&] (float y) { return jlimit (-1.0f, 1.0f, (r.getCentreY() - y) / (r.getHeight() * 0.45f)); };
+            const int i0 = idx (a.x), i1 = idx (b.x);
+            const float v0 = val (a.y), v1 = val (b.y);
+            for (int i = jmin (i0, i1); i <= jmax (i0, i1); ++i)
+            {
+                const float f = i1 == i0 ? 1.0f : (float) (i - i0) / (float) (i1 - i0);
+                w[(size_t) i] = v0 + (v1 - v0) * f;
+            }
+            repaint();
+        }
+
+        void applyTool (int t)
+        {
+            auto& w = waves[current];
+            const int n = (int) w.size();
+            Random rng;
+            synth->edit.getUndoManager().beginNewTransaction ("Wavetable shape");
+            switch (t)
+            {
+                case 0: for (int i = 0; i < n; ++i) w[(size_t) i] = std::sin (MathConstants<float>::twoPi * i / n); break;
+                case 1: for (int i = 0; i < n; ++i) { const float ph = (float) i / n; w[(size_t) i] = ph < 0.25f ? ph * 4 : ph < 0.75f ? 2 - ph * 4 : ph * 4 - 4; } break;
+                case 2: for (int i = 0; i < n; ++i) w[(size_t) i] = 2.0f * i / n - 1.0f; break;
+                case 3: for (int i = 0; i < n; ++i) w[(size_t) i] = i < n / 2 ? 0.9f : -0.9f; break;
+                case 4: for (int i = 0; i < n; ++i) w[(size_t) i] = rng.nextFloat() * 2.0f - 1.0f; break;
+                case 5: { auto c = w; for (int i = 0; i < n; ++i) w[(size_t) i] = (c[(size_t) ((i + n - 1) % n)] + 2 * c[(size_t) i] + c[(size_t) ((i + 1) % n)]) * 0.25f; break; }
+                case 6: { float pk = 0; for (auto v : w) pk = jmax (pk, std::abs (v)); if (pk > 0.001f) for (auto& v : w) v = v / pk; break; }
+                case 7: waves[1 - current] = w; break;
+                default: break;
+            }
+            commit();
+            repaint();
+        }
+
+        void commit()
+        {
+            synth->setUserWave (0, waves[0]);
+            synth->setUserWave (1, waves[1]);
+        }
+
+        void updateTabs()
+        {
+            for (int i = 0; i < tabs.size(); ++i)
+            {
+                tabs[i]->setToggleState (i == current, dontSendNotification);
+                tabs[i]->setColour (TextButton::buttonOnColourId, (i == 0 ? Theme::accent : Theme::orange).withAlpha (0.45f));
+            }
+        }
+
+        te::Plugin::Ptr holder;   // keeps the synth alive while the editor is open
+        pulse::WavetableSynth* synth;
+        std::vector<float> waves[2];
+        int current = 0;
+        juce::Point<float> last;
+        Rectangle<int> area;
+        OwnedArray<TextButton> tabs, tools, useBtns;
+    };
+
+    //==============================================================================
+    class WavetableDisplay : public Polled, public SettableTooltipClient
+    {
+    public:
+        explicit WavetableDisplay (pulse::WavetableSynth& s) : Polled (s), synth (s)
+        {
+            drawBtn.setTooltip ("Draw your own wavetable (the \"User (drawn)\" table)");
+            drawBtn.onClick = [this]
+            {
+                CallOutBox::launchAsynchronously (std::make_unique<WaveDrawEditor> (synth), drawBtn.getScreenBounds(), nullptr);
+            };
+            addAndMakeVisible (drawBtn);
+        }
+
+        void resized() override { drawBtn.setBounds (getLocalBounds().reduced (6).removeFromBottom (20).removeFromRight (52)); }
+        bool alwaysRepaint() const override
+        {
+            auto t = synth.getUserTable().get();
+            if (t != shownUser) { shownUser = t; return true; }
+            return false;
+        }
+        pulse::WavetableSynth& synth;
+        TextButton drawBtn { "Draw..." };
+        mutable const void* shownUser = nullptr;
 
         void paint (Graphics& g) override
         {
@@ -61,12 +247,12 @@ namespace DeviceDisplays
                 g.setFont (FontOptions (11.0f));
                 g.drawText ("OSC " + String (osc + 1) + "  " + pulse::WavetableBank::setNames[sets[osc]], area.removeFromTop (12.0f), Justification::centredLeft);
 
-                auto& bank = pulse::WavetableBank::get();
+                const auto user = synth.getUserTable();
                 const float fpos = pos[osc] * (pulse::WavetableBank::numFrames - 1);
                 const int f0 = jmin (pulse::WavetableBank::numFrames - 2, (int) fpos);
                 const float frac = fpos - (float) f0;
-                auto* a = bank.table (sets[osc], f0, 0);
-                auto* b = bank.table (sets[osc], f0 + 1, 0);
+                auto* a = synth.tableFor (sets[osc], f0, 0, user.get());
+                auto* b = synth.tableFor (sets[osc], f0 + 1, 0, user.get());
 
                 Path p;
                 const int points = jmax (2, (int) area.getWidth());

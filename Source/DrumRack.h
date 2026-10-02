@@ -368,17 +368,35 @@ namespace DrumRack
     }
 
     /** A playable synthesised kit on the GM slots (hats share a choke group). */
-    inline void fillSynthKit (te::RackType& rack)
+    inline const StringArray& kitStyles() { static StringArray s { "Classic", "808", "909", "Lo-fi", "Electro" }; return s; }
+
+    /** A playable synthesised kit on the GM slots (hats share a choke group), in a style:
+        0 classic, 1 808 (long boomy kick, soft hats), 2 909 (punchy, bright), 3 lo-fi (dark,
+        driven), 4 electro (snappy, bright, short). */
+    inline void fillSynthKit (te::RackType& rack, int style = 0)
     {
         using D = pulse::DrumVoice;
+        using P = pulse::DrumPad;
         const std::pair<int, int> kit[] = { { 36, D::kick }, { 37, D::rim }, { 38, D::snare }, { 39, D::clap }, { 41, D::tom },
                                             { 42, D::closedHat }, { 45, D::tom }, { 46, D::openHat }, { 48, D::tom },
                                             { 49, D::cymbal }, { 56, D::cowbell } };
+        //                      tune  decay  tone  snap  drive
+        const float styles[5][5] = { { 0.0f, 1.0f, 0.5f, 0.5f, 0.0f },
+                                     { -3.0f, 1.7f, 0.25f, 0.3f, 0.1f },
+                                     { 2.0f, 0.8f, 0.7f, 0.9f, 0.2f },
+                                     { -3.0f, 0.8f, 0.15f, 0.4f, 0.7f },
+                                     { 0.0f, 0.6f, 0.85f, 1.0f, 0.35f } };
+        const auto& st = styles[jlimit (0, 4, style)];
         for (auto [slot, type] : kit)
             if (auto p = loadSynth (rack, slot, type))
             {
-                if (type == D::tom) p->set (pulse::DrumPad::pSynthTune, slot == 41 ? -5.0f : slot == 48 ? 4.0f : 0.0f);
-                if (type == D::closedHat || type == D::openHat) p->set (pulse::DrumPad::pChoke, 1.0f);
+                const float tomTune = type == D::tom ? (slot == 41 ? -5.0f : slot == 48 ? 4.0f : 0.0f) : 0.0f;
+                p->set (P::pSynthTune, tomTune + (type == D::kick || type == D::tom ? st[0] : st[0] * 0.5f));
+                p->set (P::pSynthDecay, type == D::kick ? st[1] : jmin (2.0f, 0.5f + st[1] * 0.5f));
+                p->set (P::pSynthTone, st[2]);
+                p->set (P::pSynthSnap, st[3]);
+                p->set (P::pSynthDrive, st[4]);
+                if (type == D::closedHat || type == D::openHat) p->set (P::pChoke, 1.0f);
             }
     }
 

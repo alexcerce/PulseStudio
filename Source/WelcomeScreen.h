@@ -16,7 +16,7 @@ public:
         std::function<void (bool)> setShowAtStartup;
     };
 
-    WelcomeScreen (StringArray recentPaths, bool showAtStartup, Callbacks cb) : callbacks (std::move (cb))
+    WelcomeScreen (StringArray recentPaths, bool showAtStartup, Callbacks cb, Array<File> templateFiles = {}) : callbacks (std::move (cb))
     {
         for (auto& p : recentPaths)
             if (File (p).existsAsFile() && recent.size() < 9) recent.add (File (p));
@@ -34,9 +34,10 @@ public:
         demoBtn.onClick  = [this] { close(); if (callbacks.newProject) callbacks.newProject ({}, true); };
         openBtn.onClick  = [this] { close(); if (callbacks.browseProject) callbacks.browseProject(); };
 
-        for (auto& t : Sharing::templates())
+        if (templateFiles.isEmpty()) templateFiles = Sharing::templates();
+        for (auto& t : templateFiles)
         {
-            if (templateBtns.size() >= 4) break;
+            if (templateBtns.size() >= 5) break;
             auto* b = templateBtns.add (new TextButton (t.getFileNameWithoutExtension()));
             styleNew (*b, "New project from the template \"" + t.getFileNameWithoutExtension() + "\"");
             b->onClick = [this, t] { close(); if (callbacks.newProject) callbacks.newProject (t, false); };

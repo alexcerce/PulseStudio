@@ -1021,13 +1021,16 @@ private:
     void showKitMenu()
     {
         PopupMenu m;
-        m.addItem ("Load synth kit (GM layout)", [this]
-        {
-            begin ("Synth kit");
-            DrumRack::fillSynthKit (*rack);
-            setBank (DrumRack::baseNote);
-            select (DrumRack::baseNote);
-        });
+        PopupMenu kits;
+        for (int st = 0; st < DrumRack::kitStyles().size(); ++st)
+            kits.addItem (DrumRack::kitStyles()[st], [this, st]
+            {
+                begin ("Synth kit");
+                DrumRack::fillSynthKit (*rack, st);
+                setBank (DrumRack::baseNote);
+                select (DrumRack::baseNote);
+            });
+        m.addSubMenu ("Load synth kit (GM layout)", kits);
         m.addItem ("Randomise kit (from your sample folders)", [this]
         {
             Array<File> folders;

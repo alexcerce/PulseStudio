@@ -379,6 +379,17 @@ private:
             Presets::askForName ("Save " + plugin->getName() + " preset", plugin->getName(),
                                  [p = plugin] (const String& name) { Presets::saveDevice (*p, name); });
         });
+        if (auto& factory = FactoryPresets::forType (plugin->getPluginType()); ! factory.empty())
+        {
+            PopupMenu f;
+            for (auto& pr : factory)
+                f.addItem (pr.name, [p = plugin, name = String (pr.name)]
+                {
+                    p->edit.getUndoManager().beginNewTransaction ("Factory preset");
+                    FactoryPresets::apply (*p, name);
+                });
+            m.addSubMenu ("Factory presets", f);
+        }
         auto files = Presets::devicePresets (*plugin);
         if (! files.isEmpty())
         {

@@ -101,7 +101,73 @@ namespace pulse
     struct WavetableBank
     {
         static constexpr int order = 11, tableSize = 1 << order, numFrames = 16, numLevels = 11;
-        static inline const StringArray setNames { "Basic shapes", "Pulse width", "Harmonics", "Vowels", "Sync saw" };
+        static inline const StringArray setNames { "Basic shapes", "Pulse width", "Harmonics", "Vowels", "Sync saw", "User (drawn)" };
+        static constexpr int userSet = 5;
+
+        /** Band-limited frames morphing between two drawn single cycles (one per Wavetable instance). */
+        struct UserTable
+        {
+            std::vector<float> data;
+            const float* table (int frame, int level) const
+            {
+                frame = jlimit (0, numFrames - 1, frame);
+                level = jlimit (0, numLevels - 1, level);
+                return data.data() + ((size_t) frame * numLevels + (size_t) level) * (tableSize + 1);
+            }
+        };
+
+        /** Turns two drawn cycles (any number of points, -1..1) into band-limited morph frames. */
+        static std::shared_ptr<UserTable> buildUser (const std::vector<float>& a, const std::vector<float>& b)
+        {
+            auto u = std::make_shared<UserTable>();
+            u->data.resize ((size_t) numFrames * numLevels * (tableSize + 1));
+            dsp::FFT fft (order);
+            auto sampleAt = [] (const std::vector<float>& w, float ph)
+            {
+                if (w.empty()) return std::sin (MathConstants<float>::twoPi * ph);
+                const float x = ph * (float) w.size();
+                const int i = (int) x;
+                const float f = x - (float) i;
+                return w[(size_t) (i % (int) w.size())] * (1.0f - f) + w[(size_t) ((i + 1) % (int) w.size())] * f;
+            };
+            for (int frame = 0; frame < numFrames; ++frame)
+            {
+                const float t = frame / (float) (numFrames - 1);
+                std::vector<float> time ((size_t) tableSize * 2, 0.0f);
+                double mean = 0.0;
+                for (int i = 0; i < tableSize; ++i)
+                {
+                    const float ph = (float) i / tableSize;
+                    time[(size_t) i] = sampleAt (a, ph) * (1.0f - t) + sampleAt (b, ph) * t;
+                    mean += time[(size_t) i];
+                }
+                mean /= tableSize;
+                for (int i = 0; i < tableSize; ++i) time[(size_t) i] -= (float) mean;   // no DC
+                fft.performRealOnlyForwardTransform (time.data());
+                float scale = 0.0f;
+                for (int level = 0; level < numLevels; ++level)
+                {
+                    const int maxH = level == 0 ? 1023 : (1024 >> level);
+                    std::vector<float> buf ((size_t) tableSize * 2, 0.0f);
+                    for (int h = 1; h <= maxH; ++h)
+                    {
+                        buf[(size_t) h * 2] = time[(size_t) h * 2];
+                        buf[(size_t) h * 2 + 1] = time[(size_t) h * 2 + 1];
+                    }
+                    fft.performRealOnlyInverseTransform (buf.data());
+                    if (level == 0)
+                    {
+                        float peak = 0.0f;
+                        for (int i = 0; i < tableSize; ++i) peak = jmax (peak, std::abs (buf[(size_t) i]));
+                        scale = peak > 0.0f ? 0.9f / peak : 1.0f;
+                    }
+                    auto* dst = const_cast<float*> (u->table (frame, level));
+                    for (int i = 0; i < tableSize; ++i) dst[i] = buf[(size_t) i] * scale;
+                    dst[tableSize] = dst[0];
+                }
+            }
+            return u;
+        }
         static int numSets() { return setNames.size(); }
 
         static const WavetableBank& get()
@@ -147,6 +213,7 @@ namespace pulse
             for (int set = 0; set < numSets(); ++set)
                 for (int frame = 0; frame < numFrames; ++frame)
                 {
+                    if (set == userSet) continue;   // drawn per instance (see UserTable)
                     auto spectrum = makeSpectrum (fft, set, frame / (float) (numFrames - 1));
                     float scale = 0.0f;
                     for (int level = 0; level < numLevels; ++level)
@@ -305,6 +372,53 @@ namespace pulse
                 synth.addVoice (new Voice (*this));
             synth.addSound (new AnySound());
             synth.setNoteStealingEnabled (true);
+            userWatcher.owner = this;
+            state.addListener (&userWatcher);
+            rebuildUserTable();
+        }
+
+        ~WavetableSynth() override { state.removeListener (&userWatcher); }
+
+        //==============================================================================
+        // The drawn "User" table: two cycles (start / end of the Position sweep), stored in the project.
+        static inline const Identifier userAID { "userWaveA" }, userBID { "userWaveB" };
+        static constexpr int userPoints = 128;
+
+        std::vector<float> getUserWave (int which) const
+        {
+            std::vector<float> w;
+            for (auto& t : StringArray::fromTokens (state[which == 0 ? userAID : userBID].toString(), ",", {}))
+                w.push_back (t.getFloatValue());
+            if ((int) w.size() != userPoints)
+            {
+                w.resize (userPoints);
+                for (int i = 0; i < userPoints; ++i)
+                {
+                    const float ph = (float) i / userPoints;
+                    w[(size_t) i] = which == 0 ? std::sin (MathConstants<float>::twoPi * ph) : 2.0f * ph - 1.0f;   // sine -> saw
+                }
+            }
+            return w;
+        }
+
+        void setUserWave (int which, const std::vector<float>& w)
+        {
+            StringArray s;
+            for (auto v : w) s.add (String (jlimit (-1.0f, 1.0f, v), 4));
+            state.setProperty (which == 0 ? userAID : userBID, s.joinIntoString (","), getUndoManager());
+        }
+
+        std::shared_ptr<const WavetableBank::UserTable> getUserTable() const
+        {
+            const SpinLock::ScopedLockType sl (userLock);
+            return userTable;
+        }
+
+        /** Table for a set / frame / level (the drawn set comes from this instance). */
+        const float* tableFor (int set, int frame, int level, const WavetableBank::UserTable* user) const
+        {
+            if (set == WavetableBank::userSet && user != nullptr) return user->table (frame, level);
+            return WavetableBank::get().table (jmin (set, WavetableBank::userSet - 1), frame, level);
         }
 
         String getName() const override      { return "Wavetable"; }
@@ -322,6 +436,31 @@ namespace pulse
         }
 
     private:
+        struct UserWatcher : public ValueTree::Listener
+        {
+            WavetableSynth* owner = nullptr;
+            void valueTreePropertyChanged (ValueTree& v, const Identifier& id) override
+            {
+                if (v == owner->state && (id == userAID || id == userBID)) owner->rebuildUserTable();
+            }
+        } userWatcher;
+
+        void rebuildUserTable()
+        {
+            auto t = WavetableBank::buildUser (getUserWave (0), getUserWave (1));
+            const SpinLock::ScopedLockType sl (userLock);
+            userTable = t;
+        }
+
+        void beforeBlock() override
+        {
+            const SpinLock::ScopedTryLockType sl (userLock);
+            if (sl.isLocked()) audioUserTable = userTable;
+        }
+
+        mutable SpinLock userLock;
+        std::shared_ptr<const WavetableBank::UserTable> userTable, audioUserTable;
+
         struct Voice : public SynthesiserVoice
         {
             explicit Voice (WavetableSynth& s) : o (s) {}
@@ -428,8 +567,8 @@ namespace pulse
                         const int fr = jmin (WavetableBank::numFrames - 2, (int) pos);
                         frameFrac[osc] = pos - (float) fr;
                         const int level = WavetableBank::levelFor (of * std::pow (2.0, detune * 50.0 / 1200.0), sr);
-                        t0[osc] = bank.table (set[osc], fr, level);
-                        t1[osc] = bank.table (set[osc], fr + 1, level);
+                        t0[osc] = o.tableFor (set[osc], fr, level, o.audioUserTable.get());
+                        t1[osc] = o.tableFor (set[osc], fr + 1, level, o.audioUserTable.get());
                         for (int u = 0; u < voices; ++u)
                             inc[osc][u] = of * std::pow (2.0, cents[u] / 1200.0) / sr * WavetableBank::tableSize;
                     }

@@ -6,7 +6,7 @@ A native Windows DAW built with C++, [JUCE](https://juce.com) and [Tracktion Eng
 
 ## Install
 
-Run `dist/PulseStudio-0.33.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
+Run `dist/PulseStudio-0.34.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
 
 ## Build
 
@@ -156,6 +156,7 @@ Pulse's own devices have compact cards: knobs stack in as many rows as the devic
 | **Glue Compressor** | A bus compressor with stepped attack and release (including Auto), 2:1, 4:1 and 10:1 ratios, a range limit, makeup gain, dry/wet and soft clip. It has a gain-reduction meter. |
 | **Saturator** | Seven shapes (analog, tape, tube, hard clip, foldback, sine fold and bit crush) with 4× oversampling, bias, a tone tilt and dry/wet. It shows the transfer curve. |
 | **Auto Filter** | A low-pass, band-pass, high-pass, notch or 24 dB low-pass filter with drive. The LFO is free-running or tempo-synced (1/16 to 4 bars) with six shapes and a stereo phase offset. An envelope follower and a dry/wet control round it out. |
+| **Wavetable: draw your own** | Click *Draw...* on the Wavetable display: draw two single cycles (*Start* and *End*; Position morphs between them) or start from sine, triangle, saw, square or noise, then *Smooth* / *Normalise*. *Use on Osc 1 / 2* switches an oscillator to the **User (drawn)** table. It's band-limited like the built-in tables and saved with the project. |
 | **FM Synth** | Four operators (ratio, fine, level and ADSR each) in eight algorithms, shown as a diagram, from a classic 4>3>2>1 stack to fully additive. Feedback on operator 4, a filter, velocity and glide. |
 | **Pulse Reverb** | An 8-line feedback delay network with input diffusion: predelay, size, decay (RT60, up to 20 s), damping, low cut, chorus, width, freeze and dry/wet. The display shows the decay. |
 | **Pulse Delay** | Tempo-synced (1/32 to 1 bar, dotted and triplets) or free time, feedback with low / high cut, ping-pong, wobble, drive and dry/wet. The display shows the repeats. |
@@ -180,6 +181,9 @@ Pulse's own devices have compact cards: knobs stack in as many rows as the devic
   - **Macros page:** 8 rack macros. Right-click any knob of a pad or pad effect → *Map to Rack Macro*.
   - **Kit menu:** *Load synth kit*, *Randomise kit* (picks kick / snare / hat / clap... samples at random from your browser folders by file name, and synthesises anything it can't find), *Clear all pads*.
   - Drum Racks from earlier versions are upgraded automatically when a project is opened.
+- **Factory presets:** every Pulse instrument and effect has presets in its ☰ menu (*Factory presets*), e.g. Wavetable *Supersaw Lead*, *Acid Bass*, *Warm Pad*; FM *E-Piano*, *Bell*; Reverb *Plate*, *Ambient Wash*; Delay *Tape Echo*; Glue *Drum Bus*. They're also in the browser (*Instruments → Sounds*, *Audio Effects → Effect presets*, *Presets*), ready to drag onto a track.
+- **Drum kits:** Drum Rack *Kit → Load synth kit* comes in Classic, 808, 909, Lo-fi and Electro flavours; the Drum Synth has the same kits as presets.
+- **Project templates:** *New Project* (and the welcome screen) offers factory templates — House, Hip-Hop, Ambient and Empty with returns — as well as your own.
 - **Drum Synth:** a synthesised drum kit as an instrument. In *GM kit* mode notes play kick (C1), snare (D1), hats (F#1 / A#1), toms, clap, cymbals and cowbell, or pick one drum to play chromatically.
 - **Simpler multisample:** drop several samples on Simpler (or right-click → *Load multisample*). They are mapped across the keyboard by the note names in the file names (*Piano C3.wav*, *Strings_A#2.wav*, *vln_60.wav*), and the key map shows under the waveform.
 - **Presets:**
@@ -283,7 +287,7 @@ All of these can be changed in *File → Keyboard shortcuts*. New: **Ctrl+P** co
 ## Command line
 
 - `--render out.wav` renders the last project offline and exits.
-- `--selftest report.txt` builds a scratch project and runs 169 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--selftest report.txt` builds a scratch project and runs 173 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
 - `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
 
 ## Code layout

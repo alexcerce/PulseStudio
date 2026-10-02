@@ -24,6 +24,7 @@
 #include "Sharing.h"
 #include "WelcomeScreen.h"
 #include "PluginScan.h"
+#include "FactoryContent.h"
 #include "BackgroundRender.h"
 #include "Commands.h"
 #include "ClipEnvelopes.h"
@@ -545,6 +546,7 @@ private:
         else
             loadEdit (projectsFolder().getNonexistentChildFile ("Demo Song", ".tracktionedit", false), true);
 
+        FactoryContent::ensureTemplates (engine);
         if (settings().getBoolValue ("autoScanPlugins", true) && ! JUCEApplication::getCommandLineParameters().contains ("--snapshots"))
             Timer::callAfterDelay (5000, [sp = SafePointer<MainComponent> (this)] { if (sp != nullptr) sp->pluginScan.start(); });
 
@@ -561,7 +563,9 @@ public:
         cb.newProject = [this] (const File& t, bool demo) { createProject (t, demo); };
         cb.browseProject = [this] { openProject(); };
         cb.setShowAtStartup = [this] (bool on) { settings().setValue ("showWelcome", on); };
-        auto* w = new WelcomeScreen (StringArray::fromLines (settings().getValue ("recentProjects")), settings().getBoolValue ("showWelcome", true), cb);
+        auto templates = FactoryContent::templates (engine);
+        templates.addArray (Sharing::templates());
+        auto* w = new WelcomeScreen (StringArray::fromLines (settings().getValue ("recentProjects")), settings().getBoolValue ("showWelcome", true), cb, templates);
         addAndMakeVisible (w);
         w->setBounds (getLocalBounds());
         w->grabKeyboardFocus();
@@ -991,10 +995,19 @@ private:
         m.addSectionHeader ("New project from...");
         m.addItem ("Empty project", [this] { createProject ({}, false); });
         m.addItem ("Demo song", [this] { createProject ({}, true); });
+        auto factory = FactoryContent::templates (engine);
+        if (! factory.isEmpty())
+        {
+            m.addSeparator();
+            m.addSectionHeader ("Factory templates");
+            for (auto& t : factory)
+                m.addItem (t.getFileNameWithoutExtension(), [this, t] { createProject (t, false); });
+        }
         auto templates = Sharing::templates();
         if (! templates.isEmpty())
         {
             m.addSeparator();
+            m.addSectionHeader ("Your templates");
             for (auto& t : templates)
                 m.addItem (t.getFileNameWithoutExtension(), [this, t] { createProject (t, false); });
         }

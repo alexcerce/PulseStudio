@@ -331,14 +331,31 @@ public:
         auto types = evs.edit.engine.getPluginManager().knownPluginList.getTypes();
         std::sort (types.begin(), types.end(), [] (auto& a, auto& b) { return a.name.compareIgnoreCase (b.name) < 0; });
 
+        // factory presets as rows: "<preset> (<device>)"
+        auto factoryRows = [&] (bool instruments, int kind)
+        {
+            for (auto& b : ClipImport::builtIns())
+                if (b.synth == instruments && ! b.midiFx)
+                    for (auto& pr : FactoryPresets::forType (b.type))
+                        add ({ String (pr.name) + "  (" + b.name + ")", FactoryPresets::description (b.type, pr.name), false, kind });
+        };
+
         if (category == 0 || category == 1)
         {
             header (category == 0 ? "PULSE INSTRUMENTS" : "DRUMS");
             for (auto& b : ClipImport::builtIns())
                 if (b.synth && (category == 0 || isDrumType (b.type)))
                     add ({ b.name, String ("plugin:builtin:") + b.type, false, 0 });
+            if (category == 1)
+            {
+                header ("DRUM SYNTH KITS");
+                for (auto& pr : FactoryPresets::forType (pulse::DrumSynth::xmlTypeName))
+                    add ({ String (pr.name) + " kit", FactoryPresets::description (pulse::DrumSynth::xmlTypeName, pr.name), false, 1 });
+            }
             if (category == 0)
             {
+                header ("SOUNDS");
+                factoryRows (true, 0);
                 header ("VST3 INSTRUMENTS");
                 for (auto& d : types) if (d.isInstrument) add ({ d.name + "  -  " + d.manufacturerName, "plugin:ext:" + d.createIdentifierString(), false, 4 });
             }
@@ -347,6 +364,8 @@ public:
         {
             header ("PULSE EFFECTS");
             for (auto& b : ClipImport::builtIns()) if (! b.synth && ! b.midiFx) add ({ b.name, String ("plugin:builtin:") + b.type, false, 2 });
+            header ("EFFECT PRESETS");
+            factoryRows (false, 2);
             header ("VST3 EFFECTS");
             for (auto& d : types) if (! d.isInstrument) add ({ d.name + "  -  " + d.manufacturerName, "plugin:ext:" + d.createIdentifierString(), false, 4 });
         }
@@ -378,6 +397,10 @@ public:
             return;
         }
 
+        rows.push_back ({ "FACTORY SOUNDS", {}, true });
+        factoryRows (true, 0);
+        rows.push_back ({ "FACTORY EFFECT PRESETS", {}, true });
+        factoryRows (false, 2);
         rows.push_back ({ "TRACK PRESETS", {}, true });
         auto trackPresets = Workflow::trackPresets();
         for (auto& f : trackPresets)
