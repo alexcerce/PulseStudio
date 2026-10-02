@@ -81,7 +81,7 @@ public:
     {
         name.setText (t != nullptr ? t->getName() : "Master", dontSendNotification);
         name.setJustificationType (Justification::centred);
-        name.setFont (FontOptions (12.5f, Font::bold));
+        name.setFont (FontOptions (13.0f, Font::bold));
         name.setInterceptsMouseClicks (false, false);
         addAndMakeVisible (name);
 
@@ -104,7 +104,7 @@ public:
         fader.addMouseListener (this, false);
 
         db.setJustificationType (Justification::centred);
-        db.setFont (FontOptions (11.0f));
+        db.setFont (FontOptions (12.0f));
         db.setColour (Label::textColourId, Theme::muted);
         addAndMakeVisible (db);
 
@@ -131,7 +131,7 @@ public:
                 s->knob.onValueChange = [this, s] { Routing::setSendDb (*audioTrack(), s->bus, (float) s->knob.getValue()); };
                 s->knob.addMouseListener (this, false);
                 s->label.setText (ret->getName().substring (0, 6), dontSendNotification);
-                s->label.setFont (FontOptions (9.5f));
+                s->label.setFont (FontOptions (10.5f));
                 s->label.setColour (Label::textColourId, Theme::muted);
                 s->label.setJustificationType (Justification::centred);
                 addAndMakeVisible (s->knob);
@@ -169,7 +169,7 @@ public:
         }
 
         latency.setJustificationType (Justification::centred);
-        latency.setFont (FontOptions (9.5f));
+        latency.setFont (FontOptions (10.5f));
         latency.setColour (Label::textColourId, Theme::muted);
         addAndMakeVisible (latency);
 

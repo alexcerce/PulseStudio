@@ -57,7 +57,7 @@ namespace DeviceDisplays
             {
                 auto area = (osc == 0 ? r.removeFromTop (r.getHeight() / 2.0f) : r).reduced (8.0f, 6.0f);
                 g.setColour (Theme::muted);
-                g.setFont (FontOptions (10.0f));
+                g.setFont (FontOptions (11.0f));
                 g.drawText ("OSC " + String (osc + 1) + "  " + pulse::WavetableBank::setNames[sets[osc]], area.removeFromTop (12.0f), Justification::centredLeft);
 
                 auto& bank = pulse::WavetableBank::get();
@@ -103,7 +103,7 @@ namespace DeviceDisplays
             g.setColour (Theme::orange);
             g.fillRect (bar.withHeight (bar.getHeight() * gr / 20.0f));
             g.setColour (Theme::muted);
-            g.setFont (FontOptions (10.0f));
+            g.setFont (FontOptions (11.0f));
             g.drawText ("GR " + String (gr, 1), text, Justification::centred);
             for (int db : { 4, 8, 12, 16 })
                 g.drawHorizontalLine ((int) (bar.getY() + bar.getHeight() * db / 20.0f), bar.getX() - 4.0f, bar.getX());
@@ -160,7 +160,7 @@ namespace DeviceDisplays
             for (double f : { 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0 })
                 g.drawVerticalLine ((int) xFor (f), area.getY(), area.getBottom());
             g.setColour (Theme::muted.withAlpha (0.6f));
-            g.setFont (FontOptions (9.0f));
+            g.setFont (FontOptions (10.0f));
             for (auto [f, t] : { std::pair<double, const char*> { 100.0, "100" }, { 1000.0, "1k" }, { 10000.0, "10k" } })
                 g.drawText (t, Rectangle<float> (xFor (f) + 2.0f, area.getBottom() - 11.0f, 30.0f, 10.0f), Justification::left);
         }
@@ -197,7 +197,7 @@ namespace DeviceDisplays
             g.drawVerticalLine ((int) base, axis.area.getY(), axis.area.getBottom());
             g.setColour (Theme::orange);
             g.fillRect (now - 1.5f, axis.area.getY(), 3.0f, axis.area.getHeight());
-            g.setFont (FontOptions (10.0f));
+            g.setFont (FontOptions (11.0f));
             g.drawText (A::typeNames[pp().getInt (A::pType)], r.removeFromBottom (14.0f), Justification::centred);
         }
 
@@ -292,7 +292,7 @@ namespace DeviceDisplays
                 g.fillEllipse (c.x - 6.0f, c.y - 6.0f, 12.0f, 12.0f);
                 if (b == selected) { g.setColour (Colours::white); g.drawEllipse (c.x - 8.0f, c.y - 8.0f, 16.0f, 16.0f, 1.5f); }
                 g.setColour (Colours::black);
-                g.setFont (FontOptions (9.0f, Font::bold));
+                g.setFont (FontOptions (10.0f, Font::bold));
                 g.drawText (String (b + 1), Rectangle<float> (c.x - 6.0f, c.y - 6.0f, 12.0f, 12.0f), Justification::centred);
             }
 
@@ -447,7 +447,7 @@ namespace DeviceDisplays
             paintPanel (g, wave);
             auto data = simpler.getSample();
 
-            g.setFont (FontOptions (11.0f));
+            g.setFont (FontOptions (12.0f));
             g.setColour (Theme::muted);
             g.drawText (data != nullptr ? data->file.getFileNameWithoutExtension() + "  (" + String (data->buffer.getNumSamples() / data->sampleRate, 2) + " s)"
                                         : String ("Drop a sample here"),
@@ -480,7 +480,7 @@ namespace DeviceDisplays
                 g.fillRect (x - 1.0f, wave.getY(), 2.0f, wave.getHeight());
                 g.fillRect (x - 1.0f, wave.getY(), 16.0f, 12.0f);
                 g.setColour (Colours::black);
-                g.setFont (FontOptions (9.0f, Font::bold));
+                g.setFont (FontOptions (10.0f, Font::bold));
                 g.drawText (label, Rectangle<float> (x + 1.0f, wave.getY(), 14.0f, 12.0f), Justification::centred);
             };
             marker (s, Theme::green, "S");

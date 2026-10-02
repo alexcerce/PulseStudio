@@ -312,14 +312,14 @@ private:
         if (r.header)
         {
             g.setColour (Theme::muted);
-            g.setFont (FontOptions (10.5f, Font::bold));
+            g.setFont (FontOptions (11.5f, Font::bold));
             g.drawText (r.name, 8, 0, w - 8, h, Justification::bottomLeft);
             return;
         }
 
         if (selected) g.fillAll (Theme::accent.withAlpha (0.25f));
         g.setColour (r.id.isEmpty() ? Theme::muted : Theme::text);
-        g.setFont (FontOptions (12.5f));
+        g.setFont (FontOptions (13.0f));
         g.drawText (r.name, 14, 0, w - 16, h, Justification::centredLeft, true);
     }
 
@@ -439,7 +439,7 @@ public:
         g.setColour (Theme::line);
         g.drawVerticalLine (getWidth() - 1, 0.0f, (float) getHeight());
         g.setColour (Theme::muted);
-        g.setFont (FontOptions (10.5f));
+        g.setFont (FontOptions (11.5f));
         if (filesTab.getToggleState())
             g.drawText ("Drag files onto a track, an empty area or a clip slot", 8, getHeight() - 20, getWidth() - 12, 16, Justification::centredLeft);
         else

@@ -9,13 +9,13 @@ using namespace juce;
 //==============================================================================
 namespace Theme
 {
-    const Colour bg          { 0xff121418 };
-    const Colour panel       { 0xff1a1d22 };
-    const Colour panel2      { 0xff20242a };
-    const Colour line        { 0xff2a2e35 };
-    const Colour text        { 0xffdee2e6 };
-    const Colour muted       { 0xff868e96 };
-    const Colour accent      { 0xff4dabf7 };
+    const Colour bg          { 0xff111317 };
+    const Colour panel       { 0xff181b20 };
+    const Colour panel2      { 0xff20242b };
+    const Colour line        { 0xff2b3039 };
+    const Colour text        { 0xffe4e8ee };
+    const Colour muted       { 0xff8a929d };
+    const Colour accent      { 0xff4da3ff };
     const Colour orange      { 0xffffa94d };
     const Colour red         { 0xffff6b6b };
     const Colour green       { 0xff69db7c };

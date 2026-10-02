@@ -9,6 +9,7 @@
 #include "MidiLearn.h"
 #include "DrumRack.h"
 #include "StateControls.h"
+#include "Icons.h"
 #include "CrashGuard.h"
 #include "ParamKnob.h"
 #include "DeviceDisplays.h"
@@ -23,18 +24,25 @@ public:
     void paintCard (Graphics& g, Colour stripe, bool enabled)
     {
         auto r = getLocalBounds().toFloat().reduced (0.5f);
-        g.setColour (Theme::panel2);
-        g.fillRoundedRectangle (r, 6.0f);
+        g.setColour (Colours::black.withAlpha (0.35f));                       // drop shadow
+        g.fillRoundedRectangle (r.translated (0.0f, 2.0f), 8.0f);
+        g.setGradientFill (ColourGradient (Theme::panel2.brighter (0.04f), 0.0f, r.getY(), Theme::panel2.darker (0.12f), 0.0f, r.getBottom(), false));
+        g.fillRoundedRectangle (r, 8.0f);
+
+        auto head = r.withHeight ((float) headerH);
+        g.setGradientFill (ColourGradient (stripe.withAlpha (0.16f), 0.0f, head.getY(), stripe.withAlpha (0.03f), 0.0f, head.getBottom(), false));
+        g.fillRoundedRectangle (head, 8.0f);
         g.setColour (stripe);
-        g.fillRoundedRectangle (r.withHeight (3.0f), 1.5f);
-        g.setColour (Theme::line);
-        g.drawRoundedRectangle (r, 6.0f, 1.0f);
-        g.drawHorizontalLine (headerH, 0.0f, (float) getWidth());
+        g.fillRoundedRectangle (r.withHeight (3.0f).reduced (6.0f, 0.0f), 1.5f);
+        g.setColour (Theme::line.brighter (0.1f));
+        g.drawRoundedRectangle (r, 8.0f, 1.0f);
+        g.setColour (Colours::black.withAlpha (0.3f));
+        g.drawHorizontalLine (headerH, 1.0f, (float) getWidth() - 1.0f);
 
         if (! enabled)
         {
             g.setColour (Colours::black.withAlpha (0.35f));
-            g.fillRoundedRectangle (r.withTrimmedTop ((float) headerH), 6.0f);
+            g.fillRoundedRectangle (r.withTrimmedTop ((float) headerH), 8.0f);
         }
     }
 };
@@ -55,7 +63,7 @@ public:
         power.setTooltip ("Bypass");
 
         title.setText (plugin->getName(), dontSendNotification);
-        title.setFont (FontOptions (13.0f, Font::bold));
+        title.setFont (FontOptions (13.5f, Font::bold));
         title.setInterceptsMouseClicks (false, false);
 
         editBtn.onClick  = [this] { plugin->showWindowExplicitly(); };
@@ -68,6 +76,7 @@ public:
 
         for (auto* c : std::initializer_list<Component*> { &power, &title, &presetBtn, &editBtn, &leftBtn, &rightBtn, &removeBtn })
             addAndMakeVisible (c);
+        for (auto* b : { &presetBtn, &leftBtn, &rightBtn, &removeBtn }) b->setFlat (true);
 
         if (plugin->canSidechain())
         {
@@ -128,7 +137,7 @@ public:
         {
             more.setText ("+" + String (params.size() - jmax (0, maxKnobs)) + " more - open the editor", dontSendNotification);
             more.setColour (Label::textColourId, Theme::muted);
-            more.setFont (FontOptions (11.0f));
+            more.setFont (FontOptions (12.0f));
             addAndMakeVisible (more);
         }
 
@@ -243,7 +252,7 @@ private:
         {
             PulseSection ps;
             ps.label = std::make_unique<Label> (String(), sec.name.toUpperCase());
-            ps.label->setFont (FontOptions (10.0f, Font::bold));
+            ps.label->setFont (FontOptions (11.0f, Font::bold));
             ps.label->setColour (Label::textColourId, Theme::muted);
             ps.label->setJustificationType (Justification::centredLeft);
             addAndMakeVisible (*ps.label);
@@ -274,8 +283,10 @@ private:
     EditViewState& evs;
     te::Plugin::Ptr plugin;
     std::function<void (te::Plugin&, int)> move;
-    TextButton power { "" }, editBtn { "Edit" }, leftBtn { "<" }, rightBtn { ">" }, removeBtn { "x" }, scBtn { "SC" },
-               presetBtn { String::charToString (0x2630) };
+    IconButton power { Icons::Type::power, "Device on / off", Theme::green },
+               leftBtn { Icons::Type::chevronLeft, "Move left" }, rightBtn { Icons::Type::chevronRight, "Move right" },
+               removeBtn { Icons::Type::close, "Remove device" }, presetBtn { Icons::Type::menu, "Device presets" };
+    TextButton editBtn { "Edit" }, scBtn { "SC" };
     Label title, more;
     OwnedArray<Component> knobs;   // state controls, the Delay's Sync button, then parameter knobs
 };
@@ -289,10 +300,10 @@ public:
     MacrosCard (EditViewState& e, te::AudioTrack& t) : evs (e), track (&t)
     {
         title.setText ("Macros", dontSendNotification);
-        title.setFont (FontOptions (13.0f, Font::bold));
+        title.setFont (FontOptions (13.5f, Font::bold));
         addAndMakeVisible (title);
         hint.setText ("Right-click any device knob and choose \"Map to Macro\".", dontSendNotification);
-        hint.setFont (FontOptions (11.0f));
+        hint.setFont (FontOptions (12.0f));
         hint.setColour (Label::textColourId, Theme::muted);
         hint.setJustificationType (Justification::topLeft);
         addAndMakeVisible (hint);
@@ -365,7 +376,7 @@ public:
             addAndMakeVisible (pads.add (new Pad (*this, i)));
 
         title.setText ("Drum Rack", dontSendNotification);
-        title.setFont (FontOptions (13.0f, Font::bold));
+        title.setFont (FontOptions (13.5f, Font::bold));
         addAndMakeVisible (title);
         power.setClickingTogglesState (true);
         power.setColour (TextButton::buttonOnColourId, Theme::green);
@@ -375,9 +386,9 @@ public:
         addAndMakeVisible (power);
         addAndMakeVisible (removeBtn);
 
-        padTitle.setFont (FontOptions (12.5f, Font::bold));
+        padTitle.setFont (FontOptions (13.0f, Font::bold));
         sampleName.setColour (Label::textColourId, Theme::muted);
-        sampleName.setFont (FontOptions (11.5f));
+        sampleName.setFont (FontOptions (12.5f));
         for (auto* l : { &padTitle, &sampleName }) addAndMakeVisible (l);
 
         loadBtn.onClick = [this] { browseSample(); };
@@ -391,7 +402,7 @@ public:
             s.setTextBoxStyle (Slider::TextBoxRight, false, 52, 18);
             s.setRange (lo, hi, step);
             l.setText (name, dontSendNotification);
-            l.setFont (FontOptions (11.0f));
+            l.setFont (FontOptions (12.0f));
             l.setColour (Label::textColourId, Theme::muted);
             addAndMakeVisible (s);
             addAndMakeVisible (l);
@@ -412,7 +423,7 @@ public:
     {
         paintCard (g, Theme::orange, instance->isEnabled());
         g.setColour (Theme::muted);
-        g.setFont (FontOptions (10.5f, Font::bold));
+        g.setFont (FontOptions (11.5f, Font::bold));
         g.drawText ("PAD CHAIN", detailArea.getX(), chainTop - 16, 120, 14, Justification::left);
     }
 
@@ -468,10 +479,10 @@ private:
             g.setColour (sel ? Colours::white : (highlight ? Theme::accent : Theme::line));
             g.drawRoundedRectangle (r, 4.0f, sel || highlight ? 1.6f : 1.0f);
             g.setColour (name.isNotEmpty() ? Theme::text : Theme::muted);
-            g.setFont (FontOptions (10.5f));
+            g.setFont (FontOptions (11.5f));
             g.drawFittedText (name.isNotEmpty() ? name : DrumRack::defaultPadLabel (index), getLocalBounds().reduced (4, 2), Justification::centred, 2);
             g.setColour (Theme::muted.withAlpha (0.7f));
-            g.setFont (FontOptions (8.5f));
+            g.setFont (FontOptions (9.5f));
             g.drawText (MidiMessage::getMidiNoteName (DrumRack::baseNote + index, true, true, 3), getLocalBounds().reduced (3, 1), Justification::bottomRight);
         }
 
@@ -512,7 +523,7 @@ private:
         FxRow (DrumRackCard& o, te::Plugin::Ptr p) : owner (o), plugin (p)
         {
             name.setText (p->getName(), dontSendNotification);
-            name.setFont (FontOptions (11.5f));
+            name.setFont (FontOptions (12.5f));
             editBtn.onClick = [this] { plugin->showWindowExplicitly(); };
             removeBtn.onClick = [this] { auto& o2 = owner; DrumRack::removeEffect (*o2.rack, *plugin); o2.refreshDetail(); };
             for (auto* c : std::initializer_list<Component*> { &name, &editBtn, &removeBtn }) addAndMakeVisible (c);
@@ -527,7 +538,8 @@ private:
         DrumRackCard& owner;
         te::Plugin::Ptr plugin;
         Label name;
-        TextButton editBtn { "Edit" }, removeBtn { "x" };
+        TextButton editBtn { "Edit" };
+        IconButton removeBtn { Icons::Type::close, "Remove this effect" };
     };
 
     void select (int pad)
@@ -613,7 +625,8 @@ private:
     Rectangle<int> detailArea;
     Label title, padTitle, sampleName, gainL, panL, tuneL;
     Slider gain, pan, tune;
-    TextButton power { "" }, removeBtn { "x" }, loadBtn { "Load sample..." }, clearBtn { "Clear" }, addFxBtn { "+ Pad FX" };
+    IconButton power { Icons::Type::power, "Drum Rack on / off", Theme::green }, removeBtn { Icons::Type::close, "Remove device" };
+    TextButton loadBtn { "Load sample..." }, clearBtn { "Clear" }, addFxBtn { "+ Pad FX" };
     std::shared_ptr<FileChooser> chooser;
 };
 
@@ -628,7 +641,7 @@ public:
     SamplerCard (EditViewState& e, te::SamplerPlugin& s) : evs (e), holder (&s), sampler (s)
     {
         title.setText ("Sampler", dontSendNotification);
-        title.setFont (FontOptions (13.0f, Font::bold));
+        title.setFont (FontOptions (13.5f, Font::bold));
         power.setClickingTogglesState (true);
         power.setColour (TextButton::buttonOnColourId, Theme::green);
         power.setToggleState (sampler.isEnabled(), dontSendNotification);
@@ -652,7 +665,7 @@ public:
             sl.setTextBoxStyle (Slider::TextBoxRight, false, 52, 18);
             sl.setRange (lo, hi, step);
             l.setText (name, dontSendNotification);
-            l.setFont (FontOptions (11.0f));
+            l.setFont (FontOptions (12.0f));
             l.setColour (Label::textColourId, Theme::muted);
             addAndMakeVisible (sl);
             addAndMakeVisible (l);
@@ -773,7 +786,8 @@ private:
     te::SamplerPlugin& sampler;
     Label title, sampleName, rootL, lowL, highL, gainL, panL;
     Slider root, low, high, gain, pan;
-    TextButton power { "" }, removeBtn { "x" }, loadBtn { "Load sample..." }, playBtn { "Play" };
+    IconButton power { Icons::Type::power, "Sampler on / off", Theme::green }, removeBtn { Icons::Type::close, "Remove device" };
+    TextButton loadBtn { "Load sample..." }, playBtn { "Play" };
     ToggleButton oneShot { "One-shot" };
     std::shared_ptr<FileChooser> chooser;
     bool highlight = false;
@@ -805,7 +819,7 @@ public:
         chainBtn.onClick = [this] { showChainMenu(); };
         addAndMakeVisible (chainBtn);
 
-        heading.setFont (FontOptions (13.0f, Font::bold));
+        heading.setFont (FontOptions (13.5f, Font::bold));
         addAndMakeVisible (heading);
 
         evs.selectionManager.addChangeListener (this);

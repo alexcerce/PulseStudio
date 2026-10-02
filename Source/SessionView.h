@@ -3,6 +3,7 @@
 #include "EditViewState.h"
 #include "ClipImport.h"
 #include "PluginMenu.h"
+#include "Icons.h"
 
 //==============================================================================
 /** Launching helpers (adapted from Tracktion's ClipLauncher demo). */
@@ -413,13 +414,11 @@ public:
             // follow-action marker (top right)
             if (Follow::hasAny (*clip))
             {
-                g.setColour (Colours::white.withAlpha (0.8f));
-                g.setFont (FontOptions (11.0f, Font::bold));
-                g.drawText (String::charToString (0x21AA), r.removeFromRight (16.0f).removeFromTop (16.0f), Justification::centred);
+                Icons::draw (g, Icons::Type::followAction, r.removeFromRight (16.0f).removeFromTop (16.0f).reduced (2.0f), Colours::white.withAlpha (0.85f), 1.4f);
             }
 
             g.setColour (Colours::white);
-            g.setFont (FontOptions (12.0f));
+            g.setFont (FontOptions (12.5f));
             g.drawText (clip->getName(), r.reduced (2.0f, 0.0f), Justification::centredLeft, true);
 
             if (selected)
@@ -600,7 +599,7 @@ public:
         for (auto* b : { &stopAllBtn, &addSceneBtn, &backToArrBtn }) addAndMakeVisible (b);
 
         label.setText ("Session", dontSendNotification);
-        label.setFont (FontOptions (13.0f, Font::bold));
+        label.setFont (FontOptions (13.5f, Font::bold));
         addAndMakeVisible (label);
 
         evs.edit.state.addListener (this);
@@ -665,7 +664,7 @@ private:
             g.setColour (track->getColour());
             g.fillRect (r.removeFromTop (3.0f));
             g.setColour (sel ? Theme::accent : Theme::text);
-            g.setFont (FontOptions (12.5f, Font::bold));
+            g.setFont (FontOptions (13.0f, Font::bold));
             g.drawText (track->getName(), r.reduced (6.0f, 0.0f).removeFromTop (22.0f), Justification::centredLeft, true);
         }
 
@@ -699,7 +698,7 @@ private:
             for (int s = 0; s < numScenes; ++s)
                 grid.addAndMakeVisible (slots.add (new SlotComponent (evs, *t, *trackSlots[s])));
 
-            auto* stop = stopBtns.add (new TextButton (String::charToString (0x25A0)));
+            auto* stop = stopBtns.add (new IconButton (Icons::Type::stop));
             stop->setTooltip ("Stop clips on this track");
             stop->onClick = [t] { Launcher::stopTrack (*t); };
             grid.addAndMakeVisible (stop);
@@ -707,7 +706,9 @@ private:
 
         for (int s = 0; s < numScenes; ++s)
         {
-            auto* b = sceneBtns.add (new TextButton (String::charToString (0x25B6) + "  Scene " + String (s + 1)));
+            auto* b = sceneBtns.add (new IconButton (Icons::Type::play));
+            b->setText ("Scene " + String (s + 1));
+            b->setIconColour (Theme::green);
             b->setTooltip ("Launch every clip in this row");
             b->onClick = [this, s] { Launcher::launchScene (evs.edit, s); };
             grid.addAndMakeVisible (b);
@@ -771,7 +772,7 @@ private:
     Grid grid;
     OwnedArray<TrackHead> heads;
     OwnedArray<SlotComponent> slots;
-    OwnedArray<TextButton> sceneBtns, stopBtns;
+    OwnedArray<IconButton> sceneBtns, stopBtns;
     ComboBox quantBox;
     std::map<int, te::LaunchQType> qTypeById;
     TextButton stopAllBtn { "Stop all clips" }, addSceneBtn { "+ Scene" }, backToArrBtn { "Back to arrangement" };

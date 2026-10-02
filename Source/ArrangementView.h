@@ -67,14 +67,17 @@ public:
         if (col == Colour()) col = Theme::accent;
         const bool selected = evs.selectionManager.isSelected (clip.get());
 
-        g.setColour (col.withAlpha (0.28f));
-        g.fillRoundedRectangle (r, 4.0f);
+        // body: tinted, slightly darker towards the bottom
+        g.setGradientFill (ColourGradient (col.withAlpha (0.32f), 0.0f, r.getY(), col.withAlpha (0.18f), 0.0f, r.getBottom(), false));
+        g.fillRoundedRectangle (r, 5.0f);
 
         auto header = r.removeFromTop (15.0f);
-        g.setColour (col.withAlpha (0.85f));
-        g.fillRoundedRectangle (header.withHeight (19.0f), 4.0f);
-        g.setColour (Colours::black.withAlpha (0.85f));
-        g.setFont (FontOptions (11.5f));
+        g.setGradientFill (ColourGradient (col.brighter (0.15f), 0.0f, header.getY(), col.darker (0.1f), 0.0f, header.getBottom(), false));
+        g.fillRoundedRectangle (header.withHeight (19.0f), 5.0f);
+        g.setColour (col.withAlpha (0.28f));
+        g.fillRect (header.withTop (header.getBottom()).withHeight (4.0f));
+        g.setColour (col.getPerceivedBrightness() > 0.55f ? Colours::black.withAlpha (0.85f) : Colours::white.withAlpha (0.92f));
+        g.setFont (FontOptions (12.5f));
         g.drawText (clip->getName(), header.reduced (5.0f, 0.0f), Justification::centredLeft, true);
 
         auto body = getLocalBounds().withTrimmedTop (17).reduced (0, 2);
@@ -99,12 +102,17 @@ public:
             if (mc->getGrooveTemplate().isNotEmpty()) tags.add ("GROOVE");
             if (mc->isLooping()) tags.add ("LOOP");
             g.setColour (Colours::black.withAlpha (0.8f));
-            g.setFont (FontOptions (10.5f));
+            g.setFont (FontOptions (11.5f));
             g.drawText (tags.joinIntoString ("  "), header.reduced (5.0f, 0.0f), Justification::centredRight, false);
         }
 
-        g.setColour (selected ? Colours::white : col);
-        g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (0.5f), 4.0f, selected ? 1.6f : 1.0f);
+        if (selected)
+        {
+            g.setColour (Colours::white.withAlpha (0.25f));
+            g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (1.5f), 5.0f, 3.0f);
+        }
+        g.setColour (selected ? Colours::white : col.brighter (0.1f));
+        g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (0.5f), 5.0f, selected ? 1.4f : 1.0f);
     }
 
     void mouseMove (const MouseEvent& e) override
@@ -345,7 +353,7 @@ private:
             if (ac.getAutoTempo()) tags << "WARP  ";
             if (ac.isUsingARA()) tags << "ARA";
             g.setColour (Colours::black.withAlpha (0.8f));
-            g.setFont (FontOptions (10.5f));
+            g.setFont (FontOptions (11.5f));
             g.drawText (tags.trim(), header.reduced (5.0f, 0.0f), Justification::centredRight, false);
         }
     }
@@ -860,7 +868,7 @@ public:
                 g.setColour (col.withAlpha (active ? 0.85f : 0.25f));
                 g.fillRoundedRectangle (Rectangle<float> (x1 + 1, (float) rowArea.getY() + 2, x2 - x1 - 2, (float) rowArea.getHeight() - 4), 3.0f);
                 g.setColour (active ? Colours::black : Theme::muted);
-                g.setFont (FontOptions (10.0f));
+                g.setFont (FontOptions (11.0f));
                 g.drawText ("Take " + String (i + 1), Rectangle<float> (x1 + 4, (float) rowArea.getY(), x2 - x1 - 6, (float) rowArea.getHeight()),
                             Justification::centredLeft, true);
             }
@@ -1131,12 +1139,12 @@ public:
     {
         name.setText (track->getName(), dontSendNotification);
         name.setEditable (false, true);
-        name.setFont (FontOptions (13.5f, Font::bold));
+        name.setFont (FontOptions (14.0f, Font::bold));
         name.onTextChange = [this] { track->setName (name.getText()); };
         name.setInterceptsMouseClicks (false, false);
         addAndMakeVisible (name);
 
-        type.setFont (FontOptions (10.5f));
+        type.setFont (FontOptions (11.5f));
         type.setColour (Label::textColourId, Theme::muted);
         type.setInterceptsMouseClicks (false, false);
         addAndMakeVisible (type);
@@ -1449,7 +1457,7 @@ public:
         int barStep = 1;
         while (barStep * bpb * evs.pixelsPerBeat < 36.0) barStep *= 2;
 
-        g.setFont (FontOptions (11.0f));
+        g.setFont (FontOptions (12.0f));
         Timeline::forEachBar (evs.edit, evs.xToBeat (0), evs.xToBeat ((float) getWidth()), barStep, [&] (int bar, double beat)
         {
             auto x = (int) evs.beatToX (beat);
@@ -1593,7 +1601,7 @@ public:
     {
         name.setText (folder->getName(), dontSendNotification);
         name.setEditable (false, true);
-        name.setFont (FontOptions (13.5f, Font::bold));
+        name.setFont (FontOptions (14.0f, Font::bold));
         name.onTextChange = [this] { folder->setName (name.getText()); };
         name.setInterceptsMouseClicks (false, false);
         addAndMakeVisible (name);
@@ -1604,12 +1612,12 @@ public:
             if (evs.collapsed.count (id)) evs.collapsed.erase (id); else evs.collapsed.insert (id);
             evs.layoutChanged.sendChangeMessage();
         };
-        collapseBtn.setTooltip ("Show / hide the tracks in this group");
+        collapseBtn.setFlat (true);
         muteBtn.setColour (TextButton::buttonOnColourId, Theme::yellow);
         soloBtn.setColour (TextButton::buttonOnColourId, Theme::accent);
         muteBtn.onClick = [this] { folder->setMute (! folder->isMuted (false)); };
         soloBtn.onClick = [this] { folder->setSolo (! folder->isSolo (false)); };
-        for (auto* b : { &collapseBtn, &muteBtn, &soloBtn }) addAndMakeVisible (b);
+        for (auto* b : std::initializer_list<Component*> { &collapseBtn, &muteBtn, &soloBtn }) addAndMakeVisible (b);
 
         volume.setSliderStyle (Slider::LinearHorizontal);
         volume.setTextBoxStyle (Slider::NoTextBox, false, 0, 0);
@@ -1631,7 +1639,7 @@ public:
         g.fillRect (0, 0, getWidth(), 3);
         g.fillRect (0, 0, 5, getHeight());
         g.setColour (Theme::muted);
-        g.setFont (FontOptions (10.0f, Font::bold));
+        g.setFont (FontOptions (11.0f, Font::bold));
         g.drawText ("GROUP  " + String (folder->getAllAudioSubTracks (true).size()) + " tracks", 34, 24, 140, 14, Justification::left);
         g.setColour (Colour (0xff111317));
         g.fillRect (0, getHeight() - 1, getWidth(), 1);
@@ -1670,7 +1678,7 @@ private:
 
     void refresh()
     {
-        collapseBtn.setButtonText (evs.collapsed.count (folder->itemID) ? String::charToString (0x25B8) : String::charToString (0x25BE));
+        collapseBtn.setIcon (evs.collapsed.count (folder->itemID) ? Icons::Type::chevronRight : Icons::Type::chevronDown);
         muteBtn.setToggleState (folder->isMuted (false), dontSendNotification);
         soloBtn.setToggleState (folder->isSolo (false), dontSendNotification);
         if (! volume.isMouseButtonDown())
@@ -1684,7 +1692,8 @@ private:
     EditViewState& evs;
     te::FolderTrack::Ptr folder;
     Label name;
-    TextButton collapseBtn, muteBtn { "M" }, soloBtn { "S" };
+    IconButton collapseBtn { Icons::Type::chevronDown, "Show / hide the tracks in this group" };
+    TextButton muteBtn { "M" }, soloBtn { "S" };
     Slider volume;
 };
 
@@ -1735,7 +1744,7 @@ public:
         auto& ts = evs.edit.tempoSequence;
 
         // time signature changes (the first one is shown in the transport bar)
-        g.setFont (FontOptions (10.0f, Font::bold));
+        g.setFont (FontOptions (11.0f, Font::bold));
         for (int i = 1; i < ts.getNumTimeSigs(); ++i)
         {
             auto* sig = ts.getTimeSig (i);
@@ -1749,7 +1758,7 @@ public:
         }
 
         // markers
-        g.setFont (FontOptions (11.0f, Font::bold));
+        g.setFont (FontOptions (12.0f, Font::bold));
         for (auto m : Timeline::markers (evs.edit))
         {
             const float x = evs.timeToX (m->getPosition().getStart());
@@ -1945,7 +1954,7 @@ public:
         g.setColour (Theme::accent);
         g.strokePath (line, PathStrokeType (1.6f));
 
-        g.setFont (FontOptions (10.0f));
+        g.setFont (FontOptions (11.0f));
         for (int i = 0; i < n; ++i)
         {
             auto* t = ts.getTempo (i);
@@ -2115,7 +2124,7 @@ public:
         g.setColour (Colour (0xff16181d));
         g.fillRect (0, 0, headerWidth, topHeight());
         g.setColour (Theme::muted);
-        g.setFont (FontOptions (10.0f, Font::bold));
+        g.setFont (FontOptions (11.0f, Font::bold));
         g.drawText ("MARKERS", 10, 0, headerWidth - 20, markerStripHeight, Justification::centredLeft);
         if (tempoLane.isVisible())
             g.drawText ("TEMPO", 10, markerStripHeight + rulerHeight, headerWidth - 20, tempoLaneHeight, Justification::centredLeft);

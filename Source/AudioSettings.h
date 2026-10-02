@@ -164,7 +164,7 @@ private:
     {
         if (selected && ! items.isEmpty()) g.fillAll (Theme::accent.withAlpha (0.3f));
         g.setColour (items.isEmpty() ? Theme::muted : Theme::text);
-        g.setFont (FontOptions (13.0f));
+        g.setFont (FontOptions (13.5f));
         g.drawText (items.isEmpty() ? String ("No plugins are disabled.") : File (items[row]).getFileName() + "   -   " + items[row],
                     8, 0, w - 16, h, Justification::centredLeft, true);
     }

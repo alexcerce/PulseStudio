@@ -55,7 +55,7 @@ public:
         learnBanner.setJustificationType (Justification::centred);
         learnBanner.setColour (Label::backgroundColourId, Theme::orange);
         learnBanner.setColour (Label::textColourId, Colours::black);
-        learnBanner.setFont (FontOptions (14.0f, Font::bold));
+        learnBanner.setFont (FontOptions (14.5f, Font::bold));
         addChildComponent (learnBanner);
 
         PluginMenu::drumRackFactory = [] (te::Edit& ed) { return DrumRack::create (ed); };

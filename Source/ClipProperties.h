@@ -60,7 +60,7 @@ public:
         addAndMakeVisible (warp);
 
         title.setText (clip->getName(), dontSendNotification);
-        title.setFont (FontOptions (14.0f, Font::bold));
+        title.setFont (FontOptions (14.5f, Font::bold));
         addAndMakeVisible (title);
 
         updateEnablement();

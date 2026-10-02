@@ -48,12 +48,12 @@ public:
         for (auto* c : std::initializer_list<Component*> { &scaleBox, &rootBox, &foldBtn })
             addAndMakeVisible (c);
 
-        title.setFont (FontOptions (13.0f, Font::bold));
+        title.setFont (FontOptions (13.5f, Font::bold));
         addAndMakeVisible (title);
         hint.setText ("Click: add | drag: move | edge: resize | right-click: delete | Shift-drag: select | arrows: move | Q: quantize",
                       dontSendNotification);
         hint.setColour (Label::textColourId, Theme::muted);
-        hint.setFont (FontOptions (11.0f));
+        hint.setFont (FontOptions (12.0f));
         addAndMakeVisible (hint);
 
         startTimerHz (30);
@@ -167,7 +167,7 @@ public:
             if (bar)
             {
                 g.setColour (Theme::muted);
-                g.setFont (FontOptions (10.0f));
+                g.setFont (FontOptions (11.0f));
                 g.drawText (String ((int) std::round (b / bpb) + 1), (int) x + 3, top, 30, 12, Justification::left);
             }
         }
@@ -252,14 +252,14 @@ public:
             if (p % 12 == 0 || foldBtn.getToggleState())
             {
                 g.setColour (Colour (0xff495057));
-                g.setFont (FontOptions (9.0f));
+                g.setFont (FontOptions (10.0f));
                 g.drawText (MidiMessage::getMidiNoteName (p, true, true, 4), keyW - 30, (int) y, 28, (int) rowH, Justification::centredRight);
             }
         }
         g.setColour (Colour (0xff111317));
         g.fillRect (0, top + gh, keyW, velH);
         g.setColour (Theme::muted);
-        g.setFont (FontOptions (10.0f));
+        g.setFont (FontOptions (11.0f));
         g.drawText (laneType() == velocityLane ? "Velocity" : laneShortName(), 6, top + gh + 6, keyW, 14, Justification::left);
 
         g.restoreState();
@@ -625,7 +625,7 @@ private:
         if (events.isEmpty())
         {
             g.setColour (Theme::muted);
-            g.setFont (FontOptions (11.0f));
+            g.setFont (FontOptions (12.0f));
             g.drawText ("Click / drag to draw " + laneBox.getText(), keyW + 8, (int) laneY + 4, 300, 14, Justification::left);
             return;
         }

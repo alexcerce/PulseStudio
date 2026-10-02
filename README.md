@@ -4,7 +4,7 @@ A native Windows DAW built with C++, [JUCE](https://juce.com) and [Tracktion Eng
 
 ## Install
 
-Run `dist/PulseStudio-0.12.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
+Run `dist/PulseStudio-0.13.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
 
 ## Build
 
@@ -242,7 +242,7 @@ All app code is header-only in `Source/` and compiled through `Main.cpp`.
 | `CrashGuard.h`, `CrashGuardWin.cpp` | Crash reports, plugin blocklist, safe mode |
 | `PluginWindow.h`, `PluginMenu.h` | Plugin windows, task runner, plugin menu |
 | `SelfTest.h` | `--selftest` |
-| `PulseLookAndFeel.h` | Dark theme |
+| `PulseLookAndFeel.h`, `Icons.h` | Look and feel (Segoe UI, graded controls, menus, tooltips) and vector icons |
 
 ## Licensing
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EditViewState.h"
+#include "Icons.h"
 
 /** Top bar: transport, tempo, position display and app actions. */
 class TransportBar : public Component,
@@ -21,9 +22,9 @@ public:
 
     TransportBar (te::Engine& eng, Actions a) : engine (eng), actions (std::move (a))
     {
-        auto setupToggle = [this] (TextButton& b, Colour on, const String& tip)
+        auto setupToggle = [this] (IconButton& b, Colour on, const String& tip)
         {
-            b.setColour (TextButton::buttonOnColourId, on);
+            b.setOnColour (on);
             b.setTooltip (tip);
             addAndMakeVisible (b);
         };
@@ -34,7 +35,8 @@ public:
         setupToggle (clickBtn, Theme::accent, "Metronome (M)");
         setupToggle (linkBtn, Theme::green, "Ableton Link: sync tempo, bars and start/stop with other apps and devices on your network");
         linkBtn.onClick = [this] { if (actions.toggleLink) actions.toggleLink(); };
-        recBtn.setColour (TextButton::textColourOffId, Theme::red);
+        recBtn.setIconColour (Theme::red);
+        linkBtn.setText ("Link");
 
         stopBtn.onClick = [this]
         {
@@ -55,8 +57,8 @@ public:
         for (auto* l : { &barsLabel, &timeLabel, &bpmLabel, &sigLabel })
         {
             l->setJustificationType (Justification::centred);
-            l->setFont (FontOptions (Font::getDefaultMonospacedFontName(), 17.0f, Font::plain));
-            l->setColour (Label::textColourId, Colour (0xff8ce99a));
+            l->setFont (FontOptions ("Consolas", 18.0f, Font::plain));
+            l->setColour (Label::textColourId, Colour (0xff9be7b0));
             addAndMakeVisible (l);
         }
         bpmLabel.setEditable (false, true);
@@ -73,20 +75,23 @@ public:
         for (auto* l : { &barsCap, &timeCap, &bpmCap, &sigCap, &cpuLabel })
         {
             l->setJustificationType (Justification::centred);
-            l->setFont (FontOptions (9.5f));
+            l->setFont (FontOptions (10.5f));
             l->setColour (Label::textColourId, Theme::muted);
             addAndMakeVisible (l);
         }
 
-        auto addAction = [this] (TextButton& b, std::function<void()>& fn, const String& tip)
+        auto addAction = [this] (Button& b, std::function<void()>& fn, const String& tip)
         {
             b.onClick = [&fn] { if (fn) fn(); };
             b.setTooltip (tip);
             addAndMakeVisible (b);
         };
+        instTrackBtn.setText ("Inst");   audioTrackBtn.setText ("Audio");
+        fileBtn.setText ("File");        audioBtn.setText ("Audio");    pluginsBtn.setText ("Plugins");
+        browserBtn.setText ("Browser");  viewBtn.setText ("Session");
         addAction (instTrackBtn, actions.addInstrumentTrack, "Add an instrument (MIDI) track");
         addAction (audioTrackBtn, actions.addAudioTrack, "Add an audio track");
-        addAction (audioBtn, actions.audioSettings, "Audio interface, ASIO driver, buffer size, MIDI inputs");
+        addAction (audioBtn, actions.audioSettings, "Audio settings: interface, ASIO driver, buffer size, MIDI inputs, recording, safety");
         addAction (pluginsBtn, actions.pluginManager, "Scan and manage VST3 plugins");
         addAndMakeVisible (undoBtn);
         addAndMakeVisible (redoBtn);
@@ -117,8 +122,9 @@ public:
 
         addAction (browserBtn, actions.toggleBrowser, "Show / hide the browser (B)");
         addAction (viewBtn, actions.toggleSession, "Switch between Arrangement and Session view (Tab)");
-        browserBtn.setColour (TextButton::buttonOnColourId, Colour (0xff2b3a4d));
-        browserBtn.setColour (TextButton::textColourOnId, Theme::text);
+        browserBtn.setOnColour (Colour (0xff2f4f73));
+        for (auto* b : { &instTrackBtn, &audioTrackBtn })            b->setIconColour (Theme::accent);
+        for (auto* b : { &undoBtn, &redoBtn })                       b->setFlat (true);
 
         startTimerHz (20);
     }
@@ -127,32 +133,49 @@ public:
 
     void paint (Graphics& g) override
     {
-        g.fillAll (Colour (0xff16181d));
-        g.setColour (Theme::line);
+        g.setGradientFill (ColourGradient (Colour (0xff1c2027), 0, 0, Colour (0xff14171b), 0, (float) getHeight(), false));
+        g.fillAll();
+        g.setColour (Colours::black.withAlpha (0.5f));
         g.drawHorizontalLine (getHeight() - 1, 0.0f, (float) getWidth());
-        g.setColour (Colour (0xff0b0d10));
-        g.fillRoundedRectangle (lcdArea.toFloat(), 6.0f);
-        g.setColour (Theme::line);
-        g.drawRoundedRectangle (lcdArea.toFloat(), 6.0f, 1.0f);
+
+        // logo: a pulse waveform mark + wordmark
+        Path mark;
+        const float my = (float) getHeight() * 0.5f;
+        mark.startNewSubPath (12.0f, my); mark.lineTo (18.0f, my); mark.lineTo (21.0f, my - 9.0f);
+        mark.lineTo (25.0f, my + 9.0f); mark.lineTo (28.0f, my - 4.0f); mark.lineTo (30.0f, my); mark.lineTo (34.0f, my);
+        g.setColour (Theme::accent.withAlpha (0.3f));
+        g.strokePath (mark, PathStrokeType (4.0f, PathStrokeType::curved, PathStrokeType::rounded));
         g.setColour (Theme::accent);
+        g.strokePath (mark, PathStrokeType (1.8f, PathStrokeType::curved, PathStrokeType::rounded));
+        g.setColour (Theme::text);
         g.setFont (FontOptions (16.0f, Font::bold));
-        g.drawText ("PULSE", 12, 0, 70, getHeight(), Justification::centredLeft);
+        g.drawText ("Pulse", 40, 0, 60, getHeight(), Justification::centredLeft);
         g.setColour (Theme::muted);
-        g.setFont (FontOptions (10.0f, Font::bold));
-        g.drawText ("STUDIO", 70, 2, 50, getHeight(), Justification::centredLeft);
+        g.setFont (FontOptions (12.0f));
+        g.drawText ("Studio", 86, 1, 50, getHeight(), Justification::centredLeft);
+
+        auto lcd = lcdArea.toFloat();
+        g.setGradientFill (ColourGradient (Colour (0xff07090b), 0, lcd.getY(), Colour (0xff0d1013), 0, lcd.getBottom(), false));
+        g.fillRoundedRectangle (lcd, 7.0f);
+        g.setColour (Colours::white.withAlpha (0.06f));
+        g.drawRoundedRectangle (lcd.reduced (0.5f), 7.0f, 1.0f);
+        g.setColour (Colours::white.withAlpha (0.05f));
+        for (auto* l : { &timeLabel, &bpmLabel, &sigLabel })
+            g.drawVerticalLine (l->getX() - 1, lcd.getY() + 6.0f, lcd.getBottom() - 6.0f);
     }
 
     void resized() override
     {
         auto r = getLocalBounds().reduced (8, 8);
-        r.removeFromLeft (115);
+        r.removeFromLeft (122);
 
-        for (auto* b : { &stopBtn, &playBtn, &recBtn, &loopBtn, &clickBtn, &linkBtn })
+        for (auto* b : { &stopBtn, &playBtn, &recBtn, &loopBtn, &clickBtn })
         {
-            b->setBounds (r.removeFromLeft (38));
+            b->setBounds (r.removeFromLeft (36));
             r.removeFromLeft (4);
         }
-        r.removeFromLeft (6);
+        linkBtn.setBounds (r.removeFromLeft (58));
+        r.removeFromLeft (8);
 
         lcdArea = r.removeFromLeft (322);
         auto lcd = lcdArea.reduced (4, 2);
@@ -168,18 +191,18 @@ public:
         cell (sigLabel, sigCap, 60);
         r.removeFromLeft (8);
 
-        undoBtn.setBounds (r.removeFromLeft (42)); r.removeFromLeft (4);
-        redoBtn.setBounds (r.removeFromLeft (42)); r.removeFromLeft (8);
-        instTrackBtn.setBounds (r.removeFromLeft (66)); r.removeFromLeft (4);
-        audioTrackBtn.setBounds (r.removeFromLeft (66)); r.removeFromLeft (8);
-        browserBtn.setBounds (r.removeFromLeft (66)); r.removeFromLeft (4);
-        viewBtn.setBounds (r.removeFromLeft (80)); r.removeFromLeft (8);
+        undoBtn.setBounds (r.removeFromLeft (32)); r.removeFromLeft (2);
+        redoBtn.setBounds (r.removeFromLeft (32)); r.removeFromLeft (8);
+        instTrackBtn.setBounds (r.removeFromLeft (60)); r.removeFromLeft (4);
+        audioTrackBtn.setBounds (r.removeFromLeft (68)); r.removeFromLeft (8);
+        browserBtn.setBounds (r.removeFromLeft (80)); r.removeFromLeft (4);
+        viewBtn.setBounds (r.removeFromLeft (84)); r.removeFromLeft (8);
 
-        cpuLabel.setBounds (r.removeFromRight (64));
+        cpuLabel.setBounds (r.removeFromRight (62));
         r.removeFromRight (6);
-        pluginsBtn.setBounds (r.removeFromRight (70)); r.removeFromRight (4);
-        audioBtn.setBounds (r.removeFromRight (112));  r.removeFromRight (4);
-        fileBtn.setBounds (r.removeFromRight (60));
+        pluginsBtn.setBounds (r.removeFromRight (80)); r.removeFromRight (4);
+        audioBtn.setBounds (r.removeFromRight (72));  r.removeFromRight (4);
+        fileBtn.setBounds (r.removeFromRight (70));
     }
 
     void mouseDrag (const MouseEvent& e) override
@@ -219,8 +242,9 @@ private:
         }
 
         playBtn.setToggleState (tc.isPlaying(), dontSendNotification);
-        playBtn.setButtonText (tc.isPlaying() ? "||" : String::charToString (0x25B6));
+        playBtn.setIcon (tc.isPlaying() ? Icons::Type::pause : Icons::Type::play);
         recBtn.setToggleState (tc.isRecording(), dontSendNotification);
+        recBtn.setIconColour (tc.isRecording() ? Colours::black.withAlpha (0.85f) : Theme::red);
         loopBtn.setToggleState (tc.looping.get(), dontSendNotification);
         clickBtn.setToggleState (edit->clickTrackEnabled.get(), dontSendNotification);
         if (actions.isLinkEnabled)
@@ -230,7 +254,12 @@ private:
             linkBtn.setTooltip (ls.isNotEmpty() ? ls + " (click to turn Link off)" : "Ableton Link: sync tempo, bars and start/stop with other apps and devices on your network");
         }
         if (actions.isBrowserShown) browserBtn.setToggleState (actions.isBrowserShown(), dontSendNotification);
-        if (actions.isSessionShown) viewBtn.setButtonText (actions.isSessionShown() ? "Arrange" : "Session");
+        if (actions.isSessionShown)
+        {
+            const bool session = actions.isSessionShown();
+            viewBtn.setText (session ? "Arrange" : "Session");
+            viewBtn.setIcon (session ? Icons::Type::arrange : Icons::Type::session);
+        }
         auto& um = edit->getUndoManager();
         undoBtn.setEnabled (um.canUndo());
         redoBtn.setEnabled (um.canRedo());
@@ -252,12 +281,12 @@ private:
     Rectangle<int> lcdArea;
     double dragStartBpm = -1.0;
 
-    TextButton stopBtn { String::charToString (0x25A0) }, playBtn { String::charToString (0x25B6) },
-               recBtn { String::charToString (0x25CF) }, loopBtn { "Loop" }, clickBtn { "Click" }, linkBtn { "Link" },
-               undoBtn { "Undo" }, redoBtn { "Redo" },
-               instTrackBtn { "+ Inst" }, audioTrackBtn { "+ Audio" },
-               fileBtn { "File" }, audioBtn { "Audio Settings" }, pluginsBtn { "Plugins" },
-               browserBtn { "Browser" }, viewBtn { "Session" };
+    IconButton stopBtn { Icons::Type::stop }, playBtn { Icons::Type::play }, recBtn { Icons::Type::record },
+               loopBtn { Icons::Type::loop }, clickBtn { Icons::Type::metronome }, linkBtn { Icons::Type::link },
+               undoBtn { Icons::Type::undo }, redoBtn { Icons::Type::redo },
+               instTrackBtn { Icons::Type::plus }, audioTrackBtn { Icons::Type::plus },
+               fileBtn { Icons::Type::folder }, audioBtn { Icons::Type::gear }, pluginsBtn { Icons::Type::devices },
+               browserBtn { Icons::Type::browser }, viewBtn { Icons::Type::session };
     Label barsLabel, timeLabel, bpmLabel, sigLabel,
           barsCap { {}, "BAR.BEAT.16" }, timeCap { {}, "TIME" }, bpmCap { {}, "BPM" }, sigCap { {}, "METER" }, cpuLabel;
 };

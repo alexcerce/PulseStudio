@@ -21,7 +21,7 @@ public:
                 p->getCurve().clear (&evs.edit.getUndoManager());
             }
         };
-        value.setFont (FontOptions (11.0f));
+        value.setFont (FontOptions (12.0f));
         value.setColour (Label::textColourId, Theme::muted);
         addAndMakeVisible (chooseBtn);
         addAndMakeVisible (clearBtn);
@@ -149,7 +149,7 @@ public:
             g.drawDashedLine ({ 0.0f, valueToY (*param, fallback, area), (float) getWidth(), valueToY (*param, fallback, area) },
                               dashes, 2, 1.0f);
             g.setColour (Theme::muted);
-            g.setFont (FontOptions (11.0f));
+            g.setFont (FontOptions (12.0f));
             g.drawText ("Click to add automation points", getLocalBounds().reduced (8, 4), Justification::topLeft);
         }
 

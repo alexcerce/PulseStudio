@@ -35,10 +35,10 @@ public:
 
             row->name.setText (param->getParameterName(), dontSendNotification);
             row->name.setJustificationType (Justification::centred);
-            row->name.setFont (FontOptions (11.0f));
+            row->name.setFont (FontOptions (12.0f));
             row->name.setColour (Label::textColourId, Theme::muted);
             row->value.setJustificationType (Justification::centred);
-            row->value.setFont (FontOptions (11.0f));
+            row->value.setFont (FontOptions (12.0f));
 
             addAndMakeVisible (row->slider);
             addAndMakeVisible (row->name);

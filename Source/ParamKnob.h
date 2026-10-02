@@ -37,11 +37,11 @@ public:
         addAndMakeVisible (slider);
 
         name.setText (p.getParameterName(), dontSendNotification);
-        name.setFont (FontOptions (10.5f));
+        name.setFont (FontOptions (11.5f));
         name.setColour (Label::textColourId, Theme::muted);
         name.setJustificationType (Justification::centred);
         name.setInterceptsMouseClicks (false, false);
-        value.setFont (FontOptions (10.5f));
+        value.setFont (FontOptions (11.5f));
         value.setJustificationType (Justification::centred);
         value.setInterceptsMouseClicks (false, false);
         if (showName) addAndMakeVisible (name);

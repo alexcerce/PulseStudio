@@ -62,7 +62,7 @@ namespace StateControls
         Control (te::Plugin& p, Desc d) : plugin (&p), desc (std::move (d))
         {
             name.setText (desc.label, dontSendNotification);
-            name.setFont (FontOptions (10.5f));
+            name.setFont (FontOptions (11.5f));
             name.setColour (Label::textColourId, Theme::muted);
             name.setJustificationType (Justification::centred);
             name.setInterceptsMouseClicks (false, false);
@@ -93,7 +93,7 @@ namespace StateControls
                     value.setText (format (desc, slider.getValue()), dontSendNotification);
                 };
                 addAndMakeVisible (slider);
-                value.setFont (FontOptions (10.5f));
+                value.setFont (FontOptions (11.5f));
                 value.setJustificationType (Justification::centred);
                 value.setInterceptsMouseClicks (false, false);
                 addAndMakeVisible (value);
