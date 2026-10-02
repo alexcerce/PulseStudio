@@ -48,6 +48,7 @@ public:
         if (showName) addAndMakeVisible (name);
         addAndMakeVisible (value);
         startTimerHz (12);
+        timerCallback();   // show the value straight away
     }
 
     void resized() override

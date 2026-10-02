@@ -4,7 +4,7 @@ A native Windows DAW built with C++, [JUCE](https://juce.com) and [Tracktion Eng
 
 ## Install
 
-Run `dist/PulseStudio-0.17.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
+Run `dist/PulseStudio-0.18.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
 
 ## Build
 
@@ -67,7 +67,7 @@ Projects are saved as `.tracktionedit` files in `Documents/Pulse Studio/`. Prese
 
 ### Audio tools (right-click an audio clip)
 - **Edit audio (sample editor):** a zoomable waveform window. Drag to select (double-click or Ctrl+A selects everything), then Cut (Delete), Silence, Normalise, Fade in/out, Reverse or ±3 dB. It has its own undo (Ctrl+Z). *Apply* writes a new file to `Edited Audio` next to the project and points the clip at it. The original file is never changed, and the whole edit can be undone in the project.
-- **Slice to Drum Rack (at transients):** cuts the clip at its transients into up to 16 slices. Each slice goes on a pad of a new Drum Rack track, and a MIDI clip plays the slices back in the original rhythm.
+- **Slice to Drum Rack (at transients):** cuts the clip at its transients into up to 64 slices. Each slice goes on a pad of a new Drum Rack track, and a MIDI clip plays the slices back in the original rhythm.
 - **Warp mode:** picks the time-stretch algorithm for the clip: SoundTouch (Normal / Better) or Signalsmith (Default / Cheaper).
 - **Convert to new MIDI track:** puts a new track under the clip with a MIDI clip lined up to the audio.
   - **Drums:** onsets become kick, snare and hi-hat notes on a Drum Rack.
@@ -130,7 +130,7 @@ Pulse's own devices have cards with labelled sections and a live display. Every 
 | Device | What it does |
 | --- | --- |
 | **Wavetable** | Two wavetable oscillators. There are five table sets (basic shapes, pulse width, harmonics, vowels and sync saw), and **Position** morphs through each set. Also has up to 7-voice unison with detune and stereo spread, a sub oscillator, a 12/24 dB low-pass, band-pass or high-pass filter with its own envelope, an amp envelope, an LFO to position and cutoff, and glide. Tables are band-limited per octave, so high notes don't alias. |
-| **Simpler** | A one-sample instrument. Drag start, end and loop-start markers on the waveform, and loop with a crossfade. Also has root note, transpose and detune, ADSR, a filter, and velocity, gain and pan. Modes are Classic, One-shot and Mono. Drop a file from the browser or Explorer onto the waveform, or click *Load*. |
+| **Simpler** | A sample instrument (one sample, or a multisample mapped by note names). Drag start, end and loop-start markers on the waveform, and loop with a crossfade. Also has root note, transpose and detune, ADSR, a filter, and velocity, gain and pan. Modes are Classic, One-shot and Mono. Drop a file from the browser or Explorer onto the waveform, or click *Load*. |
 | **EQ Six** | A 6-band EQ: low and high cut (24 dB/oct), shelves, bells and notch. Drag the numbered nodes on the curve; scroll over a node to change Q, and double-click one to turn it on or off. A live spectrum shows behind the curve. |
 | **Glue Compressor** | A bus compressor with stepped attack and release (including Auto), 2:1, 4:1 and 10:1 ratios, a range limit, makeup gain, dry/wet and soft clip. It has a gain-reduction meter. |
 | **Saturator** | Seven shapes (analog, tape, tube, hard clip, foldback, sine fold and bit crush) with 4× oversampling, bias, a tone tilt and dry/wet. It shows the transfer curve. |
@@ -139,9 +139,20 @@ Pulse's own devices have cards with labelled sections and a live display. Every 
 **Groove / swing:** right-click a MIDI clip → *Groove* to pick a template (e.g. *Basic 8th Swing*, *Basic 16th Swing*) and an amount. The groove is applied as the clip plays. *Commit groove to notes* moves the notes for real.
 
 ### Sound design
-- **Drum Rack:** from the *+ Inst* menu, the browser or *+ Add device*.
-  - 16 pads; drag samples onto them (several files fill consecutive pads). Click a pad to audition it.
-  - Each pad has its own gain, pan and tune, plus its own **effects chain** (*+ Pad FX*).
+- **Drum Rack:** from the *+ Inst* menu, the browser or *+ Add device*. *Drum Rack (synth kit)* starts with a playable synthesised kit.
+  - **128 pads**, shown 16 at a time. The strip at the left shows all 128 (filled pads are orange); click or scroll it, or use the arrows, to change the bank. A pad's slot is its note (C1 = kick, like General MIDI).
+  - **Pads:** click to play (higher on the pad = louder). Drop samples on a pad; several files fill consecutive pads, and **Shift**+drop adds them as layers. Drag a pad onto another to **move** it (swapping if the target is used), and **Ctrl**+drag to **copy** it. The small **M** / **S** buttons mute and solo. Right-click for load, synth drum, copy / paste, duplicate, choke group, *Extract to new track* and clear.
+  - **Sample page:** up to 8 **layers** per pad, each with a velocity range. Layers are picked by velocity, in **round robin**, at random, or by velocity with cycling between matches (*Spread velocity* splits 1-127 evenly). Drag the start / end markers on the waveform, and set reverse, one-shot or gate, transpose and detune.
+  - **Shape page:** amp envelope (attack, decay, sustain, release), filter (low / band / high pass) with velocity-to-cutoff, and velocity-to-volume.
+  - **Synth page:** any pad can be synthesised instead: kick, snare, closed / open hat, clap, tom, rim, cowbell or cymbal, with tune, length, tone, snap and drive.
+  - **Chain page:** the pad's own effects (drop a device from the browser on the pad, or *+ Pad effect*; reorder and bypass them), its mixer (volume, pan, **Send A / B**), its **receive note** (remap which note plays it) and its **choke group** (pads in the same group cut each other off, e.g. open and closed hats).
+  - **Mixer page:** volume, pan, sends, mute, solo and a level meter for every pad and both returns.
+  - **Returns page:** two return chains inside the rack (for example a reverb on A and a delay on B) fed by the pad sends.
+  - **Macros page:** 8 rack macros. Right-click any knob of a pad or pad effect → *Map to Rack Macro*.
+  - **Kit menu:** *Load synth kit*, *Randomise kit* (picks kick / snare / hat / clap... samples at random from your browser folders by file name, and synthesises anything it can't find), *Clear all pads*.
+  - Drum Racks from earlier versions are upgraded automatically when a project is opened.
+- **Drum Synth:** a synthesised drum kit as an instrument. In *GM kit* mode notes play kick (C1), snare (D1), hats (F#1 / A#1), toms, clap, cymbals and cowbell, or pick one drum to play chromatically.
+- **Simpler multisample:** drop several samples on Simpler (or right-click → *Load multisample*). They are mapped across the keyboard by the note names in the file names (*Piano C3.wav*, *Strings_A#2.wav*, *vln_60.wav*), and the key map shows under the waveform.
 - **Presets:**
   - **Track presets:** right-click a track header → *Save track preset*. This saves the instrument, effects (Drum Rack samples included) and mixer settings, but no clips. Saved presets appear under *Track presets* in the browser's Devices tab; drag one into the arrangement, or double-click it, to create a new track.
   - **Device presets:** the ☰ button on any device saves and loads its full state (VST3s included).
@@ -227,7 +238,7 @@ All of these can be changed in *File → Keyboard shortcuts*. New: **Ctrl+P** co
 ## Command line
 
 - `--render out.wav` renders the last project offline and exits.
-- `--selftest report.txt` builds a scratch project and runs 111 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--selftest report.txt` builds a scratch project and runs 128 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
 - `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
 
 ## Code layout
@@ -249,8 +260,9 @@ All app code is header-only in `Source/` and compiled through `Main.cpp`.
 | `Stems.h` | Demucs setup, separation and stem import |
 | `Browser.h` | File browser with synced preview, device list |
 | `PianoRoll.h` | MIDI editor and controller lanes |
-| `DeviceChain.h` | Device rack: device cards, macros, Drum Rack editor, presets |
-| `DrumRack.h`, `Presets.h`, `Macros.h`, `MidiLearn.h` | Sound design and controller features |
+| `DeviceChain.h` | Device rack: device cards, macros, presets |
+| `DrumRack.h`, `DrumPads.h`, `DrumRackCard.h` | Drum Rack model (pads, routing, move / copy / extract, kits), the pad / pad mixer / Drum Synth devices, and the Drum Rack editor |
+| `Presets.h`, `Macros.h`, `MidiLearn.h` | Sound design and controller features |
 | `MidiFx.h`, `Scales.h` | MIDI effects (Arpeggiator, Chord, Scale, Note Echo), shared scales |
 | `Sandbox.h`, `BackgroundRender.h` | Plugin sandbox (helper process), background exports |
 | `Commands.h` | Command registry, command palette, shortcut editor |

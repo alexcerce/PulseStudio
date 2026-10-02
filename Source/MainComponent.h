@@ -61,7 +61,15 @@ public:
         learnBanner.setFont (FontOptions (14.5f, Font::bold));
         addChildComponent (learnBanner);
 
-        PluginMenu::drumRackFactory = [] (te::Edit& ed) { return DrumRack::create (ed); };
+        PluginMenu::drumRackFactory = [] (te::Edit& ed, bool kit) { return DrumRack::create (ed, kit); };
+        drumLibraryFolders = [this]
+        {
+            Array<File> f { File::getSpecialLocation (File::userMusicDirectory),
+                            File::getSpecialLocation (File::userDocumentsDirectory).getChildFile ("Pulse Studio") };
+            for (auto& p : StringArray::fromLines (settings().getValue ("browserFolders")))
+                if (File (p).isDirectory()) f.addIfNotAlreadyThere (File (p));
+            return f;
+        };
 
         push = std::make_unique<Push2Controller> (engine);
         push->onToggleBrowser = [this] { toggleBrowser(); };
@@ -487,6 +495,7 @@ private:
             edit = te::createEmptyEdit (engine, file);
 
         edit->playInStopEnabled = true;
+        DrumRack::migrateAll (*edit);   // racks from Pulse 0.17 and older
 
         if (createDemo)
             createDemoContent();
@@ -696,6 +705,8 @@ private:
         m.addItem ("Simpler (sampler)", [this, add] { add ("Simpler", [this] { return edit->getPluginCache().createNewPlugin (pulse::Simpler::xmlTypeName, {}); }); });
         m.addItem ("4OSC synth", [this, add] { add ("Synth", [this] { return edit->getPluginCache().createNewPlugin (te::FourOscPlugin::xmlTypeName, {}); }); });
         m.addItem ("Drum Rack",  [this, add] { add ("Drums", [this] { return DrumRack::create (*edit); }); });
+        m.addItem ("Drum Rack (synth kit)", [this, add] { add ("Drums", [this] { return DrumRack::create (*edit, true); }); });
+        m.addItem ("Drum Synth", [this, add] { add ("Drums", [this] { return edit->getPluginCache().createNewPlugin (pulse::DrumSynth::xmlTypeName, {}); }); });
         m.addItem ("Multi-sampler", [this, add] { add ("Sampler", [this] { return edit->getPluginCache().createNewPlugin (te::SamplerPlugin::xmlTypeName, {}); }); });
         m.addItem ("VST instrument...", [this, add] { add ("Instrument", [] { return te::Plugin::Ptr(); }); showTab (Tab::devices); });
         m.showMenuAsync ({});

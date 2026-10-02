@@ -7,6 +7,8 @@
 #include "DrumRack.h"
 #include "Presets.h"
 #include "Macros.h"
+#include "DeviceChain.h"
+#include "PulseLookAndFeel.h"
 #include "MidiLearn.h"
 #include "SessionView.h"
 #include "Browser.h"
@@ -177,11 +179,13 @@ namespace SelfTest
         if (rack != nullptr)
         {
             auto hit = writeTestWav (dir.getChildFile ("kick.wav"), 0.4, 60.0, 44100.0, true);
-            rep.check (DrumRack::loadSample (*rack, 0, hit) && DrumRack::padName (*rack, 0) == "kick", "Load sample onto pad");
-            DrumRack::addEffect (*rack, 0, edit->getPluginCache().createNewPlugin (te::LowPassPlugin::xmlTypeName, {}));
-            rep.check (DrumRack::chain (*rack, 0).size() == 1, "Per-pad effect chain");
-            DrumRack::setTune (*rack, 0, 3);
-            rep.check (DrumRack::getTune (*rack, 0) == 3, "Pad tune");
+            const int kickPad = DrumRack::baseNote;
+            rep.check (DrumRack::loadSample (*rack, kickPad, hit) && DrumRack::padName (*rack, kickPad) == "kick", "Load sample onto pad");
+            DrumRack::addEffect (*rack, kickPad, edit->getPluginCache().createNewPlugin (te::LowPassPlugin::xmlTypeName, {}));
+            rep.check (DrumRack::chain (*rack, kickPad).size() == 1, "Per-pad effect chain");
+            DrumRack::setTune (*rack, kickPad, 3);
+            rep.check (DrumRack::getTune (*rack, kickPad) == 3, "Pad tune");
+            DrumRack::setTune (*rack, kickPad, 0);
 
             auto dc = drums->insertMIDIClip ("Beat", { bars (0), bars (2) }, nullptr);
             for (int b = 0; b < 8; ++b)
@@ -527,7 +531,7 @@ namespace SelfTest
                 auto origRack = DrumRack::findOnTrack (*drums);
                 rep.check (copy != nullptr && EngineHelpers::getUserTracks (*edit).size() == tracksBefore + 1
                              && copy->getClips().isEmpty() && copyRack != nullptr && copyRack->type != origRack->type
-                             && DrumRack::padName (*copyRack->type, 0) == "kick",
+                             && DrumRack::padName (*copyRack->type, DrumRack::baseNote) == "kick",
                            "Track preset round trip (drum rack + samples, no clips)");
             }
             else
@@ -918,20 +922,19 @@ namespace SelfTest
             auto shareRack = DrumRack::create (*edit);
             auto rackTrack = ClipImport::createContentTrack (*edit, "ShareDrums", false);
             rackTrack->pluginList.insertPlugin (shareRack, 0, nullptr);
-            if (auto rt = DrumRack::rackOf (shareRack.get())) DrumRack::loadSample (*rt, 0, extPad);
+            if (auto rt = DrumRack::rackOf (shareRack.get())) DrumRack::loadSample (*rt, DrumRack::baseNote, extPad);
 
             auto result = Sharing::collectAll (*edit);
             auto folder = Sharing::samplesFolder (*edit);
             auto* w = dynamic_cast<te::WaveAudioClip*> (extC.get());
             auto* sp = dynamic_cast<pulse::Simpler*> (simp.get());
-            te::SamplerPlugin* padSampler = nullptr;
-            if (auto rt = DrumRack::rackOf (shareRack.get()))
-                for (auto pl : rt->getPlugins()) if (auto smp = dynamic_cast<te::SamplerPlugin*> (pl)) { padSampler = smp; break; }
+            pulse::DrumPad* padSampler = nullptr;
+            if (auto rt = DrumRack::rackOf (shareRack.get())) padSampler = DrumRack::source (*rt, DrumRack::baseNote);
             const bool clipInside = w != nullptr && w->getOriginalFile().isAChildOf (folder);
             const bool simplerInside = sp != nullptr && File (sp->state[pulse::Simpler::sampleFileID].toString()).isAChildOf (folder);
-            const bool padInside = padSampler != nullptr && padSampler->getNumSounds() > 0 && padSampler->getSoundFile (0).getFile().isAChildOf (folder);
+            const bool padInside = padSampler != nullptr && padSampler->numLayers() > 0 && padSampler->layerFile (0).isAChildOf (folder);
             rep.check (clipInside && simplerInside && padInside && result.copied >= 3,
-                       "Collect all and save (clip, Simpler, Drum Rack pad)", String (result.copied) + " copied, " + String (result.missing.size()) + " missing; clip " + String ((int) clipInside) + " simpler " + String ((int) simplerInside) + " pad " + String ((int) padInside) + (padSampler != nullptr && padSampler->getNumSounds() > 0 ? " (" + padSampler->getSoundFile (0).getFile().getFullPathName() + ")" : String()));
+                       "Collect all and save (clip, Simpler, Drum Rack pad)", String (result.copied) + " copied, " + String (result.missing.size()) + " missing; clip " + String ((int) clipInside) + " simpler " + String ((int) simplerInside) + " pad " + String ((int) padInside) + (padSampler != nullptr && padSampler->numLayers() > 0 ? " (" + padSampler->layerFile (0).getFullPathName() + ")" : String()));
 
             const bool saved = Sharing::saveTemplate (*edit, "_selftest");
             auto templateFile = Sharing::templatesFolder().getChildFile ("_selftest.tracktionedit");
@@ -1258,7 +1261,7 @@ namespace SelfTest
                 if (r.track != nullptr)
                 {
                     if (auto mc = dynamic_cast<te::MidiClip*> (r.track->getClips().getFirst())) notes = mc->getSequence().getNumNotes();
-                    if (auto rack = DrumRack::rackOf (DrumRack::findOnTrack (*r.track))) padLoaded = DrumRack::padName (*rack, 0).isNotEmpty();
+                    if (auto rack = DrumRack::rackOf (DrumRack::findOnTrack (*r.track))) padLoaded = DrumRack::padName (*rack, DrumRack::baseNote).isNotEmpty();
                 }
             }
             rep.check (slices == 8 && notes == 8 && padLoaded, "Slice audio to a Drum Rack at transients",
@@ -1274,6 +1277,374 @@ namespace SelfTest
             }
             rep.check (warpOk, "Per-clip warp mode", modes.joinIntoString (", "));
             bc = nullptr;
+        }
+
+        // --- Drum Rack v2: synth kit, choke, layers, sends, mute / solo, remap, move / copy, extract, macros ---
+        {
+            rep.step ("drum rack v2");
+            using DP = pulse::DrumPad;
+            using PO = pulse::PadOut;
+
+            // peak (dBFS) of a rendered file between two times
+            auto windowPeak = [&engine] (const File& f, double t0, double t1)
+            {
+                std::unique_ptr<AudioFormatReader> r (engine.getAudioFileFormatManager().readFormatManager.createReaderFor (f));
+                if (r == nullptr) return -200.0f;
+                const int64 a = (int64) (t0 * r->sampleRate), b = jmin (r->lengthInSamples, (int64) (t1 * r->sampleRate));
+                if (b <= a) return -200.0f;
+                Range<float> ranges[2];
+                r->readMaxLevels (a, b - a, ranges, (int) jmin (2u, r->numChannels));
+                float pk = 0;
+                for (auto& rg : ranges) pk = jmax (pk, std::abs (rg.getStart()), std::abs (rg.getEnd()));
+                return Decibels::gainToDecibels (pk, -200.0f);
+            };
+
+            struct DrumTrack { te::AudioTrack* track = nullptr; te::RackType* rack = nullptr; te::MidiClip* clip = nullptr; };
+            auto makeDrumTrack = [&] (const String& name, bool kit) -> DrumTrack
+            {
+                DrumTrack d;
+                d.track = ClipImport::createContentTrack (*edit, name, false);
+                if (d.track == nullptr) return d;
+                auto rp = DrumRack::create (*edit, kit);
+                d.track->pluginList.insertPlugin (rp, 0, nullptr);
+                d.rack = DrumRack::rackOf (rp.get());
+                d.clip = d.track->insertMIDIClip (name, { te::TimePosition(), te::TimePosition::fromSeconds (4.0) }, nullptr).get();
+                return d;
+            };
+            // notes are placed in seconds (the test edit's tempo may have changed)
+            auto noteAt = [&] (DrumTrack& d, int note, double sec, double lenSec = 0.1, int vel = 110)
+            {
+                const double b0 = EngineHelpers::timeToBeat (*edit, te::TimePosition::fromSeconds (sec));
+                const double b1 = EngineHelpers::timeToBeat (*edit, te::TimePosition::fromSeconds (sec + lenSec));
+                d.clip->getSequence().addNote (note, te::BeatPosition::fromBeats (b0), te::BeatDuration::fromBeats (jmax (0.01, b1 - b0)), vel, 0, nullptr);
+            };
+            auto render = [&] (DrumTrack& d, double secs, const String& n)
+            {
+                return EditingOps::renderTrack (*d.track, { te::TimePosition(), te::TimePosition::fromSeconds (secs) }, n);
+            };
+            auto tone = writeTestWav (dir.getChildFile ("drum_tone.wav"), 2.0, 220.0);            // 2 s steady, -6 dBFS
+            auto click = writeTestWav (dir.getChildFile ("drum_click.wav"), 0.05, 1000.0);
+
+            // 1. synth kit
+            {
+                auto d = makeDrumTrack ("DrumKit", true);
+                if (d.rack != nullptr)
+                {
+                    noteAt (d, 36, 0.0); noteAt (d, 38, 0.5); noteAt (d, 42, 1.0); noteAt (d, 39, 1.5);
+                    auto f = render (d, 2.0, "kit");
+                    const float k = windowPeak (f, 0.0, 0.45), sn = windowPeak (f, 0.5, 0.95), hh = windowPeak (f, 1.0, 1.1), cl = windowPeak (f, 1.5, 1.9);
+                    rep.check (DrumRack::usedPads (*d.rack).size() == 11 && k > -24 && sn > -24 && hh > -36 && cl > -30,
+                               "Drum Rack synth kit (kick, snare, hat, clap synthesised)",
+                               String (DrumRack::usedPads (*d.rack).size()) + " pads; " + String (k, 1) + " / " + String (sn, 1) + " / " + String (hh, 1) + " / " + String (cl, 1) + " dB");
+                }
+                else rep.check (false, "Drum Rack synth kit");
+            }
+
+            // 2. choke groups: a long tone on 46 is cut by a click on 42 when both are in group 1
+            {
+                auto d = makeDrumTrack ("DrumChoke", false);
+                float choked = 0, open = 0;
+                if (d.rack != nullptr)
+                {
+                    DrumRack::loadSample (*d.rack, 46, tone);
+                    DrumRack::loadSample (*d.rack, 42, click);
+                    DrumRack::source (*d.rack, 46)->set (DP::pChoke, 1.0f);
+                    DrumRack::source (*d.rack, 42)->set (DP::pChoke, 1.0f);
+                    noteAt (d, 46, 0.0, 1.5);
+                    noteAt (d, 42, 0.5);
+                    choked = windowPeak (render (d, 1.5, "choked"), 0.7, 1.4);
+                    DrumRack::source (*d.rack, 42)->set (DP::pChoke, 0.0f);
+                    open = windowPeak (render (d, 1.5, "unchoked"), 0.7, 1.4);
+                }
+                rep.check (choked < -60.0f && open > -12.0f, "Choke group cuts the other pad off", String (choked, 1) + " dB choked vs " + String (open, 1) + " dB without");
+            }
+
+            // 3. velocity layers and round robin
+            {
+                auto d = makeDrumTrack ("DrumLayers", false);
+                auto quiet = dir.getChildFile ("drum_quiet.wav");
+                {
+                    AudioBuffer<float> b (2, 22050);
+                    for (int i = 0; i < b.getNumSamples(); ++i) { auto v = 0.05f * std::sin ((float) i * 0.03f); b.setSample (0, i, v); b.setSample (1, i, v); }
+                    SampleEdit::writeWav (quiet, b, 44100.0);
+                }
+                float soft = 0, hard = 0, rr1 = 0, rr2 = 0;
+                if (d.rack != nullptr)
+                {
+                    DrumRack::addLayer (*d.rack, 40, quiet);
+                    DrumRack::addLayer (*d.rack, 40, tone);
+                    auto pad = DrumRack::source (*d.rack, 40);
+                    pad->spreadVelocities();   // quiet = 1..63, tone = 64..127
+                    pad->set (DP::pVelSens, 0.0f);
+                    noteAt (d, 40, 0.0, 0.2, 30);
+                    noteAt (d, 40, 0.6, 0.2, 120);
+                    auto f = render (d, 1.2, "layers");
+                    soft = windowPeak (f, 0.05, 0.4); hard = windowPeak (f, 0.65, 1.0);
+                    pad->set (DP::pLayerMode, 1.0f);   // round robin: alternates whatever the velocity
+                    for (auto n : d.clip->getSequence().getNotes()) n->setVelocity (100, nullptr);
+                    auto g = render (d, 1.2, "roundrobin");
+                    rr1 = windowPeak (g, 0.05, 0.4); rr2 = windowPeak (g, 0.65, 1.0);
+                }
+                rep.check (hard - soft > 15.0f, "Velocity layers pick the sample by velocity", String (soft, 1) + " dB soft, " + String (hard, 1) + " dB hard");
+                rep.check (std::abs (rr1 - rr2) > 15.0f, "Round-robin layers alternate", String (rr1, 1) + " / " + String (rr2, 1) + " dB");
+            }
+
+            // 4. sends (post-fader): send A at 0 dB doubles the pad through Return A; muting the return removes it
+            {
+                auto d = makeDrumTrack ("DrumSends", false);
+                float viaSend = -200, noSend = 0, retMuted = 0;
+                if (d.rack != nullptr)
+                {
+                    DrumRack::loadSample (*d.rack, 36, tone);
+                    auto out = DrumRack::output (*d.rack, 36);
+                    noteAt (d, 36, 0.0, 1.0);
+                    noSend = windowPeak (render (d, 1.0, "nosend"), 0.1, 0.9);
+                    out->set (PO::pSendA, 0.0f);
+                    viaSend = windowPeak (render (d, 1.0, "send"), 0.1, 0.9);
+                    DrumRack::output (*d.rack, DrumRack::returnA)->set (PO::pMute, 1.0f);
+                    retMuted = windowPeak (render (d, 1.0, "retmuted"), 0.1, 0.9);
+                }
+                rep.check (viaSend - noSend > 5.0f && std::abs (retMuted - noSend) < 0.5f, "Pad sends reach the rack returns",
+                           String (noSend, 1) + " dB dry, " + String (viaSend, 1) + " dB with send A, " + String (retMuted, 1) + " dB return muted");
+            }
+
+            // 5. mute / solo, 6. receive note remap
+            {
+                auto d = makeDrumTrack ("DrumMix", false);
+                float soloA = 0, soloB = 0, muted = 0, remapOld = 0, remapNew = 0;
+                if (d.rack != nullptr)
+                {
+                    DrumRack::loadSample (*d.rack, 36, tone);
+                    DrumRack::loadSample (*d.rack, 38, tone);
+                    for (int sl : { 36, 38 }) DrumRack::source (*d.rack, sl)->set (DP::pPlayMode, 1.0f);   // gate: stops at note-off
+                    noteAt (d, 36, 0.0, 0.4);
+                    noteAt (d, 38, 0.6, 0.4);
+                    DrumRack::output (*d.rack, 36)->set (PO::pSolo, 1.0f);
+                    auto f = render (d, 1.2, "solo");
+                    soloA = windowPeak (f, 0.05, 0.3); soloB = windowPeak (f, 0.65, 0.9);
+                    DrumRack::output (*d.rack, 36)->set (PO::pSolo, 0.0f);
+                    DrumRack::output (*d.rack, 38)->set (PO::pMute, 1.0f);
+                    muted = windowPeak (render (d, 1.2, "mute"), 0.65, 0.9);
+                    DrumRack::output (*d.rack, 38)->set (PO::pMute, 0.0f);
+
+                    DrumRack::source (*d.rack, 38)->set (DP::pNote, 60.0f);   // pad 38 now listens to C3
+                    noteAt (d, 60, 1.4, 0.4);
+                    auto g = render (d, 2.0, "remap");
+                    remapOld = windowPeak (g, 0.65, 0.9); remapNew = windowPeak (g, 1.45, 1.7);
+                }
+                rep.check (soloA > -12.0f && soloB < -80.0f && muted < -80.0f, "Pad solo and mute", String (soloA, 1) + " / " + String (soloB, 1) + " / " + String (muted, 1) + " dB");
+                rep.check (remapOld < -80.0f && remapNew > -12.0f && d.rack != nullptr && DrumRack::padForNote (*d.rack, 60) == 38,
+                           "Pad receive note remapping", String (remapOld, 1) + " dB old note, " + String (remapNew, 1) + " dB new note");
+            }
+
+            // 7. move / swap / copy pads, 8. extract a pad to its own track
+            {
+                auto d = makeDrumTrack ("DrumEdit", false);
+                bool moved = false, swapped = false, copied = false, extracted = false;
+                String info;
+                if (d.rack != nullptr)
+                {
+                    DrumRack::loadSample (*d.rack, 36, tone);
+                    DrumRack::loadSynth (*d.rack, 38, pulse::DrumVoice::snare);
+                    DrumRack::addEffect (*d.rack, 38, edit->getPluginCache().createNewPlugin (te::LowPassPlugin::xmlTypeName, {}));
+                    DrumRack::movePad (*d.rack, 36, 40);
+                    moved = DrumRack::source (*d.rack, 36) == nullptr && DrumRack::padName (*d.rack, 40) == "drum_tone"
+                            && DrumRack::noteOfPad (*d.rack, 40) == 40;
+                    DrumRack::movePad (*d.rack, 40, 38);   // swap with the snare
+                    swapped = DrumRack::padName (*d.rack, 38) == "drum_tone" && DrumRack::source (*d.rack, 40) != nullptr
+                              && DrumRack::source (*d.rack, 40)->isSynth() && DrumRack::chain (*d.rack, 40).size() == 1;
+                    DrumRack::copyPad (*d.rack, 40, 41);
+                    copied = DrumRack::source (*d.rack, 41) != nullptr && DrumRack::source (*d.rack, 41)->isSynth()
+                             && DrumRack::chain (*d.rack, 41).size() == 1 && DrumRack::source (*d.rack, 40) != nullptr
+                             && DrumRack::noteOfPad (*d.rack, 41) == 41;
+
+                    noteAt (d, 38, 0.0); noteAt (d, 41, 0.5); noteAt (d, 41, 1.0);
+                    const int tracksBefore = EngineHelpers::getUserTracks (*edit).size();
+                    auto nt = DrumRack::extractToTrack (*d.track, *d.rack, 41);
+                    int newNotes = 0, oldNotes = d.clip->getSequence().getNumNotes();
+                    bool hasPad = false;
+                    if (nt != nullptr)
+                    {
+                        for (auto c : nt->getClips()) if (auto mc = dynamic_cast<te::MidiClip*> (c)) newNotes += mc->getSequence().getNumNotes();
+                        hasPad = nt->pluginList.findFirstPluginOfType<pulse::DrumPad>() != nullptr;
+                    }
+                    const float pk = nt != nullptr ? peakDb (engine, EditingOps::renderTrack (*nt, { te::TimePosition(), te::TimePosition::fromSeconds (1.5) }, "extracted")) : -200.0f;
+                    extracted = nt != nullptr && EngineHelpers::getUserTracks (*edit).size() == tracksBefore + 1 && hasPad && newNotes == 2
+                                && oldNotes == 1 && DrumRack::source (*d.rack, 41) == nullptr && pk > -30.0f;
+                    info = String (newNotes) + " notes moved, " + String (oldNotes) + " left, " + String (pk, 1) + " dB";
+                }
+                rep.check (moved && swapped && copied, "Move, swap and copy pads (with their effects)",
+                           String ((int) moved) + String ((int) swapped) + String ((int) copied));
+                rep.check (extracted, "Extract a pad to its own track (sound, effects, notes)", info);
+            }
+
+            // 9. rack macros
+            {
+                auto d = makeDrumTrack ("DrumMacro", false);
+                bool ok = false;
+                String info;
+                if (d.rack != nullptr)
+                {
+                    DrumRack::loadSample (*d.rack, 36, tone);
+                    DrumRack::ensureMacros (*d.rack);
+                    auto ms = DrumRack::macros (*d.rack);
+                    auto target = DrumRack::source (*d.rack, 36)->param (DP::pCutoff);
+                    target->setParameter (1000.0f, sendNotificationSync);
+                    if (ms.size() == DrumRack::numMacros)
+                    {
+                        Macros::toggleMapping (*target, *ms[0]);
+                        ms[0]->setParameter (1.0f, sendNotificationSync);
+                        target->updateStream();
+                        target->updateFromAutomationSources (te::TimePosition());
+                        ok = Macros::isMapped (*target, *ms[0]) && target->getCurrentValue() > 1100.0f;
+                        info = String (ms.size()) + " macros, cutoff " + String (target->getCurrentValue(), 0) + " Hz";
+                    }
+                }
+                rep.check (ok, "Rack macros drive pad parameters", info);
+            }
+
+            // 10. migrating an old (16 Samplers) rack, 11. randomise kit, 12. bank view
+            {
+                auto t = ClipImport::createContentTrack (*edit, "DrumOld", false);
+                auto rt = edit->getRackList().addNewRack();
+                bool migrated = false;
+                if (rt != nullptr && t != nullptr)
+                {
+                    rt->state.setProperty (DrumRack::rackFlag, true, nullptr);
+                    rt->addOutput (-1, "Left"); rt->addOutput (-1, "Right");
+                    auto smp = edit->getPluginCache().createNewPlugin (te::SamplerPlugin::xmlTypeName, {});
+                    smp->state.setProperty (DrumRack::padProp, 2, nullptr);
+                    rt->addPlugin (smp, { 0.2f, 0.2f }, false);
+                    if (auto sp = dynamic_cast<te::SamplerPlugin*> (smp.get()))
+                    {
+                        sp->addSound (tone.getFullPathName(), "tone", 0.0, 2.0, 0.0f);
+                        sp->setSoundParams (0, 38, 38, 38);
+                        sp->flushPendingUpdates();
+                    }
+                    t->pluginList.insertPlugin (edit->getPluginCache().createNewPlugin (te::RackInstance::create (*rt)), 0, nullptr);
+                    DrumRack::migrateAll (*edit);
+                    bool samplersLeft = false;
+                    for (auto p : rt->getPlugins()) samplersLeft |= dynamic_cast<te::SamplerPlugin*> (p) != nullptr;
+                    migrated = ! samplersLeft && DrumRack::padName (*rt, 38) == "drum_tone" && DrumRack::output (*rt, DrumRack::returnA) != nullptr;
+                }
+                rep.check (migrated, "Old Drum Racks are upgraded on load");
+
+                auto d = makeDrumTrack ("DrumRandom", false);
+                int got = -1;
+                if (d.rack != nullptr)
+                {
+                    Array<File> lib { writeTestWav (dir.getChildFile ("Kick 01.wav"), 0.2, 60.0, 44100.0, true),
+                                      writeTestWav (dir.getChildFile ("snare_tight.wav"), 0.2, 200.0, 44100.0, true),
+                                      writeTestWav (dir.getChildFile ("closed hat.wav"), 0.1, 6000.0, 44100.0, true) };
+                    Random rng (3);
+                    got = DrumRack::randomiseKit (*d.rack, lib, rng);
+                }
+                rep.check (got == 3 && DrumRack::padName (*d.rack, 36) == "Kick 01" && DrumRack::padName (*d.rack, 38) == "snare_tight"
+                             && DrumRack::source (*d.rack, 39) != nullptr && DrumRack::source (*d.rack, 39)->isSynth(),
+                           "Randomise kit (library samples, synth for the rest)", String (got) + " from files");
+
+                DrumRack::setBank (*d.rack, 200);
+                const int hi = DrumRack::getBank (*d.rack);
+                DrumRack::setBank (*d.rack, 37);
+                rep.check (hi == 112 && DrumRack::getBank (*d.rack) == 36, "128 pads in banks", String (hi));
+            }
+
+            // 13. standalone Drum Synth
+            {
+                auto t = ClipImport::createContentTrack (*edit, "DrumSynth", false);
+                float pk = -200;
+                if (t != nullptr)
+                {
+                    t->pluginList.insertPlugin (edit->getPluginCache().createNewPlugin (pulse::DrumSynth::xmlTypeName, {}), 0, nullptr);
+                    auto mc = t->insertMIDIClip ("DS", { te::TimePosition(), te::TimePosition::fromSeconds (2.0) }, nullptr);
+                    for (int i = 0; i < 4; ++i)
+                        mc->getSequence().addNote (i % 2 == 0 ? 36 : 38, te::BeatPosition::fromBeats (i * 0.5), te::BeatDuration::fromBeats (0.25), 110, 0, nullptr);
+                    pk = peakDb (engine, EditingOps::renderTrack (*t, { te::TimePosition(), te::TimePosition::fromSeconds (1.5) }, "drumsynth"));
+                }
+                rep.check (pk > -24.0f, "Drum Synth instrument (GM kit)", String (pk, 1) + " dBFS");
+            }
+
+            // 15. Simpler multisample: root keys from file names, auto-mapped zones, each zone plays its sample
+            {
+                using S = pulse::Simpler;
+                const bool names = S::rootFromName ("Piano C#3") == 61 && S::rootFromName ("Strings_A2") == 57
+                                   && S::rootFromName ("vln_60") == 60 && S::rootFromName ("Bass Bb1") == 46 && S::rootFromName ("Pad") == -1;
+                auto quietC3 = dir.getChildFile ("Keys C3.wav");
+                {
+                    AudioBuffer<float> b (2, 44100);
+                    for (int i = 0; i < b.getNumSamples(); ++i) { auto v = 0.05f * std::sin ((float) i * 0.0313f); b.setSample (0, i, v); b.setSample (1, i, v); }
+                    SampleEdit::writeWav (quietC3, b, 44100.0);
+                }
+                auto loudC5 = writeTestWav (dir.getChildFile ("Keys C5.wav"), 1.0, 1046.5);
+                auto t = ClipImport::createContentTrack (*edit, "Multisample", false);
+                float lo = 0, hi = 0;
+                String zinfo;
+                if (t != nullptr)
+                {
+                    auto pl = edit->getPluginCache().createNewPlugin (S::xmlTypeName, {});
+                    t->pluginList.insertPlugin (pl, 0, nullptr);
+                    if (auto sp = dynamic_cast<S*> (pl.get()))
+                    {
+                        sp->autoMap ({ loudC5, quietC3 });
+                        for (int i = 0; i < sp->numZones(); ++i)
+                        {
+                            auto z = sp->getZone (i);
+                            zinfo << z.file.getFileNameWithoutExtension() << " " << z.keyLo << "-" << z.keyHi << " root " << z.root << "; ";
+                        }
+                        sp->set (S::pVelSens, 0.0f);
+                        auto mc = t->insertMIDIClip ("MS", { te::TimePosition(), te::TimePosition::fromSeconds (2.0) }, nullptr);
+                        auto at = [&] (double sec) { return te::BeatPosition::fromBeats (EngineHelpers::timeToBeat (*edit, te::TimePosition::fromSeconds (sec))); };
+                        mc->getSequence().addNote (64, at (0.0), te::BeatDuration::fromBeats (0.5), 100, 0, nullptr);
+                        mc->getSequence().addNote (80, at (0.8), te::BeatDuration::fromBeats (0.5), 100, 0, nullptr);
+                        auto f = EditingOps::renderTrack (*t, { te::TimePosition(), te::TimePosition::fromSeconds (1.4) }, "multisample");
+                        auto windowPk = [&engine, &f] (double a, double b)
+                        {
+                            std::unique_ptr<AudioFormatReader> r (engine.getAudioFileFormatManager().readFormatManager.createReaderFor (f));
+                            if (r == nullptr) return -200.0f;
+                            Range<float> rg[2];
+                            r->readMaxLevels ((int64) (a * r->sampleRate), (int64) ((b - a) * r->sampleRate), rg, 2);
+                            return Decibels::gainToDecibels (jmax (std::abs (rg[0].getStart()), std::abs (rg[0].getEnd())), -200.0f);
+                        };
+                        lo = windowPk (0.05, 0.2); hi = windowPk (0.85, 1.0);
+                    }
+                }
+                rep.check (names, "Multisample: root keys read from file names");
+                rep.check (hi - lo > 15.0f && zinfo.contains ("Keys C3 0-72 root 60") && zinfo.contains ("Keys C5 73-127 root 84"),
+                           "Simpler multisample zones (auto-mapped)", zinfo + String (lo, 1) + " / " + String (hi, 1) + " dB");
+            }
+
+            // 14. the editor: every page builds (snapshots saved as drumrack_<page>.png in the test folder)
+            {
+                PulseLookAndFeel laf;
+                LookAndFeel::setDefaultLookAndFeel (&laf);
+                bool ok = false;
+                int pages = 0;
+                {
+                    EditViewState evs (*edit, sm);
+                    auto d = makeDrumTrack ("DrumUI", true);
+                    if (d.rack != nullptr)
+                    {
+                        DrumRack::addLayer (*d.rack, 40, tone);
+                        DrumRack::addLayer (*d.rack, 40, click);
+                        DrumRack::addEffect (*d.rack, 40, edit->getPluginCache().createNewPlugin (te::LowPassPlugin::xmlTypeName, {}));
+                        DrumRack::output (*d.rack, 42)->set (PO::pMute, 1.0f);
+                        DrumRack::output (*d.rack, 38)->set (PO::pSolo, 1.0f);
+                        DrumRackCard card (evs, *DrumRack::findOnTrack (*d.track));
+                        card.setSize (card.getWidth(), 300);
+                        for (int pg = 0; pg < 7; ++pg)
+                        {
+                            card.showPage (pg, pg == 0 || pg == 3 ? 40 : 38);
+                            auto img = card.createComponentSnapshot (card.getLocalBounds());
+                            auto f = dir.getChildFile ("drumrack_" + String (pg) + ".png");
+                            f.deleteFile();
+                            if (auto os = f.createOutputStream()) { PNGImageFormat png; if (png.writeImageToStream (img, *os)) ++pages; }
+                        }
+                        ok = pages == 7;
+                    }
+                }
+                LookAndFeel::setDefaultLookAndFeel (nullptr);
+                rep.check (ok, "Drum Rack editor pages build", String (pages) + " pages");
+            }
         }
 
         // --- undo -------------------------------------------------------------------------------

@@ -105,7 +105,24 @@ namespace Sharing
             {
                 File f (s->state[pulse::Simpler::sampleFileID].toString());
                 auto nf = bring (f);
-                if (nf != f) s->setSampleFile (nf);
+                if (nf != f && f != File()) s->setSampleFile (nf);
+                for (auto z : s->state)
+                    if (z.hasType (pulse::Simpler::zoneType))
+                    {
+                        File zf (z[pulse::Simpler::zFile].toString());
+                        auto nz = bring (zf);
+                        if (nz != zf) z.setProperty (pulse::Simpler::zFile, nz.getFullPathName(), nullptr);
+                    }
+            }
+            else if (auto dp = dynamic_cast<pulse::DrumPad*> (p))
+            {
+                for (auto layer : dp->state)
+                    if (layer.hasType (pulse::DrumPad::layerType))
+                    {
+                        File f (layer[pulse::DrumPad::fileID].toString());
+                        auto nf = bring (f);
+                        if (nf != f) layer.setProperty (pulse::DrumPad::fileID, nf.getFullPathName(), nullptr);
+                    }
             }
             else if (auto sp = dynamic_cast<te::SamplerPlugin*> (p))
             {

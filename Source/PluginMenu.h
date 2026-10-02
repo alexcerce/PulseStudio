@@ -10,7 +10,7 @@ namespace PluginMenu
     using Callback = std::function<void (te::Plugin::Ptr)>;
 
     /** Set at startup (avoids PluginMenu depending on the drum rack code). */
-    inline std::function<te::Plugin::Ptr (te::Edit&)> drumRackFactory;
+    inline std::function<te::Plugin::Ptr (te::Edit&, bool withSynthKit)> drumRackFactory;
 
     template <typename PluginType>
     inline void addBuiltIn (PopupMenu& m, te::Edit& edit, const Callback& cb)
@@ -59,7 +59,11 @@ namespace PluginMenu
         addBuiltIn<pulse::NoteEcho> (midiFx, edit, cb);
 
         if (drumRackFactory)
-            instruments.addItem ("Drum Rack", [&edit, cb] { if (auto p = drumRackFactory (edit)) cb (p); });
+        {
+            instruments.addItem ("Drum Rack", [&edit, cb] { if (auto p = drumRackFactory (edit, false)) cb (p); });
+            instruments.addItem ("Drum Rack (synth kit)", [&edit, cb] { if (auto p = drumRackFactory (edit, true)) cb (p); });
+        }
+        addBuiltIn<pulse::DrumSynth> (instruments, edit, cb);
         addBuiltIn<pulse::WavetableSynth> (instruments, edit, cb);
         addBuiltIn<pulse::Simpler> (instruments, edit, cb);
         addBuiltIn<te::FourOscPlugin> (instruments, edit, cb);

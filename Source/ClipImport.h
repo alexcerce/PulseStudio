@@ -70,6 +70,8 @@ namespace ClipImport
         static const std::vector<BuiltIn> list
         {
             { "Drum Rack",    "drumrack",                          true },
+            { "Drum Rack (synth kit)", "drumrackkit",              true },
+            { "Drum Synth",   pulse::DrumSynth::xmlTypeName,       true },
             { "Wavetable",    pulse::WavetableSynth::xmlTypeName,  true },
             { "Simpler",      pulse::Simpler::xmlTypeName,         true },
             { "4OSC Synth",   te::FourOscPlugin::xmlTypeName,      true },
@@ -102,6 +104,8 @@ namespace ClipImport
     {
         if (d == "plugin:builtin:drumrack")
             return DrumRack::create (edit);
+        if (d == "plugin:builtin:drumrackkit")
+            return DrumRack::create (edit, true);
 
         if (d.startsWith ("plugin:builtin:"))
             return edit.getPluginCache().createNewPlugin (d.fromFirstOccurrenceOf ("plugin:builtin:", false, false), {});

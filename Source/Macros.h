@@ -47,9 +47,36 @@ namespace Macros
         return names;
     }
 
-    /** Adds "Map to Macro" items to a parameter's context menu. */
+    /** Adds "Map to Macro" items to a parameter's context menu (rack macros for devices inside a rack). */
     inline void addToMenu (PopupMenu& menu, te::AutomatableParameter& p)
     {
+        if (auto* plugin = p.getPlugin(); plugin != nullptr && plugin->isInRack())
+        {
+            auto rack = plugin->getOwnerRackType();
+            if (rack == nullptr) return;
+            PopupMenu sub;
+            auto macros = rack->getMacroParameters();
+            for (int i = 0; i < count; ++i)
+            {
+                const bool mapped = i < macros.size() && isMapped (p, *macros[i]);
+                const String label = i < macros.size() ? macros[i]->getParameterName() : "Macro " + String (i + 1);
+                sub.addItem (label, true, mapped, [rack, ptr = te::AutomatableParameter::Ptr (&p), i]
+                {
+                    auto& list = rack->getMacroParameterListForWriting();
+                    while (list.getMacroParameters().size() < count)
+                        if (auto m = list.createMacroParameter())
+                            m->macroName = "Macro " + String (list.getMacroParameters().size());
+                    if (auto m = rack->getMacroParameters()[i])
+                    {
+                        ptr->getEdit().getUndoManager().beginNewTransaction ("Map to rack macro");
+                        toggleMapping (*ptr, *m);
+                    }
+                });
+            }
+            menu.addSubMenu ("Map to Rack Macro", sub);
+            return;
+        }
+
         auto track = dynamic_cast<te::AudioTrack*> (p.getPlugin() != nullptr ? p.getPlugin()->getOwnerTrack() : nullptr);
         if (track == nullptr) return;
 

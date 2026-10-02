@@ -132,9 +132,10 @@ namespace SampleEdit
     struct SliceResult { te::AudioTrack* track = nullptr; int slices = 0; };
 
     /** Slices an audio clip at its transients onto a new Drum Rack track (one slice per pad,
-        up to 16) with a MIDI clip that plays the slices back in their original rhythm. */
-    inline SliceResult sliceToDrumRack (te::WaveAudioClip& clip)
+        up to 64, from C1 up) with a MIDI clip that plays the slices back in their original rhythm. */
+    inline SliceResult sliceToDrumRack (te::WaveAudioClip& clip, int maxSlices = 64)
     {
+        maxSlices = jlimit (1, DrumRack::numPads - DrumRack::baseNote, maxSlices);
         SliceResult r;
         auto& e = clip.edit;
         AudioBuffer<float> full;
@@ -149,7 +150,7 @@ namespace SampleEdit
         AudioBuffer<float> audio (full.getNumChannels(), len);
         for (int ch = 0; ch < full.getNumChannels(); ++ch) audio.copyFrom (ch, 0, full, ch, start, len);
 
-        auto times = transientTimes (audio, sr, DrumRack::numPads);
+        auto times = transientTimes (audio, sr, maxSlices);
         auto folder = editsFolder (e).getChildFile (File::createLegalFileName (clip.getName()) + " slices");
         folder.createDirectory();
 
@@ -174,7 +175,7 @@ namespace SampleEdit
             fade (slice, { slice.getNumSamples() - jmin (64, slice.getNumSamples()), slice.getNumSamples() }, false);   // no clicks
             auto f = folder.getChildFile ("slice " + String (r.slices + 1).paddedLeft ('0', 2) + ".wav");
             if (! writeWav (f, slice, sr) || rack == nullptr) continue;
-            DrumRack::loadSample (*rack, r.slices, f);
+            DrumRack::loadSample (*rack, DrumRack::baseNote + r.slices, f);
 
             if (mc != nullptr)
             {

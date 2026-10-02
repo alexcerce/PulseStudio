@@ -35,7 +35,7 @@ when you start, touch it after each step, and delete it when you stop.
    - Transient slicing: slice an audio clip at transients (reuse `AudioToMidi` onset detection) to a new Drum Rack
      track (one slice per pad) plus a MIDI clip that replays the slices.
    - Warp modes per clip: pick the time-stretch mode from those the engine supports (`te::TimeStretcher::getPossibleModes`).
-2. **Instruments (v0.18.0)**: the owner wants the Drum Rack to match Ableton's and go further:
+2. ~~**Instruments (v0.18.0)**~~ (done): the owner wants the Drum Rack to match Ableton's and go further:
    - Drum Rack: 128 pads in banks of 16 with bank switching, choke groups, velocity layers and round-robin per
      pad, per-pad start/end/ADSR/filter/pitch/reverse, per-pad mute/solo/volume/pan/sends to rack-internal
      returns, pad note remapping, copy/move/swap pads, drag samples and devices onto pads, macros for the rack,
@@ -53,3 +53,7 @@ when you start, touch it after each step, and delete it when you stop.
   shortcuts / capture MIDI / group freeze, v0.16 automation curves / pencil / modulators / clip envelopes.
   All self-tests pass (107). Next: queue item 1 (audio editing).
 - 2026-10-02: v0.17.0 audio editing done (sample editor, slice to Drum Rack, warp modes incl. bundled Signalsmith stretch). 111 checks pass. Next: queue item 2 (instruments / Drum Rack overhaul).
+- 2026-10-02: v0.18.0 instruments: Drum Rack rebuilt (128 pads / banks, Drum Pad device with 8 velocity / round-robin
+  layers, synth source, choke groups, receive-note remap, per-pad envelope / filter / reverse; Pad Mixer with mute /
+  solo / sends to two rack returns; move / swap / copy / extract pads; rack macros; synth kit; randomise kit; old racks
+  migrate on load), Drum Synth instrument, Simpler multisample zones. 128 checks pass. Next: queue item 3 (cycle).

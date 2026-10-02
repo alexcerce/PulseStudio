@@ -369,7 +369,7 @@ namespace AudioToMidi
         t->setName (clip.getName() + " " + names[(int) mode]);
         t->setColour (Theme::trackColour (EngineHelpers::getUserTracks (edit).indexOf (t.get())));
 
-        te::Plugin::Ptr inst = mode == Mode::drums ? DrumRack::create (edit)
+        te::Plugin::Ptr inst = mode == Mode::drums ? DrumRack::create (edit, true)
                                                    : edit.getPluginCache().createNewPlugin (pulse::WavetableSynth::xmlTypeName, {});
         if (inst != nullptr) t->pluginList.insertPlugin (inst, 0, nullptr);
 

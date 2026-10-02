@@ -479,6 +479,15 @@ private:
     String scaleName() const { return scales()[(size_t) scaleIndex].name; }
     String rootName() const  { return MidiMessage::getMidiNoteName (root, true, false, 3); }
 
+    /** The note played by pad 0-15 of the Drum Rack's current bank (follows remapped pads). */
+    int drumNote (int padIndex)
+    {
+        auto t = selectedTrack();
+        auto* rack = t != nullptr ? DrumRack::rackOf (DrumRack::findOnTrack (*t)) : nullptr;
+        if (rack == nullptr) return DrumRack::baseNote + padIndex;
+        return DrumRack::noteOfPad (*rack, DrumRack::getBank (*rack) + padIndex);
+    }
+
     bool isDrumTarget()
     {
         auto t = selectedTrack();
@@ -505,8 +514,8 @@ private:
             target = selectedTrack();
             if (isDrumTarget())
             {
-                for (int pad = 0; pad < DrumRack::numPads; ++pad)
-                    table[(size_t) ((pad / 4) * 8 + pad % 4)] = DrumRack::baseNote + pad;
+                for (int pad = 0; pad < DrumRack::padsPerBank; ++pad)
+                    table[(size_t) ((pad / 4) * 8 + pad % 4)] = drumNote (pad);
             }
             else
             {
@@ -607,8 +616,8 @@ private:
                 if (pitch >= 0)
                 {
                     if (pressed[(size_t) pad])      colour = palGreen;
-                    else if (stepMode && pitch - DrumRack::baseNote == selectedDrum) colour = palWhite;
-                    else if (drums)                  colour = rack != nullptr && DrumRack::padName (*rack, pitch - DrumRack::baseNote).isNotEmpty() ? trackCol : palDark;
+                    else if (stepMode && pitch == drumNote (selectedDrum)) colour = palWhite;
+                    else if (drums)                  colour = rack != nullptr && DrumRack::padForNote (*rack, pitch) >= 0 ? trackCol : palDark;
                     else if (steps.size() == 12)     colour = std::find (std::begin (majorSteps), std::end (majorSteps), ((pitch - root) % 12 + 12) % 12) != std::end (majorSteps)
                                                               ? ((pitch - root) % 12 == 0 ? trackCol : palWhite) : palDark;
                     else                             colour = ((pitch - root) % 12 == 0) ? trackCol : palWhite;
@@ -741,7 +750,7 @@ private:
     te::MidiNote* noteAtStep (te::MidiClip& mc, int step)
     {
         const double beat = (mc.isLooping() ? mc.getLoopStartBeats().inBeats() : mc.getOffsetInBeats().inBeats()) + step * stepBeats;
-        const int pitch = DrumRack::baseNote + selectedDrum;
+        const int pitch = drumNote (selectedDrum);
         for (auto n : mc.getSequence().getNotes())
             if (n->getNoteNumber() == pitch && std::abs (n->getStartBeat().inBeats() - beat) < stepBeats * 0.5)
                 return n;
@@ -787,7 +796,7 @@ private:
         else
         {
             const double beat = (mc->isLooping() ? mc->getLoopStartBeats().inBeats() : mc->getOffsetInBeats().inBeats()) + step * stepBeats;
-            mc->getSequence().addNote (DrumRack::baseNote + selectedDrum, te::BeatPosition::fromBeats (beat),
+            mc->getSequence().addNote (drumNote (selectedDrum), te::BeatPosition::fromBeats (beat),
                                        te::BeatDuration::fromBeats (stepBeats), 100, 0, &um);
         }
     }

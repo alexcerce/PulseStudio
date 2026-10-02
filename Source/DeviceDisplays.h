@@ -446,11 +446,32 @@ namespace DeviceDisplays
             wave = all;
             paintPanel (g, wave);
             auto data = simpler.getSample();
+            const int nz = simpler.numZones();
+            if (nz > 0)
+            {
+                // key map: one coloured span per zone, over the full keyboard
+                auto keys = wave.removeFromBottom (18.0f);
+                wave.removeFromBottom (3.0f);
+                paintPanel (g, keys);
+                for (int i = 0; i < nz; ++i)
+                {
+                    auto z = simpler.getZone (i);
+                    const float x0 = keys.getX() + keys.getWidth() * (float) z.keyLo / 128.0f;
+                    const float x1 = keys.getX() + keys.getWidth() * (float) (z.keyHi + 1) / 128.0f;
+                    g.setColour (Theme::trackColour (i).withAlpha (0.7f));
+                    g.fillRect (Rectangle<float> (x0, keys.getY() + 2.0f, jmax (1.0f, x1 - x0 - 1.0f), keys.getHeight() - 4.0f));
+                    g.setColour (Colours::white);
+                    const float rx = keys.getX() + keys.getWidth() * ((float) z.root + 0.5f) / 128.0f;
+                    g.fillRect (rx - 0.5f, keys.getY() + 2.0f, 1.5f, keys.getHeight() - 4.0f);
+                }
+                if (auto zs = simpler.getZones(); zs != nullptr && ! zs->empty()) data = zs->front().data;
+            }
 
             g.setFont (FontOptions (12.0f));
             g.setColour (Theme::muted);
-            g.drawText (data != nullptr ? data->file.getFileNameWithoutExtension() + "  (" + String (data->buffer.getNumSamples() / data->sampleRate, 2) + " s)"
-                                        : String ("Drop a sample here"),
+            g.drawText (nz > 0 ? String (nz) + " zones (multisample) - right-click to clear"
+                        : data != nullptr ? data->file.getFileNameWithoutExtension() + "  (" + String (data->buffer.getNumSamples() / data->sampleRate, 2) + " s)"
+                                          : String ("Drop a sample (or several for a multisample)"),
                         footer.withTrimmedRight (74.0f).reduced (4.0f, 0.0f), Justification::centredLeft, true);
 
             if (data == nullptr)
@@ -497,6 +518,18 @@ namespace DeviceDisplays
         void mouseDown (const MouseEvent& e) override
         {
             using S = pulse::Simpler;
+            if (e.mods.isPopupMenu())
+            {
+                PopupMenu m;
+                m.addItem ("Load multisample (several files, mapped by note names)...", [this] { browseMulti(); });
+                m.addItem ("Clear zones", simpler.numZones() > 0, false, [this]
+                {
+                    simpler.edit.getUndoManager().beginNewTransaction ("Clear zones");
+                    simpler.clearZones();
+                });
+                m.showMenuAsync (PopupMenu::Options().withTargetComponent (this));
+                return;
+            }
             if (simpler.getSample() == nullptr || ! wave.contains (e.position)) { dragging = -1; return; }
             const float s = xFor (pp().get (S::pStart)), en = xFor (pp().get (S::pEnd));
             const float l = s + (en - s) * pp().get (S::pLoopStart);
@@ -529,14 +562,28 @@ namespace DeviceDisplays
         }
 
         bool isInterestedInFileDrag (const StringArray& files) override { return ClipImport::isAudioFile (File (files[0])); }
-        void filesDropped (const StringArray& files, int, int) override  { load (File (files[0])); }
+        void filesDropped (const StringArray& files, int, int) override
+        {
+            Array<File> fs;
+            for (auto& f : files) if (ClipImport::isAudioFile (File (f))) fs.add (File (f));
+            loadFiles (fs);
+        }
 
         bool isInterestedInDragSource (const SourceDetails& d) override { return d.description == "PulseFiles"; }
         void itemDropped (const SourceDetails& d) override
         {
-            auto files = ClipImport::filesFromDrag (d);
-            if (! files.isEmpty() && ClipImport::isAudioFile (files[0]))
-                load (files[0]);
+            Array<File> fs;
+            for (auto& f : ClipImport::filesFromDrag (d)) if (ClipImport::isAudioFile (f)) fs.add (f);
+            loadFiles (fs);
+        }
+
+        /** One file = the sample; several = a multisample mapped by the root keys in their names. */
+        void loadFiles (const Array<File>& fs)
+        {
+            if (fs.isEmpty()) return;
+            if (fs.size() == 1) { load (fs[0]); return; }
+            simpler.edit.getUndoManager().beginNewTransaction ("Load multisample");
+            simpler.autoMap (fs);
         }
 
     private:
@@ -568,6 +615,16 @@ namespace DeviceDisplays
                                   [this, sp = SafePointer<SimplerDisplay> (this)] (const FileChooser& fc)
                                   {
                                       if (sp != nullptr && fc.getResult().existsAsFile()) load (fc.getResult());
+                                  });
+        }
+
+        void browseMulti()
+        {
+            chooser = std::make_shared<FileChooser> ("Load multisample", File::getSpecialLocation (File::userMusicDirectory), "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
+            chooser->launchAsync (FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles | FileBrowserComponent::canSelectMultipleItems,
+                                  [this, sp = SafePointer<SimplerDisplay> (this)] (const FileChooser& fc)
+                                  {
+                                      if (sp != nullptr && ! fc.getResults().isEmpty()) loadFiles (fc.getResults());
                                   });
         }
 

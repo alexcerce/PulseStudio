@@ -19,9 +19,18 @@ namespace pulse
     struct PulseSynthesiser : public Synthesiser
     {
         std::function<bool()> isMono;
+        /** Optional filters: return false to ignore the note (used by Drum Pads). */
+        std::function<bool (int note)> acceptNoteOn, acceptNoteOff;
+
+        void noteOff (int ch, int note, float vel, bool allowTailOff) override
+        {
+            if (acceptNoteOff && ! acceptNoteOff (note)) return;
+            Synthesiser::noteOff (ch, note, vel, allowTailOff);
+        }
 
         void noteOn (int ch, int note, float vel) override
         {
+            if (acceptNoteOn && ! acceptNoteOn (note)) return;
             if (isMono && isMono())
                 for (auto* v : voices)
                     if (v->isVoiceActive())
@@ -574,6 +583,7 @@ namespace pulse
             stateWatcher.owner = this;
             state.addListener (&stateWatcher);
             reloadFromState();
+            reloadZones();
         }
 
         ~Simpler() override { state.removeListener (&stateWatcher); }
@@ -593,6 +603,108 @@ namespace pulse
         void setSampleFile (const File& f)
         {
             state.setProperty (sampleFileID, f.getFullPathName(), getUndoManager());
+        }
+
+        //==============================================================================
+        // Multi-sample zones: when there are zones, each note / velocity plays the matching
+        // zone's sample, pitched from the zone's root key (the single sample is used otherwise).
+        static inline const Identifier zoneType { "ZONE" }, zFile { "file" }, zKeyLo { "keylo" }, zKeyHi { "keyhi" },
+                                       zVelLo { "vello" }, zVelHi { "velhi" }, zRoot { "root" };
+
+        struct ZoneInfo { File file; int keyLo = 0, keyHi = 127, velLo = 1, velHi = 127, root = 60; };
+
+        int numZones() const
+        {
+            int n = 0;
+            for (auto c : state) if (c.hasType (zoneType)) ++n;
+            return n;
+        }
+
+        ZoneInfo getZone (int i) const
+        {
+            for (auto c : state)
+                if (c.hasType (zoneType) && i-- == 0)
+                    return { File (c[zFile].toString()), (int) c[zKeyLo], (int) c[zKeyHi], (int) c.getProperty (zVelLo, 1),
+                             (int) c.getProperty (zVelHi, 127), (int) c[zRoot] };
+            return {};
+        }
+
+        void addZone (const ZoneInfo& z)
+        {
+            ValueTree v (zoneType);
+            v.setProperty (zFile, z.file.getFullPathName(), nullptr);
+            v.setProperty (zKeyLo, z.keyLo, nullptr);
+            v.setProperty (zKeyHi, z.keyHi, nullptr);
+            v.setProperty (zVelLo, z.velLo, nullptr);
+            v.setProperty (zVelHi, z.velHi, nullptr);
+            v.setProperty (zRoot, z.root, nullptr);
+            state.appendChild (v, getUndoManager());
+        }
+
+        void clearZones()
+        {
+            for (int i = state.getNumChildren(); --i >= 0;)
+                if (state.getChild (i).hasType (zoneType))
+                    state.removeChild (i, getUndoManager());
+        }
+
+        /** Root key from a file name: "Piano C#3", "Strings_A2", "vln-60" (MIDI number); -1 = none. */
+        static int rootFromName (const String& name)
+        {
+            static const char* letters = "C D EF G A B";
+            const auto n = name.toUpperCase();
+            for (int i = n.length(); --i >= 0;)   // the last note name in the string wins
+            {
+                const juce_wchar ch = n[i];
+                const char* pos = std::strchr (letters, (char) ch);
+                if (ch < 'A' || ch > 'G' || pos == nullptr) continue;
+                if (i > 0 && CharacterFunctions::isLetter (n[i - 1])) continue;
+                int semis = (int) (pos - letters), k = i + 1;
+                if (n[k] == '#') { ++semis; ++k; }
+                else if (n[k] == 'B' && (CharacterFunctions::isDigit (n[k + 1]) || n[k + 1] == '-')) { --semis; ++k; }
+                bool neg = false;
+                if (n[k] == '-') { neg = true; ++k; }
+                if (! CharacterFunctions::isDigit (n[k])) continue;
+                const int octave = (n[k] - '0') * (neg ? -1 : 1);
+                if (CharacterFunctions::isDigit (n[k + 1])) continue;   // "A10" etc: not a note
+                return jlimit (0, 127, (octave + 2) * 12 + semis);       // C3 = 60
+            }
+            // a trailing MIDI number ("_60")
+            auto digits = n.retainCharacters ("0123456789_- ").trim();
+            auto tail = n.fromLastOccurrenceOf ("_", false, false).trim();
+            if (tail.isNotEmpty() && tail.containsOnly ("0123456789") && tail.getIntValue() <= 127) return tail.getIntValue();
+            ignoreUnused (digits);
+            return -1;
+        }
+
+        /** Maps several samples across the keyboard by their root keys (read from the file names;
+            files without one are spread upwards from C3). Each zone reaches halfway to its neighbours. */
+        void autoMap (const juce::Array<File>& files)
+        {
+            struct Item { File f; int root; };
+            std::vector<Item> items;
+            int next = 60;
+            for (auto& f : files)
+            {
+                int r = rootFromName (f.getFileNameWithoutExtension());
+                if (r < 0) r = next++;
+                items.push_back ({ f, r });
+            }
+            std::sort (items.begin(), items.end(), [] (auto& a, auto& b) { return a.root < b.root; });
+            clearZones();
+            for (size_t i = 0; i < items.size(); ++i)
+            {
+                const int lo = i == 0 ? 0 : (items[i - 1].root + items[i].root) / 2 + 1;
+                const int hi = i + 1 == items.size() ? 127 : (items[i].root + items[i + 1].root) / 2;
+                addZone ({ items[i].f, lo, jmax (lo, hi), 1, 127, items[i].root });
+            }
+        }
+
+        struct LoadedZone { std::shared_ptr<SampleData> data; int keyLo, keyHi, velLo, velHi, root; };
+        std::shared_ptr<const std::vector<LoadedZone>> getZones() const
+        {
+            const SpinLock::ScopedLockType sl (sampleLock);
+            return zones;
         }
 
         std::shared_ptr<SampleData> getSample() const
@@ -615,8 +727,32 @@ namespace pulse
             {
                 if (v == owner->state && id == sampleFileID)
                     owner->reloadFromState();
+                else if (v.hasType (zoneType) && v.getParent() == owner->state)
+                    owner->reloadZones();
             }
+            void valueTreeChildAdded (ValueTree& p, ValueTree& c) override        { if (p == owner->state && c.hasType (zoneType)) owner->reloadZones(); }
+            void valueTreeChildRemoved (ValueTree& p, ValueTree& c, int) override { if (p == owner->state && c.hasType (zoneType)) owner->reloadZones(); }
         } stateWatcher;
+
+        void reloadZones()
+        {
+            auto old = getZones();
+            auto set = std::make_shared<std::vector<LoadedZone>>();
+            for (int i = 0; i < numZones(); ++i)
+            {
+                auto z = getZone (i);
+                std::shared_ptr<SampleData> d;
+                if (old != nullptr)
+                    for (auto& o : *old) if (o.data != nullptr && o.data->file == z.file) { d = o.data; break; }
+                if (d == nullptr && z.file.existsAsFile()) d = SampleData::load (engine, z.file);
+                if (d != nullptr) set->push_back ({ d, z.keyLo, z.keyHi, z.velLo, z.velHi, z.root });
+            }
+            {
+                const SpinLock::ScopedLockType sl (sampleLock);
+                zones = set->empty() ? nullptr : set;
+            }
+            ++sampleVersion;
+        }
 
         void reloadFromState()
         {
@@ -635,7 +771,10 @@ namespace pulse
         {
             const SpinLock::ScopedTryLockType sl (sampleLock);
             if (sl.isLocked())
+            {
                 audioSample = sample;
+                audioZones = zones;
+            }
             for (auto& p : playheads) p.store (-1.0f);
         }
 
@@ -647,6 +786,20 @@ namespace pulse
             void startNote (int note, float vel, SynthesiserSound*, int pitchWheel) override
             {
                 data = o.audioSample;
+                zoneRoot = -1;
+                if (auto& zs = o.audioZones; zs != nullptr)
+                {
+                    const int v = jlimit (1, 127, roundToInt (vel * 127.0f));
+                    const LoadedZone* best = nullptr;
+                    int bestDist = 1000;
+                    for (auto& z : *zs)
+                    {
+                        if (note >= z.keyLo && note <= z.keyHi && v >= z.velLo && v <= z.velHi) { best = &z; break; }
+                        const int d = note < z.keyLo ? z.keyLo - note : note > z.keyHi ? note - z.keyHi : 0;
+                        if (d < bestDist) { bestDist = d; best = &z; }
+                    }
+                    if (best != nullptr) { data = best->data; zoneRoot = best->root; }
+                }
                 if (data == nullptr || data->buffer.getNumSamples() < 2)
                 {
                     clearCurrentNote();
@@ -692,7 +845,8 @@ namespace pulse
                 const double loopLen = jmax (1.0, s1 - loopStart);
                 const double xfade = jmin ((double) o.get (pXfade) * loopLen, loopStart - s0);
 
-                const double semis = noteNumber - o.get (pRoot) + o.get (pTranspose) + o.get (pFine) / 100.0 + bend;
+                const double root = zoneRoot >= 0 ? (double) zoneRoot : (double) o.get (pRoot);
+                const double semis = noteNumber - root + o.get (pTranspose) + o.get (pFine) / 100.0 + bend;
                 const double inc = std::pow (2.0, semis / 12.0) * data->sampleRate / getSampleRate();
 
                 if (oneShot) amp.setParameters (adsrFrom (o.get (pA), 1.0f, 1.0f, 30.0f));
@@ -761,7 +915,7 @@ namespace pulse
             Simpler& o;
             std::shared_ptr<SampleData> data;
             double pos = 0;
-            int noteNumber = 60;
+            int noteNumber = 60, zoneRoot = -1;
             float velocity = 1, bend = 0;
             bool releasing = false;
             ADSR amp;
@@ -770,8 +924,15 @@ namespace pulse
 
         mutable SpinLock sampleLock;
         std::shared_ptr<SampleData> sample, audioSample;
+        std::shared_ptr<const std::vector<LoadedZone>> zones, audioZones;
     };
 
+}
+
+#include "DrumPads.h"
+
+namespace pulse
+{
     //==============================================================================
     /** Registers Pulse's devices with the engine and turns on swing-amount grooves. */
     inline void registerDevices (te::Engine& engine)
@@ -789,6 +950,9 @@ namespace pulse
         pm.createBuiltInType<ScaleFx>();
         pm.createBuiltInType<NoteEcho>();
         pm.createBuiltInType<SandboxedPlugin>();
+        pm.createBuiltInType<DrumPad>();
+        pm.createBuiltInType<PadOut>();
+        pm.createBuiltInType<DrumSynth>();
         engine.getGrooveTemplateManager().useParameterizedGrooves (true);
     }
 }
