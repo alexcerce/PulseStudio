@@ -72,7 +72,7 @@ public:
         }
         if (! param->getModifiers().isEmpty())
         {
-            g.setColour (Modulators::isModulated (*param) ? Colour (0xffb197fc) : Theme::accent);
+            g.setColour (Modulators::isModulated (*param) ? Theme::purple : Theme::accent);
             g.fillEllipse ((float) getWidth() - 7.0f, 2.0f, 5.0f, 5.0f);
         }
         if (Modulators::isModulated (*param))   // where the modulation has moved it right now
@@ -82,7 +82,7 @@ public:
             auto params = slider.getRotaryParameters();
             const float a = params.startAngleRadians + param->getCurrentNormalisedValue() * (params.endAngleRadians - params.startAngleRadians);
             auto c = b.getCentre();
-            g.setColour (Colour (0xffb197fc));
+            g.setColour (Theme::purple);
             g.fillEllipse (c.x + r * std::sin (a) - 2.5f, c.y - r * std::cos (a) - 2.5f, 5.0f, 5.0f);
         }
     }

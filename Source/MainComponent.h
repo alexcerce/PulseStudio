@@ -52,7 +52,7 @@ public:
         {
             b->setRadioGroupId (1);
             b->setClickingTogglesState (true);
-            b->setColour (TextButton::buttonOnColourId, Colour (0xff2b3a4d));
+            b->setColour (TextButton::buttonOnColourId, Theme::accentDim);
             b->setColour (TextButton::textColourOnId, Theme::text);
             addAndMakeVisible (b);
         }
@@ -102,7 +102,7 @@ public:
     void paint (Graphics& g) override
     {
         g.fillAll (Theme::bg);
-        g.setColour (Colour (0xff16181d));
+        g.setColour (Theme::bg2);
         g.fillRect (tabBar);
     }
 
@@ -269,6 +269,12 @@ public:
         c.add ("file.exportMidi", "Export MIDI", "File", key ('M', ctrl | shiftM), [this] { exportMidi(); });
 
         c.add ("app.audioSettings", "Audio settings", "App", {}, [this] { showAudioSettings(); });
+        c.add ("app.themes", "Colour theme...", "View", {}, [this]
+        {
+            if (edit != nullptr)
+                showAudioSettingsDialog (engine, *edit, settings(), [sp = SafePointer<MainComponent> (this)] (int i) { if (sp != nullptr) sp->setTheme (i); }, true);
+        });
+        c.add ("app.nextTheme", "Next colour theme", "View", {}, [this] { setTheme ((Theme::currentIndex() + 1) % (int) Theme::all().size()); });
         c.add ("app.plugins", "Plugin manager", "App", {}, [this] { showPluginManager(); });
         c.add ("app.shortcuts", "Keyboard shortcuts", "App", {}, [this] { showShortcutEditor(); });
         c.add ("app.welcome", "Welcome screen", "App", {}, [this] { showWelcome(); });
@@ -715,6 +721,27 @@ private:
 
         transport.setEdit (edit.get());
         StartupTimer::mark ("helpers");
+        createViews();
+
+        if (auto first = EngineHelpers::getUserTracks (*edit).getFirst())
+        {
+            selectionManager.selectOnly (first);
+            EngineHelpers::routeMidiInputsTo (*first);
+        }
+
+        showTab (currentTab);
+        restoreViewState();
+        CrashGuard::endLoading();   // the project's plugins are loaded
+        settings().setValue ("lastEdit", file.getFullPathName());
+        settings().setValue ("recentProjects", RecentProjects::push (StringArray::fromLines (settings().getValue ("recentProjects")), file).joinIntoString ("\n"));
+        updateWindowTitle();
+        resized();
+        offerRecoveryIfNeeded (file);
+    }
+
+    /** The views of the open project (arrangement, session, browser, devices, mixer, piano roll). */
+    void createViews()
+    {
         arrangement = std::make_unique<ArrangementView> (*evs);
         StartupTimer::mark ("arrangement view");
         session     = std::make_unique<SessionView> (*evs);
@@ -734,22 +761,49 @@ private:
             addAndMakeVisible (c);
 
         selectionManager.addChangeListener (this);
+    }
 
-        if (auto first = EngineHelpers::getUserTracks (*edit).getFirst())
-        {
-            selectionManager.selectOnly (first);
-            EngineHelpers::routeMidiInputsTo (*first);
-        }
+public:
+    /** Switches the colour theme live (and remembers it). */
+    void setTheme (int index)
+    {
+        const auto before = Theme::tokens();
+        Theme::apply (index);
+        const auto after = Theme::tokens();
+        auto& desk = Desktop::getInstance();
+        for (int i = 0; i < desk.getNumComponents(); ++i)
+            if (auto* c = desk.getComponent (i)) Theme::remapColours (*c, before, after);
+        settings().setValue ("theme", String (Theme::all()[(size_t) Theme::currentIndex()].name));
+        if (auto* laf = dynamic_cast<PulseLookAndFeel*> (&LookAndFeel::getDefaultLookAndFeel())) laf->applyTheme();
+        rebuildViews();
+        auto& d = Desktop::getInstance();
+        for (int i = 0; i < d.getNumComponents(); ++i)
+            if (auto* c = d.getComponent (i)) { c->sendLookAndFeelChange(); c->repaint(); }
+    }
 
+    /** Recreates the views (they take colours when they are built), keeping the open clip and tab. */
+    void rebuildViews()
+    {
+        if (edit == nullptr || evs == nullptr) return;
+        saveViewState();
+        te::MidiClip::Ptr clipInRoll = pianoRoll != nullptr ? pianoRoll->getClip() : nullptr;
+        DeviceEditors::closeAll();
+        if (pianoRoll != nullptr) pianoRoll->setClip (nullptr);
+        pianoRoll = nullptr;
+        mixer = nullptr;
+        deviceChain = nullptr;
+        browser = nullptr;
+        session = nullptr;
+        arrangement = nullptr;
+        createViews();
+        if (clipInRoll != nullptr) pianoRoll->setClip (clipInRoll.get());
         showTab (currentTab);
         restoreViewState();
-        CrashGuard::endLoading();   // the project's plugins are loaded
-        settings().setValue ("lastEdit", file.getFullPathName());
-        settings().setValue ("recentProjects", RecentProjects::push (StringArray::fromLines (settings().getValue ("recentProjects")), file).joinIntoString ("\n"));
-        updateWindowTitle();
         resized();
-        offerRecoveryIfNeeded (file);
+        repaint();
     }
+
+private:
 
     void closeEdit()
     {
@@ -978,9 +1032,21 @@ public:
                     if (auto mc = dynamic_cast<te::MidiClip*> (tracks[0]->getClips().getFirst())) { pianoRoll->setClip (mc); }
                     showTab (Tab::pianoRoll); break;
             case 6: showTab (Tab::devices); showWelcome(); break;
+            case 7: removeWelcome(); themeBefore = Theme::currentIndex(); setTheme (Theme::indexOf ("Daylight")); selectTrack (3); showTab (Tab::devices); break;
+            case 8: setTheme (Theme::indexOf ("Synthwave")); showTab (Tab::mixer); break;
+            case 9: setTheme (Theme::indexOf ("Nord")); showTab (Tab::devices); break;
+            case 10: setTheme (Theme::indexOf ("Paper")); showTab (Tab::mixer); break;
+            case 11: setTheme (themeBefore); break;
             default: break;
         }
         resized();
+    }
+
+    int themeBefore = 0;
+    void removeWelcome()
+    {
+        for (int i = getNumChildComponents(); --i >= 0;)
+            if (auto* w = dynamic_cast<WelcomeScreen*> (getChildComponent (i))) delete w;
     }
 
     void saveSnapshot (const File& f)
@@ -1233,7 +1299,7 @@ private:
 
     void showAudioSettings()
     {
-        showAudioSettingsDialog (engine, *edit, settings());
+        showAudioSettingsDialog (engine, *edit, settings(), [sp = SafePointer<MainComponent> (this)] (int i) { if (sp != nullptr) sp->setTheme (i); });
     }
 
     void showPluginManager()

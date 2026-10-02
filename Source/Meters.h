@@ -58,7 +58,7 @@ public:
         const float ledSize = vertical ? jmin (4.0f, r.getHeight() * 0.06f) : jmin (4.0f, r.getWidth() * 0.06f);
         auto led = vertical ? r.removeFromTop (ledSize) : r.removeFromRight (ledSize);
         if (vertical) r.removeFromTop (1.0f); else r.removeFromRight (1.0f);
-        g.setColour (clipped ? Colour (0xffff4d4d) : Colour (0xff2a2e35));
+        g.setColour (clipped ? Colour (0xffff4d4d) : Theme::line);
         g.fillRect (led);
 
         if (vertical)
@@ -83,7 +83,7 @@ public:
 private:
     void drawBar (Graphics& g, Rectangle<float> r, float db, float pk)
     {
-        g.setColour (Colour (0xff0b0d10));
+        g.setColour (Theme::well);
         g.fillRect (r);
         const float n = MeterStyle::norm (db);
         if (n > 0.0f)
@@ -94,7 +94,7 @@ private:
         const float pn = MeterStyle::norm (pk);
         if (pn > 0.0f)
         {
-            g.setColour (pk > 0.0f ? Colour (0xffff4d4d) : Colours::white.withAlpha (0.8f));
+            g.setColour (pk > 0.0f ? Colour (0xffff4d4d) : Theme::ink.withAlpha (0.8f));
             if (vertical) g.fillRect (r.getX(), r.getY() + r.getHeight() * (1.0f - pn), r.getWidth(), 1.5f);
             else          g.fillRect (r.getX() + r.getWidth() * pn - 1.5f, r.getY(), 1.5f, r.getHeight());
         }

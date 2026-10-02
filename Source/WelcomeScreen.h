@@ -24,7 +24,7 @@ public:
         auto styleNew = [this] (TextButton& b, const String& tip)
         {
             b.setTooltip (tip);
-            b.setColour (TextButton::buttonColourId, Colour (0xff232832));
+            b.setColour (TextButton::buttonColourId, Theme::panel2);
             addAndMakeVisible (b);
         };
         styleNew (emptyBtn, "A new empty project with one instrument track");
@@ -64,7 +64,7 @@ public:
         auto p = panel().toFloat();
         g.setColour (Colours::black.withAlpha (0.4f));
         g.fillRoundedRectangle (p.translated (0.0f, 4.0f), 12.0f);
-        g.setGradientFill (ColourGradient (Colour (0xff1e2229), p.getX(), p.getY(), Colour (0xff15181d), p.getX(), p.getBottom(), false));
+        g.setGradientFill (ColourGradient (Theme::raised, p.getX(), p.getY(), Theme::bg2, p.getX(), p.getBottom(), false));
         g.fillRoundedRectangle (p, 12.0f);
         g.setColour (Theme::line);
         g.drawRoundedRectangle (p, 12.0f, 1.0f);
@@ -180,7 +180,7 @@ private:
         void paintButton (Graphics& g, bool over, bool down) override
         {
             auto r = getLocalBounds().toFloat();
-            g.setColour (down ? Theme::accent.withAlpha (0.3f) : over ? Colour (0xff2a303a) : Colour (0xff20242c));
+            g.setColour (down ? Theme::accent.withAlpha (0.3f) : over ? Theme::line : Theme::panel2);
             g.fillRoundedRectangle (r, 6.0f);
             auto t = r.reduced (12.0f, 3.0f);
             g.setColour (Theme::text);

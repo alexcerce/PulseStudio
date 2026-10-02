@@ -29,6 +29,8 @@ The installer is written to `dist/`. Add `/DBuildDir=..\build-dev` to package a 
 
 ## First run
 
+**Colour themes:** *Audio* (settings) → *Appearance* shows 20 themes as preview cards: Pulse Dark, Midnight Blue, Graphite, Studio Grey, OLED Black, Nord, Dracula, Solarized Dark, Monokai, Gruvbox, Synthwave, Forest, Ocean, Ember, Rose Pine, Cyber Lime, High Contrast, and the light themes Daylight, Paper and Solarized Light. Click one and it applies right away (and is remembered). The command palette has *Colour theme...* and *Next colour theme*.
+
 A small splash shows while Pulse starts: opening the audio interface can take a couple of seconds with some drivers. Each start writes its timings to *%TEMP%/pulse-startup.log*.
 
 - **Welcome screen:** at startup (turn it off with *Show this at startup*, reopen it from *File → Welcome screen...*): your recent projects, new project (empty, demo song or one of your templates), open, and the main shortcuts.

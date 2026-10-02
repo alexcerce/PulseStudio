@@ -35,7 +35,7 @@ public:
             }
         }
         // 0 dB guide
-        g.setColour (Colours::white.withAlpha (0.12f));
+        g.setColour (Theme::ink.withAlpha (0.12f));
         g.drawHorizontalLine ((int) yFor (0.0f), area.getX(), area.getRight());
         // envelope
         Path p;

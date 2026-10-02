@@ -130,7 +130,7 @@ struct ExternalEditorComponent : public te::Plugin::EditorComponent,
         randomBtn.onClick = [this] { showRandomMenu(); };
         paramsBtn.setClickingTogglesState (true);
         paramsBtn.setTooltip ("Show the plugin's parameters as knobs (the ones you touched last come first)");
-        paramsBtn.setColour (TextButton::buttonOnColourId, Colour (0xff2b5b8a));
+        paramsBtn.setColour (TextButton::buttonOnColourId, Theme::accentDim);
         paramsBtn.onClick = [this] { strip.setVisible (paramsBtn.getToggleState()); search.setVisible (paramsBtn.getToggleState()); rebuildKnobs(); resizeToFitEditor(); };
 
         search.setTextToShowWhenEmpty ("Search parameters...", Theme::muted);
@@ -152,7 +152,7 @@ struct ExternalEditorComponent : public te::Plugin::EditorComponent,
     void paint (Graphics& g) override
     {
         g.fillAll (Theme::panel);
-        g.setColour (Colour (0xff1b1e23));
+        g.setColour (Theme::header);
         g.fillRect (getLocalBounds().removeFromTop (headerH));
         g.setColour (Theme::accent);
         g.fillRect (0, headerH - 2, getWidth(), 2);

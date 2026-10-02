@@ -45,7 +45,7 @@ public:
     {
         g.fillAll (Theme::panel);
         auto r = waveArea().toFloat();
-        g.setColour (Colour (0xff0e1013));
+        g.setColour (Theme::well);
         g.fillRoundedRectangle (r, 6.0f);
         if (! loaded || audio.getNumSamples() == 0)
         {
@@ -68,7 +68,7 @@ public:
         for (int ch = 0; ch < chans; ++ch)
         {
             const float mid = r.getY() + laneH * ((float) ch + 0.5f);
-            g.setColour (Colours::white.withAlpha (0.06f));
+            g.setColour (Theme::ink.withAlpha (0.06f));
             g.drawHorizontalLine ((int) mid, r.getX(), r.getRight());
             g.setColour (Theme::accent.brighter (0.2f));
             const auto* d = audio.getReadPointer (ch);

@@ -648,12 +648,12 @@ public:
 
     void paint (Graphics& g) override
     {
-        paintCard (g, Colour (0xffb197fc), true);
+        paintCard (g, Theme::purple, true);
         // live output
         auto bar = Rectangle<float> (8.0f, (float) headerH - 8.0f, (float) getWidth() - 16.0f, 3.0f);
         g.setColour (Colours::black.withAlpha (0.4f));
         g.fillRoundedRectangle (bar, 1.5f);
-        g.setColour (Colour (0xffb197fc));
+        g.setColour (Theme::purple);
         g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * jlimit (0.0f, 1.0f, mod->getCurrentValue())), 1.5f);
     }
 

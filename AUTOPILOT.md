@@ -129,3 +129,7 @@ when you start, touch it after each step, and delete it when you stop.
 - 2026-10-02: v0.40.0 VST frame (presets / programs, saved states, A/B with parameter snapshots, randomise + undo,
   searchable knob strip), StartupTimer + splash. Startup: ~2.0 s of 2.9 s is the audio interface opening
   (WASAPI, Komplete Audio 2) - driver cost; the rest of startup is ~0.5 s. 188 checks pass.
+- Owner request (2026-10-02): all of the v0.40 "what next" list, 15+ selectable themes, and a very in-depth
+  FabFilter-style 6-band filter / EQ with every filter type and movement.
+- 2026-10-02: v0.41.0 themes: Theme tokens are mutable (20 themes incl. 3 light), hard-coded UI greys mapped to tokens,
+  Appearance tab with preview cards, live switch (remaps colours set at construction + rebuilds views). 189 checks pass.

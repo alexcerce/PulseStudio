@@ -182,7 +182,7 @@ public:
 
         addAction (browserBtn, actions.toggleBrowser, "Show / hide the browser (B)");
         addAction (viewBtn, actions.toggleSession, "Switch between Arrangement and Session view (Tab)");
-        browserBtn.setOnColour (Colour (0xff2f4f73));
+        browserBtn.setOnColour (Theme::accentDim);
         for (auto* b : { &instTrackBtn, &audioTrackBtn })            b->setIconColour (Theme::accent);
         for (auto* b : { &undoBtn, &redoBtn })                       b->setFlat (true);
 
@@ -215,7 +215,7 @@ public:
 
     void paint (Graphics& g) override
     {
-        g.setGradientFill (ColourGradient (Colour (0xff1c2027), 0, 0, Colour (0xff14171b), 0, (float) getHeight(), false));
+        g.setGradientFill (ColourGradient (Theme::raised, 0, 0, Theme::bg2, 0, (float) getHeight(), false));
         g.fillAll();
         g.setColour (Colours::black.withAlpha (0.5f));
         g.drawHorizontalLine (getHeight() - 1, 0.0f, (float) getWidth());
@@ -239,7 +239,7 @@ public:
         if (renderShown)
         {
             auto pill = renderArea.toFloat().withRight ((float) cancelRenderBtn.getRight());
-            g.setColour (Colour (0xff0d0f12));
+            g.setColour (Theme::well);
             g.fillRoundedRectangle (pill, 6.0f);
             g.setColour (Theme::accent.withAlpha (0.6f));
             g.fillRoundedRectangle (pill.withWidth (pill.getWidth() * jlimit (0.0f, 1.0f, renderFraction)), 6.0f);
@@ -250,6 +250,7 @@ public:
         }
 
         auto lcd = lcdArea.toFloat();
+        // the LCD stays dark in every theme (green digits)
         g.setGradientFill (ColourGradient (Colour (0xff07090b), 0, lcd.getY(), Colour (0xff0d1013), 0, lcd.getBottom(), false));
         g.fillRoundedRectangle (lcd, 7.0f);
         g.setColour (Colours::white.withAlpha (0.06f));

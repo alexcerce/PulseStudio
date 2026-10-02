@@ -10,8 +10,14 @@ public:
     PulseLookAndFeel()
     {
         setDefaultSansSerifTypefaceName ("Segoe UI");
+        applyTheme();
+    }
 
-        auto scheme = LookAndFeel_V4::getDarkColourScheme();
+    /** Takes the current Theme colours (after Theme::apply). */
+    void applyTheme()
+    {
+
+        auto scheme = Theme::isLight ? LookAndFeel_V4::getLightColourScheme() : LookAndFeel_V4::getDarkColourScheme();
         scheme.setUIColour (ColourScheme::windowBackground, Theme::bg);
         scheme.setUIColour (ColourScheme::widgetBackground, Theme::panel2);
         scheme.setUIColour (ColourScheme::menuBackground, Theme::panel);
@@ -26,32 +32,32 @@ public:
         setColour (TextButton::buttonColourId, Theme::panel2);
         setColour (TextButton::buttonOnColourId, Theme::accent);
         setColour (TextButton::textColourOffId, Theme::text);
-        setColour (TextButton::textColourOnId, Colours::black);
+        setColour (TextButton::textColourOnId, Theme::isLight ? Colours::white : Colours::black);
         setColour (ComboBox::backgroundColourId, Theme::panel2);
         setColour (ComboBox::outlineColourId, Theme::line);
         setColour (ComboBox::arrowColourId, Theme::muted);
         setColour (Slider::thumbColourId, Theme::text);
         setColour (Slider::trackColourId, Theme::accent);
         setColour (Slider::rotarySliderFillColourId, Theme::accent);
-        setColour (Slider::rotarySliderOutlineColourId, Colour (0xff0c0e11));
+        setColour (Slider::rotarySliderOutlineColourId, Theme::well);
         setColour (Slider::textBoxOutlineColourId, Colours::transparentBlack);
         setColour (Slider::textBoxTextColourId, Theme::text);
         setColour (Label::textColourId, Theme::text);
-        setColour (TextEditor::backgroundColourId, Colour (0xff0e1013));
+        setColour (TextEditor::backgroundColourId, Theme::well);
         setColour (TextEditor::outlineColourId, Theme::line);
         setColour (TextEditor::focusedOutlineColourId, Theme::accent);
         setColour (TextEditor::highlightColourId, Theme::accent.withAlpha (0.35f));
-        setColour (PopupMenu::backgroundColourId, Colour (0xff1b1e24));
+        setColour (PopupMenu::backgroundColourId, Theme::header);
         setColour (PopupMenu::highlightedBackgroundColourId, Theme::accent.withAlpha (0.28f));
-        setColour (PopupMenu::highlightedTextColourId, Colours::white);
+        setColour (PopupMenu::highlightedTextColourId, Theme::text);
         setColour (PopupMenu::headerTextColourId, Theme::muted);
         setColour (ListBox::backgroundColourId, Theme::panel);
         setColour (ResizableWindow::backgroundColourId, Theme::bg);
-        setColour (ScrollBar::thumbColourId, Colour (0xff3a404b));
+        setColour (ScrollBar::thumbColourId, Theme::line);
         setColour (AlertWindow::backgroundColourId, Theme::panel);
         setColour (AlertWindow::textColourId, Theme::text);
         setColour (AlertWindow::outlineColourId, Theme::line);
-        setColour (TooltipWindow::backgroundColourId, Colour (0xff23272f));
+        setColour (TooltipWindow::backgroundColourId, Theme::raised);
         setColour (TooltipWindow::textColourId, Theme::text);
         setColour (TooltipWindow::outlineColourId, Theme::line);
         setColour (ToggleButton::textColourId, Theme::text);
@@ -123,8 +129,8 @@ public:
 
         // body
         auto bodyR = arcR - lineW * 0.9f;
-        g.setGradientFill (ColourGradient (Colour (0xff2c313a), centre.x, centre.y - bodyR,
-                                           Colour (0xff181b20), centre.x, centre.y + bodyR, false));
+        g.setGradientFill (ColourGradient (Theme::line, centre.x, centre.y - bodyR,
+                                           Theme::panel, centre.x, centre.y + bodyR, false));
         g.fillEllipse (centre.x - bodyR, centre.y - bodyR, bodyR * 2.0f, bodyR * 2.0f);
         g.setColour (Colours::black.withAlpha (0.4f));
         g.drawEllipse (centre.x - bodyR, centre.y - bodyR, bodyR * 2.0f, bodyR * 2.0f, 1.0f);
@@ -165,7 +171,7 @@ public:
             // mixer fader: recessed groove, value fill, ridged cap
             auto cx = (float) x + (float) width * 0.5f;
             auto groove = Rectangle<float> (cx - 2.5f, (float) y, 5.0f, (float) height);
-            g.setColour (Colour (0xff0b0d10));
+            g.setColour (Theme::well);
             g.fillRoundedRectangle (groove, 2.5f);
             g.setColour (s.findColour (Slider::trackColourId).withAlpha (0.55f));
             g.fillRoundedRectangle (groove.withTop (sliderPos), 2.5f);
@@ -173,9 +179,9 @@ public:
             auto cap = Rectangle<float> (jmin ((float) width - 2.0f, 30.0f), 24.0f).withCentre ({ cx, sliderPos });
             g.setColour (Colours::black.withAlpha (0.45f));
             g.fillRoundedRectangle (cap.translated (0.0f, 2.0f), 4.0f);
-            g.setGradientFill (ColourGradient (Colour (0xff6a717d), cap.getX(), cap.getY(), Colour (0xff3b414b), cap.getX(), cap.getBottom(), false));
+            g.setGradientFill (ColourGradient (Colour (0xff6a717d), cap.getX(), cap.getY(), Theme::line, cap.getX(), cap.getBottom(), false));
             g.fillRoundedRectangle (cap, 4.0f);
-            g.setColour (Colours::white.withAlpha (0.12f));
+            g.setColour (Theme::ink.withAlpha (0.12f));
             g.drawRoundedRectangle (cap.reduced (0.5f), 4.0f, 1.0f);
             g.setColour (Theme::text);
             g.fillRect (cap.withSizeKeepingCentre (cap.getWidth() - 8.0f, 2.0f));
@@ -186,7 +192,7 @@ public:
         {
             auto cy = (float) y + (float) height * 0.5f;
             auto groove = Rectangle<float> ((float) x, cy - 2.0f, (float) width, 4.0f);
-            g.setColour (Colour (0xff0b0d10));
+            g.setColour (Theme::well);
             g.fillRoundedRectangle (groove, 2.0f);
             g.setColour (s.findColour (Slider::trackColourId));
             g.fillRoundedRectangle (groove.withRight (sliderPos), 2.0f);

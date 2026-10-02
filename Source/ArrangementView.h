@@ -32,7 +32,7 @@ inline void drawBeatGrid (Graphics& g, const EditViewState& evs, Rectangle<int> 
         for (double b = std::floor (b0 / step) * step; b <= b1; b += step)
         {
             const bool beat = std::abs (b - std::round (b)) < 1.0e-6;
-            g.setColour (Colours::white.withAlpha (beat ? 0.06f : 0.03f));
+            g.setColour (Theme::ink.withAlpha (beat ? 0.06f : 0.03f));
             g.drawVerticalLine ((int) evs.beatToX (b), (float) area.getY(), (float) area.getBottom());
         }
 
@@ -40,7 +40,7 @@ inline void drawBeatGrid (Graphics& g, const EditViewState& evs, Rectangle<int> 
     while (barStep * bpb * evs.pixelsPerBeat < 14.0) barStep *= 2;
     Timeline::forEachBar (edit, b0, b1, barStep, [&] (int, double b)
     {
-        g.setColour (Colours::white.withAlpha (0.13f));
+        g.setColour (Theme::ink.withAlpha (0.13f));
         g.drawVerticalLine ((int) evs.beatToX (b), (float) area.getY(), (float) area.getBottom());
     });
 }
@@ -80,7 +80,7 @@ public:
         g.fillRoundedRectangle (header.withHeight (19.0f), 5.0f);
         g.setColour (col.withAlpha (0.28f));
         g.fillRect (header.withTop (header.getBottom()).withHeight (4.0f));
-        g.setColour (col.getPerceivedBrightness() > 0.55f ? Colours::black.withAlpha (0.85f) : Colours::white.withAlpha (0.92f));
+        g.setColour (col.getPerceivedBrightness() > 0.55f ? Colours::black.withAlpha (0.85f) : Theme::ink.withAlpha (0.92f));
         g.setFont (FontOptions (12.0f, Font::bold));
         g.drawText (clip->getName(), header.reduced (6.0f, 0.0f), Justification::centredLeft, true);
 
@@ -113,7 +113,7 @@ public:
 
         if (selected)
         {
-            g.setColour (Colours::white.withAlpha (0.25f));
+            g.setColour (Theme::ink.withAlpha (0.25f));
             g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (1.5f), 5.0f, 3.0f);
         }
         g.setColour (selected ? Colours::white : col.brighter (0.1f));
@@ -260,7 +260,7 @@ public:
         ed->setFont (FontOptions (12.5f));
         ed->setText (clip->getName(), false);
         ed->selectAll();
-        ed->setColour (TextEditor::backgroundColourId, Colour (0xff101216));
+        ed->setColour (TextEditor::backgroundColourId, Theme::well);
         ed->setColour (TextEditor::outlineColourId, Theme::accent);
         ed->setBounds (0, 0, jmax (120, jmin (getWidth(), 260)), 17);
         auto finish = [this] (bool commit)
@@ -386,7 +386,7 @@ private:
         }
 
         // handles
-        g.setColour (Colours::white.withAlpha (0.85f));
+        g.setColour (Theme::ink.withAlpha (0.85f));
         g.fillRect (inX - 3.0f, top - 1.0f, 6.0f, 6.0f);
         g.fillRect (outX - 3.0f, top - 1.0f, 6.0f, 6.0f);
 
@@ -558,7 +558,7 @@ private:
             waveSegments (*ac, &xs);
         }
 
-        g.setColour (Colours::white.withAlpha (0.45f));
+        g.setColour (Theme::ink.withAlpha (0.45f));
         const float dash[] = { 3.0f, 3.0f };
         for (auto x : xs)
             g.drawDashedLine ({ x, (float) body.getY(), x, (float) body.getBottom() }, dash, 2, 1.0f);
@@ -904,7 +904,7 @@ public:
     void paint (Graphics& g) override
     {
         const bool selected = evs.selectionManager.isSelected (track.get());
-        g.fillAll (selected ? Colour (0xff22262d) : Colour (0xff1b1e23));
+        g.fillAll (selected ? Theme::panel2 : Theme::header);
         if (track->isFrozen (te::Track::anyFreeze))
             g.fillAll (Colour (0x183d8bfd));
         drawBeatGrid (g, evs, getLocalBounds());
@@ -918,7 +918,7 @@ public:
             g.fillRect (x1, 0.0f, x2 - x1, (float) getHeight());
         }
 
-        g.setColour (Colour (0xff111317));
+        g.setColour (Theme::bg);
         g.fillRect (0, getHeight() - 1, getWidth(), 1);
     }
 
@@ -952,7 +952,7 @@ public:
         for (int i = 0; i < rows; ++i)
         {
             auto rowArea = Rectangle<int> (0, top + i * EditViewState::takeRowHeight, getWidth(), EditViewState::takeRowHeight);
-            g.setColour (i % 2 ? Colour (0xff1a1d22) : Colour (0xff1e2127));
+            g.setColour (i % 2 ? Theme::header : Theme::raised);
             g.fillRect (rowArea);
             for (auto c : track->getClips())
             {
@@ -971,7 +971,7 @@ public:
         if (compRow >= 0)
         {
             const float a = (float) jmin (compX0, compX1), b = (float) jmax (compX0, compX1);
-            g.setColour (Colours::white.withAlpha (0.25f));
+            g.setColour (Theme::ink.withAlpha (0.25f));
             g.fillRect (a, (float) (top + compRow * EditViewState::takeRowHeight), b - a, (float) EditViewState::takeRowHeight);
         }
     }
@@ -1294,7 +1294,7 @@ public:
     {
         const bool selected = evs.selectionManager.isSelected (track.get());
         const auto col = track->getColour();
-        g.fillAll (selected ? Colour (0xff272c35) : Theme::panel);
+        g.fillAll (selected ? Theme::line : Theme::panel);
         g.setGradientFill (ColourGradient (col.withAlpha (selected ? 0.22f : 0.12f), 0.0f, 0.0f,
                                           col.withAlpha (0.0f), (float) getWidth() * 0.7f, 0.0f, false));
         g.fillRect (getLocalBounds());
@@ -1316,7 +1316,7 @@ public:
         g.setColour (TrackColours::textOn (col));
         g.setFont (FontOptions (11.0f, Font::bold));
         g.drawText (String (number), badge, Justification::centred);
-        g.setColour (Colour (0xff0d0f12));
+        g.setColour (Theme::well);
         g.fillRect (0, getHeight() - 1, getWidth(), 1);
     }
 
@@ -1720,11 +1720,11 @@ public:
 
     void paint (Graphics& g) override
     {
-        g.fillAll (Colour (0xff16181d));
+        g.fillAll (Theme::bg2);
         auto& tc = evs.edit.getTransport();
         auto lr = tc.getLoopRange();
         auto lx1 = evs.timeToX (lr.getStart()), lx2 = evs.timeToX (lr.getEnd());
-        g.setColour (tc.looping ? Theme::orange.withAlpha (0.6f) : Colours::white.withAlpha (0.12f));
+        g.setColour (tc.looping ? Theme::orange.withAlpha (0.6f) : Theme::ink.withAlpha (0.12f));
         g.fillRect (lx1, 0.0f, lx2 - lx1, 7.0f);
 
         const int bpb = EngineHelpers::beatsPerBar (evs.edit);
@@ -1735,7 +1735,7 @@ public:
         Timeline::forEachBar (evs.edit, evs.xToBeat (0), evs.xToBeat ((float) getWidth()), barStep, [&] (int bar, double beat)
         {
             auto x = (int) evs.beatToX (beat);
-            g.setColour (Colours::white.withAlpha (0.25f));
+            g.setColour (Theme::ink.withAlpha (0.25f));
             g.drawVerticalLine (x, 11.0f, (float) getHeight());
             g.setColour (Theme::muted.brighter (0.3f));
             g.drawText (String (bar + 1), x + 4, 9, 40, 16, Justification::centredLeft);
@@ -1908,14 +1908,14 @@ public:
     void paint (Graphics& g) override
     {
         const bool sel = evs.selectionManager.isSelected (folder.get());
-        g.fillAll (sel ? Colour (0xff2a2f38) : Colour (0xff20242a));
+        g.fillAll (sel ? Theme::line : Theme::panel2);
         g.setColour (folder->getColour());
         g.fillRect (0, 0, getWidth(), 3);
         g.fillRect (0, 0, 5, getHeight());
         g.setColour (Theme::muted);
         g.setFont (FontOptions (11.0f, Font::bold));
         g.drawText ("GROUP  " + String (folder->getAllAudioSubTracks (true).size()) + " tracks", 34, 24, 140, 14, Justification::left);
-        g.setColour (Colour (0xff111317));
+        g.setColour (Theme::bg);
         g.fillRect (0, getHeight() - 1, getWidth(), 1);
     }
 
@@ -1992,7 +1992,7 @@ public:
 
     void paint (Graphics& g) override
     {
-        g.fillAll (Colour (0xff1e2127));
+        g.fillAll (Theme::raised);
         drawBeatGrid (g, evs, getLocalBounds());
         auto subs = folder->getAllAudioSubTracks (true);
         const float rowH = jmax (2.0f, (float) (getHeight() - 8) / (float) jmax (1, subs.size()));
@@ -2003,7 +2003,7 @@ public:
                 g.setColour (subs[i]->getColour().withAlpha (0.7f));
                 g.fillRect (x1, 4.0f + (float) i * rowH, jmax (1.0f, x2 - x1), jmax (1.5f, rowH - 1.0f));
             }
-        g.setColour (Colour (0xff111317));
+        g.setColour (Theme::bg);
         g.fillRect (0, getHeight() - 1, getWidth(), 1);
     }
 
@@ -2026,7 +2026,7 @@ public:
 
     void paint (Graphics& g) override
     {
-        g.fillAll (Colour (0xff131519));
+        g.fillAll (Theme::bg2);
         auto& ts = evs.edit.tempoSequence;
 
         // time signature changes (the first one is shown in the transport bar)
@@ -2037,7 +2037,7 @@ public:
             const float x = evs.beatToX (sig->getStartBeat().inBeats());
             if (x < -40 || x > getWidth()) continue;
             auto r = Rectangle<float> (x, 2.0f, 30.0f, (float) getHeight() - 4.0f);
-            g.setColour (Colour (0xff3a3f48));
+            g.setColour (Theme::line);
             g.fillRoundedRectangle (r, 3.0f);
             g.setColour (Theme::text);
             g.drawText (String (sig->numerator.get()) + "/" + String (sig->denominator.get()), r, Justification::centred);
@@ -2222,7 +2222,7 @@ public:
 
     void paint (Graphics& g) override
     {
-        g.fillAll (Colour (0xff17191e));
+        g.fillAll (Theme::bg2);
         drawBeatGrid (g, evs, getLocalBounds());
         auto& ts = evs.edit.tempoSequence;
         updateRange();
@@ -2373,7 +2373,7 @@ public:
         addAndMakeVisible (pencilBtn);
         for (auto* b : { &tempoBtn, &xfadeBtn })
         {
-            b->setColour (TextButton::buttonOnColourId, Colour (0xff2b5b8a));
+            b->setColour (TextButton::buttonOnColourId, Theme::accentDim);
             addAndMakeVisible (b);
         }
         addAndMakeVisible (viewport);
@@ -2413,8 +2413,8 @@ public:
 
     void paint (Graphics& g) override
     {
-        g.fillAll (Colour (0xff15171b));
-        g.setColour (Colour (0xff16181d));
+        g.fillAll (Theme::bg2);
+        g.setColour (Theme::bg2);
         g.fillRect (0, 0, headerWidth, topHeight());
         g.setColour (Theme::muted);
         g.setFont (FontOptions (11.0f, Font::bold));
@@ -2495,7 +2495,7 @@ private:
 
         void paint (Graphics& g) override
         {
-            g.fillAll (Colour (0xff15171b));
+            g.fillAll (Theme::bg2);
             if (! highlight && getHeight() - rowsBottom() > 60)
             {
                 g.setColour (Theme::muted.withAlpha (0.45f));

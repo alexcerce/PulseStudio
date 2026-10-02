@@ -105,7 +105,7 @@ namespace DeviceViews
                 }
             for (int beat = 0; beat <= 9; ++beat)
             {
-                g.setColour (Colours::white.withAlpha (beat % 4 == 0 ? 0.12f : 0.04f));
+                g.setColour (Theme::ink.withAlpha (beat % 4 == 0 ? 0.12f : 0.04f));
                 g.drawVerticalLine ((int) xFor (beat), area.getY(), area.getBottom());
                 if (large && beat % 4 == 0 && beat < 9)
                     Graphs::label (g, "Bar " + String (beat / 4 + 1), { xFor (beat) + 3.0f, area.getBottom() + 2.0f, 60.0f, 11.0f }, Justification::centredLeft);
@@ -117,7 +117,7 @@ namespace DeviceViews
 
             for (auto& n : in)
             {
-                g.setColour (Colours::white.withAlpha (0.35f));
+                g.setColour (Theme::ink.withAlpha (0.35f));
                 g.drawRoundedRectangle (Rectangle<float> (xFor (n.start), yFor (n.pitch), xFor (n.end) - xFor (n.start), rowH).reduced (0.5f, 1.0f), 2.0f, 1.0f);
             }
             for (auto& n : output)
@@ -179,13 +179,13 @@ namespace DeviceViews
                 const float db = Decibels::gainToDecibels (levels[(size_t) i], -60.0f);
                 const float h = jlimit (0.0f, 1.0f, (db + 60.0f) / 60.0f);
                 const auto col = Colour::fromHSV (0.58f - 0.5f * i / n, 0.6f, 0.95f, 1.0f);
-                g.setColour (Colours::white.withAlpha (0.03f));
+                g.setColour (Theme::ink.withAlpha (0.03f));
                 g.fillRect (cell);
                 auto bar = cell.withTop (cell.getBottom() - h * cell.getHeight());
                 g.setGradientFill (ColourGradient (col, 0.0f, bar.getY(), col.withAlpha (0.25f), 0.0f, cell.getBottom(), false));
                 g.fillRect (bar);
                 const float ph = jlimit (0.0f, 1.0f, (Decibels::gainToDecibels (peaks[(size_t) i], -60.0f) + 60.0f) / 60.0f);
-                g.setColour (Colours::white.withAlpha (0.8f));
+                g.setColour (Theme::ink.withAlpha (0.8f));
                 g.fillRect (cell.getX(), cell.getBottom() - ph * cell.getHeight() - 1.0f, cell.getWidth(), 2.0f);
                 if (large && (i % 3 == 0 || i == n - 1))
                 {
@@ -242,7 +242,7 @@ namespace DeviceViews
             radius = r;
 
             // half-circle guides
-            g.setColour (Colours::white.withAlpha (0.06f));
+            g.setColour (Theme::ink.withAlpha (0.06f));
             for (float k : { 0.33f, 0.66f, 1.0f })
             {
                 Path arc;
@@ -285,7 +285,7 @@ namespace DeviceViews
             const float corr = corrL > 1.0e-9f && corrR > 1.0e-9f ? corrNum / std::sqrt (corrL * corrR) : 1.0f;
 
             // correlation meter (-1 .. +1)
-            g.setColour (Colour (0xff1d2026));
+            g.setColour (Theme::raised);
             g.fillRoundedRectangle (corrBar, 3.0f);
             const float cx = corrBar.getX() + (corr + 1.0f) * 0.5f * corrBar.getWidth();
             g.setColour (corr < 0.0f ? Theme::red : Colour (0xff69db7c));

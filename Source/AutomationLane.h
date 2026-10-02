@@ -32,10 +32,10 @@ public:
 
     void paint (Graphics& g) override
     {
-        g.fillAll (Colour (0xff17191e));
+        g.fillAll (Theme::bg2);
         g.setColour (track->getColour().withAlpha (0.6f));
         g.fillRect (0, 0, 5, getHeight());
-        g.setColour (Colour (0xff111317));
+        g.setColour (Theme::bg);
         g.fillRect (0, getHeight() - 1, getWidth(), 1);
     }
 
@@ -109,9 +109,9 @@ public:
 
     void paint (Graphics& g) override
     {
-        g.fillAll (Colour (0xff17191e));
+        g.fillAll (Theme::bg2);
         drawGrid (g);
-        g.setColour (Colour (0xff111317));
+        g.setColour (Theme::bg);
         g.fillRect (0, getHeight() - 1, getWidth(), 1);
 
         auto param = evs.getAutomationParam (*track);
@@ -319,7 +319,7 @@ private:
         for (double b = std::floor (evs.xToBeat (0.0f) / step) * step; evs.beatToX (b) < getWidth(); b += step)
         {
             const bool bar = std::abs (std::fmod (b, (double) bpb)) < 1.0e-6;
-            g.setColour (Colours::white.withAlpha (bar ? 0.08f : 0.03f));
+            g.setColour (Theme::ink.withAlpha (bar ? 0.08f : 0.03f));
             g.drawVerticalLine ((int) evs.beatToX (b), 0.0f, (float) getHeight());
         }
     }

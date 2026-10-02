@@ -3118,6 +3118,38 @@ namespace SelfTest
             LookAndFeel::setDefaultLookAndFeel (nullptr);
         }
 
+        // --- v0.41: colour themes ----------------------------------------------------------------------------
+        {
+            rep.step ("themes");
+            auto lumOf = [] (Colour c)
+            {
+                auto ch = [] (float v) { return v <= 0.03928f ? v / 12.92f : std::pow ((v + 0.055f) / 1.055f, 2.4f); };
+                return 0.2126f * ch (c.getFloatRed()) + 0.7152f * ch (c.getFloatGreen()) + 0.0722f * ch (c.getFloatBlue());
+            };
+            auto contrast = [&] (Colour a, Colour b) { const float x = lumOf (a), y = lumOf (b); return (jmax (x, y) + 0.05f) / (jmin (x, y) + 0.05f); };
+            StringArray weak;
+            for (int i = 0; i < (int) Theme::all().size(); ++i)
+            {
+                Theme::apply (i);
+                const float t = jmin (contrast (Theme::text, Theme::bg), contrast (Theme::text, Theme::panel), contrast (Theme::text, Theme::panel2));
+                const float m = jmin (contrast (Theme::muted, Theme::bg), contrast (Theme::muted, Theme::panel));
+                if (t < 7.0f || m < 3.0f) weak.add (String (Theme::all()[(size_t) i].name) + " (" + String (t, 1) + "/" + String (m, 1) + ")");
+            }
+            // a live switch recolours colours set on components when they were built
+            Theme::apply (0);
+            TextButton b ("x");
+            b.setColour (TextButton::buttonOnColourId, Theme::accentDim);
+            b.setColour (TextButton::buttonColourId, Theme::panel2.withAlpha (0.5f));
+            const auto before = Theme::tokens();
+            Theme::apply (Theme::indexOf ("Daylight"));
+            Theme::remapColours (b, before, Theme::tokens());
+            const bool remapped = b.findColour (TextButton::buttonOnColourId) == Theme::accentDim
+                                  && b.findColour (TextButton::buttonColourId) == Theme::panel2.withAlpha (0.5f);
+            Theme::apply (0);
+            rep.check ((int) Theme::all().size() >= 15 && weak.isEmpty() && remapped, "Colour themes (readable text in every theme, live switch)",
+                       String ((int) Theme::all().size()) + " themes" + (weak.isEmpty() ? String() : ", weak contrast: " + weak.joinIntoString (", ")));
+        }
+
         // --- sharing: project zip, crash bundle, update check -----------------------------------------
         {
             rep.step ("sharing tools");

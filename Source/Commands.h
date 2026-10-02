@@ -120,7 +120,7 @@ public:
         auto r = getLocalBounds().toFloat();
         g.setColour (Colours::black.withAlpha (0.45f));
         g.fillRoundedRectangle (r.translated (0, 4), 10.0f);
-        g.setColour (Colour (0xff1b1f26));
+        g.setColour (Theme::header);
         g.fillRoundedRectangle (r, 10.0f);
         g.setColour (Theme::line.brighter (0.25f));
         g.drawRoundedRectangle (r.reduced (0.5f), 10.0f, 1.0f);

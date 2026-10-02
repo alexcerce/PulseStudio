@@ -70,7 +70,7 @@ namespace BusLanes
             volume.setDoubleClickReturnValue (true, 0.0);
             volume.setTextValueSuffix (" dB");
             volume.setColour (Slider::trackColourId, colour().withAlpha (0.45f));
-            volume.setColour (Slider::backgroundColourId, Colour (0xff101216));
+            volume.setColour (Slider::backgroundColourId, Theme::well);
             volume.setColour (Slider::textBoxTextColourId, Theme::text);
             volume.setTooltip ("Volume (double-click: 0 dB)");
             volume.onDragStart = [this] { evs.edit.getUndoManager().beginNewTransaction ("Volume"); };
@@ -96,9 +96,9 @@ namespace BusLanes
         {
             const bool sel = isShowing() && isSelected();
             auto r = getLocalBounds();
-            g.setColour (sel ? Colour (0xff23303f) : Colour (0xff1a1d22));
+            g.setColour (sel ? Theme::accentDim : Theme::header);
             g.fillRect (r);
-            g.setColour (Colour (0xff15171b));
+            g.setColour (Theme::bg2);
             g.fillRect (r.withLeft (headerWidth));
             g.setColour (colour());
             g.fillRect (r.removeFromLeft (4));
@@ -195,11 +195,11 @@ namespace BusLanes
                 auto r = getLocalBounds().toFloat().reduced (0.5f);
                 const bool on = plugin->isEnabled();
                 const auto c = owner.colour();
-                g.setColour ((on ? c.withAlpha (0.28f) : Colour (0xff24272d)).withMultipliedBrightness (hover ? 1.3f : 1.0f));
+                g.setColour ((on ? c.withAlpha (0.28f) : Theme::panel2).withMultipliedBrightness (hover ? 1.3f : 1.0f));
                 g.fillRoundedRectangle (r, 4.0f);
                 g.setColour (on ? c : Theme::line);
                 g.drawRoundedRectangle (r, 4.0f, 1.0f);
-                g.setColour (on ? Colours::white.withAlpha (0.92f) : Theme::muted);
+                g.setColour (on ? Theme::ink.withAlpha (0.92f) : Theme::muted);
                 g.setFont (FontOptions (11.0f, Font::bold));
                 g.drawText (getName(), r.reduced (8.0f, 0.0f), Justification::centredLeft, true);
             }
@@ -373,7 +373,7 @@ namespace BusLanes
 
         void paint (Graphics& g) override
         {
-            g.fillAll (Colour (0xff121418));
+            g.fillAll (Theme::well);
             g.setColour (Theme::line);
             g.drawHorizontalLine (0, 0.0f, (float) getWidth());
             g.setColour (Theme::muted);

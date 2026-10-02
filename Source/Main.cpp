@@ -102,6 +102,8 @@ public:
         pulse::registerDevices (*engine);
         StartupTimer::mark ("devices registered");
         if (splash != nullptr) splash->setStatus ("Loading the project...");
+        Theme::apply (Theme::indexOf (engine->getPropertyStorage().getPropertiesFile().getValue ("theme", "Pulse Dark")));
+        lookAndFeel->applyTheme();
         mainWindow = std::make_unique<MainWindow> (*engine);
         StartupTimer::mark ("main window shown");
         MessageManager::callAsync ([this] { StartupTimer::mark ("first message loop"); StartupTimer::save(); splash = nullptr; });
@@ -115,7 +117,7 @@ public:
                 void timerCallback() override
                 {
                     if (step > 0) mc.saveSnapshot (dir.getChildFile ("view_" + String (step - 1) + ".png"));
-                    if (step >= 7) { stopTimer(); JUCEApplication::quit(); return; }
+                    if (step >= 12) { stopTimer(); JUCEApplication::quit(); return; }
                     mc.prepareSnapshot (step++);
                 }
                 MainComponent& mc;

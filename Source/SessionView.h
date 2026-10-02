@@ -453,7 +453,7 @@ public:
         {
             const bool recording = Launcher::isRecordingInto (*slot);
             const bool blink = (Time::getMillisecondCounter() / 250) % 2 == 0;
-            g.setColour (recording ? Theme::red.withAlpha (blink ? 0.6f : 0.3f) : Colour (0xff1d2025));
+            g.setColour (recording ? Theme::red.withAlpha (blink ? 0.6f : 0.3f) : Theme::raised);
             g.fillRoundedRectangle (r, 3.0f);
 
             if (EngineHelpers::isTrackArmed (*track) || recording)
@@ -464,7 +464,7 @@ public:
             }
             else
             {
-                g.setColour (Colours::white.withAlpha (0.12f));
+                g.setColour (Theme::ink.withAlpha (0.12f));
                 g.fillRect (Rectangle<float> (8.0f, 8.0f).withCentre (r.getCentre()));
             }
         }
@@ -486,7 +486,7 @@ public:
                     {
                         auto len = jmax (0.25, Launcher::clipLengthBeats (*clip));
                         auto prog = (float) std::fmod (played->getLength().inBeats(), len) / (float) len;
-                        g.setColour (Colours::white.withAlpha (0.25f));
+                        g.setColour (Theme::ink.withAlpha (0.25f));
                         g.fillRect (r.withTop (r.getBottom() - 3.0f).withWidth (r.getWidth() * prog));
                     }
 
@@ -496,13 +496,13 @@ public:
             auto c = playArea.getCentre();
             tri.addTriangle (c.x - 4.0f, c.y - 6.0f, c.x - 4.0f, c.y + 6.0f, c.x + 6.0f, c.y);
             const bool blink = queued && (Time::getMillisecondCounter() / 200) % 2 == 0;
-            g.setColour (playing ? Theme::green : blink ? Theme::orange : Colours::white.withAlpha (0.85f));
+            g.setColour (playing ? Theme::green : blink ? Theme::orange : Theme::ink.withAlpha (0.85f));
             g.fillPath (tri);
 
             // follow-action marker (top right)
             if (Follow::hasAny (*clip))
             {
-                Icons::draw (g, Icons::Type::followAction, r.removeFromRight (16.0f).removeFromTop (16.0f).reduced (2.0f), Colours::white.withAlpha (0.85f), 1.4f);
+                Icons::draw (g, Icons::Type::followAction, r.removeFromRight (16.0f).removeFromTop (16.0f).reduced (2.0f), Theme::ink.withAlpha (0.85f), 1.4f);
             }
 
             g.setColour (Colours::white);
@@ -740,7 +740,7 @@ public:
 
     ~SessionView() override { evs.edit.state.removeListener (this); }
 
-    void paint (Graphics& g) override { g.fillAll (Colour (0xff15171b)); }
+    void paint (Graphics& g) override { g.fillAll (Theme::bg2); }
 
     void resized() override
     {
@@ -762,7 +762,7 @@ private:
     struct Grid : public Component
     {
         explicit Grid (EditViewState& e) : evs (e) {}
-        void paint (Graphics& g) override { g.fillAll (Colour (0xff15171b)); }
+        void paint (Graphics& g) override { g.fillAll (Theme::bg2); }
 
         // the 8x8 area currently shown on Push 2
         void paintOverChildren (Graphics& g) override

@@ -30,12 +30,12 @@ public:
 
         paintBtn.setClickingTogglesState (true);
         paintBtn.setTooltip ("Draw tool (B): drag across the grid to paint a note on every step");
-        paintBtn.setColour (TextButton::buttonOnColourId, Colour (0xff2b5b8a));
+        paintBtn.setColour (TextButton::buttonOnColourId, Theme::accentDim);
         addAndMakeVisible (paintBtn);
         ghostBtn.setClickingTogglesState (true);
         ghostBtn.setToggleState (true, dontSendNotification);
         ghostBtn.setTooltip ("Show other clips' notes faintly (ghost notes) to write parts that fit together");
-        ghostBtn.setColour (TextButton::buttonOnColourId, Colour (0xff2b5b8a));
+        ghostBtn.setColour (TextButton::buttonOnColourId, Theme::accentDim);
         ghostBtn.onClick = [this] { repaint(); };
         addAndMakeVisible (ghostBtn);
 
@@ -67,7 +67,7 @@ public:
         rootBox.onChange = [this] { rowsKey.clear(); centreOnNotes(); };
         foldBtn.setClickingTogglesState (true);
         foldBtn.setTooltip ("Fold: show only rows in the scale (or, with no scale, only rows that have notes)");
-        foldBtn.setColour (TextButton::buttonOnColourId, Colour (0xff2b5b8a));
+        foldBtn.setColour (TextButton::buttonOnColourId, Theme::accentDim);
         foldBtn.onClick = [this] { rowsKey.clear(); centreOnNotes(); };
         for (auto* c : std::initializer_list<Component*> { &scaleBox, &rootBox, &foldBtn })
             addAndMakeVisible (c);
@@ -162,7 +162,7 @@ public:
     //==============================================================================
     void paint (Graphics& g) override
     {
-        g.fillAll (Colour (0xff16181c));
+        g.fillAll (Theme::bg2);
         auto area = getLocalBounds().withTrimmedTop (toolbarH);
         const int gh = gridHeight();
         const int top = area.getY();
@@ -181,9 +181,9 @@ public:
             if (scale >= 0)
             {
                 const bool in = Scales::contains (scale, root, p), isRoot = ((p - root) % 12 + 12) % 12 == 0;
-                g.setColour (isRoot ? Colour (0xff23303f) : in ? Colour (0xff22252b) : Colour (0xff141518));
+                g.setColour (isRoot ? Theme::accentDim : in ? Theme::panel2 : Theme::bg2);
             }
-            else g.setColour (isBlack (p) ? Colour (0xff191b20) : Colour (0xff1e2126));
+            else g.setColour (isBlack (p) ? Theme::panel : Theme::raised);
             g.fillRect ((float) keyW, y, (float) getWidth(), rowH);
             if (p % 12 == 0 || p % 12 == 5)
             {
@@ -201,7 +201,7 @@ public:
             if (x < keyW) continue;
             const bool bar = std::abs (std::fmod (b, (double) bpb)) < 1.0e-6;
             const bool beat = std::abs (b - std::round (b)) < 1.0e-6;
-            g.setColour (Colours::white.withAlpha (bar ? 0.2f : beat ? 0.08f : 0.035f));
+            g.setColour (Theme::ink.withAlpha (bar ? 0.2f : beat ? 0.08f : 0.035f));
             g.drawVerticalLine ((int) x, (float) top, (float) getHeight());
             if (bar)
             {
@@ -247,7 +247,7 @@ public:
                 const auto body = sel ? colour.brighter (0.6f) : colour.darker (0.55f - 0.55f * vel).withMultipliedSaturation (0.7f + 0.3f * vel);
                 g.setColour (body);
                 g.fillRoundedRectangle (nr, 2.0f);
-                g.setColour (Colours::white.withAlpha (sel ? 0.5f : 0.18f));   // top highlight
+                g.setColour (Theme::ink.withAlpha (sel ? 0.5f : 0.18f));   // top highlight
                 g.fillRect (nr.withHeight (jmin (2.0f, nr.getHeight() * 0.3f)).reduced (1.0f, 0.0f));
                 g.setColour (sel ? Colours::white : Colours::black.withAlpha (0.55f));
                 g.drawRoundedRectangle (nr, 2.0f, sel ? 1.5f : 1.0f);
@@ -274,7 +274,7 @@ public:
 
             // velocity lane
             auto vy = (float) (top + gh);
-            g.setColour (Colour (0xff111317));
+            g.setColour (Theme::bg);
             g.fillRect ((float) keyW, vy, (float) getWidth(), (float) velH);
             g.setColour (Theme::line);
             g.drawHorizontalLine ((int) vy, (float) keyW, (float) getWidth());
@@ -332,7 +332,7 @@ public:
                 g.drawText (MidiMessage::getMidiNoteName (p, true, true, 3), keyW - 30, (int) y, 28, (int) rowH, Justification::centredRight);
             }
         }
-        g.setColour (Colour (0xff111317));
+        g.setColour (Theme::bg);
         g.fillRect (0, top + gh, keyW, velH);
         g.setColour (Theme::muted);
         g.setFont (FontOptions (11.0f));
@@ -824,7 +824,7 @@ private:
         p.startNewSubPath ((float) keyW, envToY (pts.front().second));
         for (auto& [b, v] : pts) p.lineTo (beatToX (b), envToY (v));
         p.lineTo ((float) getWidth(), envToY (pts.back().second));
-        g.setColour (Colour (0xffb197fc));
+        g.setColour (Theme::purple);
         g.strokePath (p, PathStrokeType (1.6f));
         for (auto& [b, v] : pts) g.fillEllipse (beatToX (b) - 3.0f, envToY (v) - 3.0f, 6.0f, 6.0f);
         ignoreUnused (colour);
@@ -837,7 +837,7 @@ private:
         // centre line for pitch bend
         if (laneType() == te::MidiControllerEvent::pitchWheelType)
         {
-            g.setColour (Colours::white.withAlpha (0.12f));
+            g.setColour (Theme::ink.withAlpha (0.12f));
             g.drawHorizontalLine ((int) controllerToY (8192), (float) keyW, (float) getWidth());
         }
 

@@ -157,7 +157,7 @@ public:
                                           Theme::panel2.darker (0.15f), 0.0f, r.getBottom(), false));
         g.fillRoundedRectangle (r, 6.0f);
         // name plate in the track colour
-        const auto col = track != nullptr ? track->getColour() : Colour (0xff3a3f47);
+        const auto col = track != nullptr ? track->getColour() : Theme::line;
         auto plate = r.withHeight (24.0f);
         g.setColour (col.withAlpha (selected ? 1.0f : 0.85f));
         g.fillRoundedRectangle (plate, 6.0f);
@@ -277,7 +277,7 @@ private:
             const float pk = meter->getMaxPeak();
             peakLbl.setText (pk <= -99.0f ? String ("-inf") : String (pk, 1), dontSendNotification);
             peakLbl.setColour (Label::textColourId, pk > 0.0f ? Colour (0xffff4d4d) : pk > -3.0f ? Theme::orange : Theme::text);
-            peakLbl.setColour (Label::backgroundColourId, pk > 0.0f ? Colour (0x40ff4d4d) : Colour (0xff111317));
+            peakLbl.setColour (Label::backgroundColourId, pk > 0.0f ? Colour (0x40ff4d4d) : Theme::bg);
         }
 
         if (track != nullptr)

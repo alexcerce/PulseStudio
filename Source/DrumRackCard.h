@@ -34,7 +34,7 @@ public:
     void paint (Graphics& g) override
     {
         auto r = getLocalBounds().toFloat().reduced (0.5f, 1.5f);
-        g.setColour (Colour (0xff111317));
+        g.setColour (Theme::bg);
         g.fillRoundedRectangle (r, 3.0f);
         const float v = (float) valueToProportionOfLength (getValue());
         g.setColour (Theme::accent.withAlpha (isMouseOverOrDragging() ? 0.55f : 0.38f));
@@ -237,11 +237,11 @@ private:
             const bool sel = owner.selected == s;
             auto col = owner.instance->getOwnerTrack() != nullptr ? owner.instance->getOwnerTrack()->getColour() : Theme::orange;
 
-            g.setColour (filled ? col.withAlpha (hover ? 0.55f : 0.38f) : Colour (0xff1b1e23));
+            g.setColour (filled ? col.withAlpha (hover ? 0.55f : 0.38f) : Theme::header);
             g.fillRoundedRectangle (r, 5.0f);
             if (flash > 0.01f)
             {
-                g.setColour (Colours::white.withAlpha (flash * 0.45f));
+                g.setColour (Theme::ink.withAlpha (flash * 0.45f));
                 g.fillRoundedRectangle (r, 5.0f);
             }
             g.setColour (sel ? Colours::white : (highlight ? Theme::accent : Theme::line));
@@ -377,7 +377,7 @@ private:
             {
                 const int row = s / 4, col = s % 4;
                 Rectangle<float> cell (col * cw, (31 - row) * rh, cw, rh);
-                g.setColour (used.contains (s) ? Theme::orange.withAlpha (0.85f) : Colour (0xff23272e));
+                g.setColour (used.contains (s) ? Theme::orange.withAlpha (0.85f) : Theme::panel2);
                 if (s == owner.selected) g.setColour (Colours::white);
                 g.fillRect (cell.reduced (0.6f));
             }
@@ -411,7 +411,7 @@ private:
         void paint (Graphics& g) override
         {
             auto r = getLocalBounds().toFloat();
-            g.setColour (Colour (0xff0f1115));
+            g.setColour (Theme::well);
             g.fillRoundedRectangle (r, 4.0f);
             g.setColour (Theme::line);
             g.drawRoundedRectangle (r.reduced (0.5f), 4.0f, 1.0f);
@@ -594,7 +594,7 @@ private:
         {
             if (owner.selected == slot) { g.setColour (Theme::accent.withAlpha (0.12f)); g.fillRect (getLocalBounds()); }
             auto m = meterArea.toFloat();
-            g.setColour (Colour (0xff101216));
+            g.setColour (Theme::well);
             g.fillRect (m);
             const float lvl = jlimit (0.0f, 1.0f, (Decibels::gainToDecibels (level, -60.0f) + 60.0f) / 66.0f);
             g.setColour (level > 0.98f ? Theme::red : Theme::green);

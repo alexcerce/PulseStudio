@@ -23,7 +23,7 @@ namespace Graphs
 
     inline void panel (Graphics& g, Rectangle<float> r)
     {
-        g.setGradientFill (ColourGradient (Colour (0xff15181d), 0.0f, r.getY(), Colour (0xff0c0e11), 0.0f, r.getBottom(), false));
+        g.setGradientFill (ColourGradient (Theme::bg2, 0.0f, r.getY(), Theme::well, 0.0f, r.getBottom(), false));
         g.fillRoundedRectangle (r, 4.0f);
         g.setColour (Theme::line);
         g.drawRoundedRectangle (r.reduced (0.5f), 4.0f, 1.0f);
@@ -116,7 +116,7 @@ namespace Graphs
             const bool large = isLarge (*this);
             area = b.reduced (8.0f, 10.0f).withTrimmedTop (6.0f);
             if (large) area = area.withTrimmedLeft (26.0f).withTrimmedBottom (16.0f).withTrimmedTop (8.0f);
-            g.setColour (Colours::white.withAlpha (0.05f));
+            g.setColour (Theme::ink.withAlpha (0.05f));
             for (int i = 1; i < 4; ++i) g.drawHorizontalLine ((int) (area.getY() + area.getHeight() * i / 4.0f), area.getX(), area.getRight());
             if (large)
             {
@@ -132,7 +132,7 @@ namespace Graphs
                 for (int i = 0; i < 4; ++i)
                 {
                     if (ps[i] == nullptr) continue;
-                    if (i % 2 == 1) { g.setColour (Colours::white.withAlpha (0.025f)); g.fillRect (Rectangle<float> (xs[i], area.getY(), xs[i + 1] - xs[i], area.getHeight())); }
+                    if (i % 2 == 1) { g.setColour (Theme::ink.withAlpha (0.025f)); g.fillRect (Rectangle<float> (xs[i], area.getY(), xs[i + 1] - xs[i], area.getHeight())); }
                     legend << names[i] << " " << ps[i]->getCurrentValueAsStringWithLabel() << "     ";
                 }
                 label (g, (envs.size() > 1 ? e.name + "   " : String()) + legend.trimEnd(),
@@ -325,7 +325,7 @@ namespace Graphs
                     {
                         const double f = dec * k;
                         if (f < 20.0 || f > 20000.0) continue;
-                        g.setColour (Colours::white.withAlpha (k == 1 ? 0.08f : 0.03f));
+                        g.setColour (Theme::ink.withAlpha (k == 1 ? 0.08f : 0.03f));
                         g.drawVerticalLine ((int) xForHz (area, f), area.getY(), area.getBottom());
                     }
                 for (auto [f, t] : { std::pair<double, const char*> { 20.0, "20" }, { 50.0, "50" }, { 100.0, "100" }, { 200.0, "200" }, { 500.0, "500" },
@@ -333,14 +333,14 @@ namespace Graphs
                     label (g, t, Rectangle<float> (xForHz (area, f) - 14.0f, area.getBottom() + 2.0f, 28.0f, 11.0f), Justification::centred);
                 for (int db = 18; db >= -24; db -= 6)
                 {
-                    g.setColour (Colours::white.withAlpha (db == 0 ? 0.12f : 0.035f));
+                    g.setColour (Theme::ink.withAlpha (db == 0 ? 0.12f : 0.035f));
                     g.drawHorizontalLine ((int) yForDb ((float) db), area.getX(), area.getRight());
                     label (g, (db > 0 ? "+" : "") + String (db), Rectangle<float> (b.getX() + 2.0f, yForDb ((float) db) - 6.0f, 26.0f, 12.0f), Justification::centredRight, 0.55f);
                 }
             }
             else
             {
-                g.setColour (Colours::white.withAlpha (0.05f));
+                g.setColour (Theme::ink.withAlpha (0.05f));
                 for (double f : { 100.0, 1000.0, 10000.0 }) g.drawVerticalLine ((int) xForHz (area, f), area.getY(), area.getBottom());
                 g.drawHorizontalLine ((int) yForDb (0.0f), area.getX(), area.getRight());
                 g.setColour (Theme::muted.withAlpha (0.6f));
@@ -483,7 +483,7 @@ namespace Graphs
             {
                 const bool major = std::fmod (-db, 12.0f) < 0.1f;
                 if (! large && (! major || db == 0.0f)) continue;
-                g.setColour (Colours::white.withAlpha (db == 0.0f ? 0.12f : (major ? 0.06f : 0.025f)));
+                g.setColour (Theme::ink.withAlpha (db == 0.0f ? 0.12f : (major ? 0.06f : 0.025f)));
                 g.drawVerticalLine ((int) xFor (db), area.getY(), area.getBottom());
                 g.drawHorizontalLine ((int) yFor (db), area.getX(), area.getRight());
                 if (large && major)
@@ -492,7 +492,7 @@ namespace Graphs
                     label (g, String ((int) db), { b.getX() + 2.0f, yFor (db) - 6.0f, 26.0f, 12.0f }, Justification::centredRight, 0.55f);
                 }
             }
-            g.setColour (Colours::white.withAlpha (0.08f));
+            g.setColour (Theme::ink.withAlpha (0.08f));
             g.drawLine (area.getX(), area.getBottom(), area.getRight(), area.getY(), 0.8f);
             if (large)
             {
@@ -550,7 +550,7 @@ namespace Graphs
         }
         void drawGR (Graphics& g, Rectangle<float> bar)
         {
-            g.setColour (Colour (0xff1d2026));
+            g.setColour (Theme::raised);
             g.fillRect (bar);
             const float v = jlimit (0.0f, 24.0f, gr());
             g.setColour (Theme::orange);

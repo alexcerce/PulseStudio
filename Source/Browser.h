@@ -605,7 +605,7 @@ public:
 
         sidebar.setModel (this);
         sidebar.setRowHeight (22);
-        sidebar.setColour (ListBox::backgroundColourId, Colour (0xff15181c));
+        sidebar.setColour (ListBox::backgroundColourId, Theme::bg2);
         addAndMakeVisible (sidebar);
 
         preview.setToggleState (settings.getBoolValue ("browserPreview", true), dontSendNotification);
@@ -631,7 +631,7 @@ public:
         addChildComponent (plugins);
 
         search.setTextToShowWhenEmpty ("Search", Theme::muted);
-        search.setColour (TextEditor::backgroundColourId, Colour (0xff101215));
+        search.setColour (TextEditor::backgroundColourId, Theme::bg);
         search.setColour (TextEditor::outlineColourId, Theme::line);
         search.setIndents (26, 4);
         search.onTextChange = [this] { startTimer (200); };
@@ -743,7 +743,7 @@ private:
         {
             case Kind::favourites: dot = Theme::yellow; break;
             case Kind::category:   dot = categoryColour (e.index); break;
-            case Kind::place:      dot = Colour (0xff8a929d); break;
+            case Kind::place:      dot = Theme::muted; break;
             default: break;
         }
         g.setColour (dot);

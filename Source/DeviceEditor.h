@@ -29,7 +29,7 @@ namespace DeviceEditors
             for (int i = 0; i <= 4; ++i)
             {
                 const float y = a.getY() + a.getHeight() * i / 4.0f;
-                g.setColour (Colours::white.withAlpha (0.06f));
+                g.setColour (Theme::ink.withAlpha (0.06f));
                 g.drawHorizontalLine ((int) y, a.getX(), a.getRight());
                 g.setColour (Theme::muted.withAlpha (0.7f));
                 g.drawText ("-" + String (maxV * i / 4.0f, 0) + " " + unit, Rectangle<float> (b.getX() + 2.0f, y - 6.0f, 34.0f, 12.0f), Justification::centredLeft);
@@ -102,7 +102,7 @@ namespace DeviceEditors
                     if (i == 0) p.startNewSubPath (x, y); else p.lineTo (x, y);
                 }
                 const bool hot = f == current;
-                g.setColour (hot ? (osc == 0 ? Theme::accent : Theme::orange) : Colours::white.withAlpha (0.08f + 0.12f * f / frames));
+                g.setColour (hot ? (osc == 0 ? Theme::accent : Theme::orange) : Theme::ink.withAlpha (0.08f + 0.12f * f / frames));
                 g.strokePath (p, PathStrokeType (hot ? 2.2f : 1.0f));
             }
             g.setColour (Theme::muted);
@@ -137,7 +137,7 @@ namespace DeviceEditors
             auto b = getLocalBounds().toFloat().reduced (1.0f);
             Graphs::panel (g, b);
             const int types[] = { pulse::DrumVoice::kick, pulse::DrumVoice::snare, pulse::DrumVoice::closedHat, pulse::DrumVoice::clap };
-            const Colour cols[] = { Theme::orange, Theme::accent, Colour (0xff69db7c), Colour (0xffb197fc) };
+            const Colour cols[] = { Theme::orange, Theme::accent, Colour (0xff69db7c), Theme::purple };
             auto a = b.reduced (8.0f);
             const float cw = a.getWidth() / 4.0f;
             for (int k = 0; k < 4; ++k)
@@ -195,7 +195,7 @@ namespace DeviceEditors
             auto b = getLocalBounds().toFloat().reduced (1.0f);
             Graphs::panel (g, b);
             area = b.reduced (10.0f, 8.0f).withTrimmedBottom (Graphs::isLarge (*this) ? 30.0f : 4.0f).withTrimmedTop (6.0f);
-            g.setColour (Colours::white.withAlpha (0.05f));
+            g.setColour (Theme::ink.withAlpha (0.05f));
             for (int i = 0; i <= 4; ++i) g.drawHorizontalLine ((int) (area.getY() + area.getHeight() * i / 4.0f), area.getX(), area.getRight());
             const int n = (int) params.size();
             for (int i = 0; i < n; ++i)
@@ -310,7 +310,7 @@ namespace DeviceEditors
             using F = pulse::FMSynth;
             add ("Algorithm", std::make_unique<DeviceDisplays::FMDisplay> (*s));
             std::vector<EG::Env> ops;
-            const Colour cols[] = { Theme::orange, Theme::accent, Colour (0xff69db7c), Colour (0xffb197fc) };
+            const Colour cols[] = { Theme::orange, Theme::accent, Colour (0xff69db7c), Theme::purple };
             for (int op = 0; op < F::numOps; ++op)
                 ops.push_back ({ s->param (F::opParam (op, F::kA)), s->param (F::opParam (op, F::kD)), s->param (F::opParam (op, F::kS)),
                                  s->param (F::opParam (op, F::kR)), cols[op], "OP " + String (op + 1) });

@@ -10,7 +10,7 @@ namespace DeviceDisplays
 {
     inline void paintPanel (Graphics& g, Rectangle<float> r)
     {
-        g.setColour (Colour (0xff111317));
+        g.setColour (Theme::bg);
         g.fillRoundedRectangle (r, 4.0f);
         g.setColour (Theme::line);
         g.drawRoundedRectangle (r.reduced (0.5f), 4.0f, 1.0f);
@@ -83,7 +83,7 @@ namespace DeviceDisplays
             g.fillAll (Theme::panel);
             auto r = drawArea().toFloat();
             Graphs::panel (g, r);
-            g.setColour (Colours::white.withAlpha (0.08f));
+            g.setColour (Theme::ink.withAlpha (0.08f));
             g.drawHorizontalLine ((int) r.getCentreY(), r.getX(), r.getRight());
             for (int q = 1; q < 4; ++q) g.drawVerticalLine ((int) (r.getX() + r.getWidth() * q / 4.0f), r.getY(), r.getBottom());
             // the other cycle, faint
@@ -284,7 +284,7 @@ namespace DeviceDisplays
             paintPanel (g, r);
             auto text = r.removeFromBottom (16.0f);
             auto bar = r.reduced (14.0f, 8.0f);
-            g.setColour (Colour (0xff1d2026));
+            g.setColour (Theme::raised);
             g.fillRect (bar);
             const float gr = jlimit (0.0f, 20.0f, comp.gainReductionDb.load());
             g.setColour (Theme::orange);
@@ -365,7 +365,7 @@ namespace DeviceDisplays
 
         void drawGrid (Graphics& g) const
         {
-            g.setColour (Colours::white.withAlpha (0.06f));
+            g.setColour (Theme::ink.withAlpha (0.06f));
             for (double f : { 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0 })
                 g.drawVerticalLine ((int) xFor (f), area.getY(), area.getBottom());
             g.setColour (Theme::muted.withAlpha (0.6f));
@@ -462,7 +462,7 @@ namespace DeviceDisplays
             FreqAxis axis { graph.reduced (4.0f) };
             axis.drawGrid (g);
             auto dbToY = [this] (double db) { return graph.getCentreY() - (float) (db / 20.0) * graph.getHeight() * 0.5f; };
-            g.setColour (Colours::white.withAlpha (0.1f));
+            g.setColour (Theme::ink.withAlpha (0.1f));
             g.drawHorizontalLine ((int) dbToY (0.0), graph.getX(), graph.getRight());
 
             // analyser (post EQ)
@@ -478,7 +478,7 @@ namespace DeviceDisplays
             }
             spec.lineTo (axis.area.getRight(), graph.getBottom());
             spec.closeSubPath();
-            g.setColour (Colours::white.withAlpha (0.07f));
+            g.setColour (Theme::ink.withAlpha (0.07f));
             g.fillPath (spec);
 
             // response curve
@@ -981,7 +981,7 @@ namespace DeviceDisplays
             const double secs = delay.delaySeconds (bpm), shown = 8.0 * 60.0 / bpm;   // two bars of 4/4
             const float fb = pp().get (D::pFeedback);
             const bool ping = pp().getInt (D::pPingPong) > 0;
-            g.setColour (Colours::white.withAlpha (0.06f));
+            g.setColour (Theme::ink.withAlpha (0.06f));
             for (int b = 0; b <= 8; ++b) g.drawVerticalLine ((int) (a.getX() + a.getWidth() * b / 8.0f), a.getY(), a.getBottom());
             float lvl = 1.0f;
             for (int k = 0; k < 64 && lvl > 0.02f; ++k)
@@ -1153,7 +1153,7 @@ namespace DeviceDisplays
 
             const float floorDb = spec.get (pulse::Spectrum::pFloor);
             auto yFor = [&] (float db) { return axis.area.getBottom() - axis.area.getHeight() * jlimit (0.0f, 1.0f, (db - floorDb) / (0.0f - floorDb)); };
-            g.setColour (Colours::white.withAlpha (0.05f));
+            g.setColour (Theme::ink.withAlpha (0.05f));
             for (float db = -12.0f; db > floorDb; db -= 12.0f)
                 g.drawHorizontalLine ((int) yFor (db), axis.area.getX(), axis.area.getRight());
 
@@ -1190,7 +1190,7 @@ namespace DeviceDisplays
             {
                 const double f = axis.freqAt (hoverX);
                 const double note = pulse::Tuner::noteOf (f);
-                g.setColour (Colours::white.withAlpha (0.4f));
+                g.setColour (Theme::ink.withAlpha (0.4f));
                 g.drawVerticalLine ((int) hoverX, axis.area.getY(), axis.area.getBottom());
                 g.setColour (Theme::text);
                 g.setFont (FontOptions (11.0f));
@@ -1286,7 +1286,7 @@ namespace DeviceDisplays
             d->add ({ "Filter", "Filter env" },
                     filterAndEnvelopes (*s, F::pCutoff, F::pReso, -1, {}, F::pFEnv,
                                         { EG::Env { s->param (F::pFA), s->param (F::pFD), s->param (F::pFS), s->param (F::pFR), Theme::orange, "FILTER" } }));
-            const Colour cols[] = { Theme::orange, Theme::accent, Colour (0xff69db7c), Colour (0xffb197fc) };
+            const Colour cols[] = { Theme::orange, Theme::accent, Colour (0xff69db7c), Theme::purple };
             for (int op = 0; op < F::numOps; ++op)   // each operator page shows that operator's envelope
                 d->add ({ "Op " + String (op + 1) },
                         parts (std::make_unique<EG> (std::vector<EG::Env> { { s->param (F::opParam (op, F::kA)), s->param (F::opParam (op, F::kD)),

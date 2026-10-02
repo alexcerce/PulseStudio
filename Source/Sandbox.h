@@ -201,7 +201,7 @@ namespace sandbox
         struct EditorWindow : public DocumentWindow
         {
             EditorWindow (AudioProcessorEditor* ed, const String& name)
-                : DocumentWindow (name + "  (sandboxed)", Colour (0xff181b20), DocumentWindow::closeButton | DocumentWindow::minimiseButton)
+                : DocumentWindow (name + "  (sandboxed)", Theme::panel, DocumentWindow::closeButton | DocumentWindow::minimiseButton)
             {
                 setUsingNativeTitleBar (true);
                 setContentOwned (ed, true);

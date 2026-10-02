@@ -192,8 +192,111 @@ private:
     StringArray items;
 };
 
-/** Audio Settings dialog: device selector (ASIO etc.) + recording options. */
-inline void showAudioSettingsDialog (te::Engine& engine, te::Edit& edit, PropertiesFile& settings)
+/** Theme chooser: a card per theme with a small preview of its colours; click to switch. */
+class AppearanceSettings : public Component
+{
+public:
+    explicit AppearanceSettings (std::function<void (int)> pick) : onPick (std::move (pick))
+    {
+        title.setText ("Colour theme", dontSendNotification);
+        title.setFont (FontOptions (15.0f, Font::bold));
+        addAndMakeVisible (title);
+        info.setText ("Click a theme to use it. It applies right away and is remembered.", dontSendNotification);
+        info.setColour (Label::textColourId, Theme::muted);
+        addAndMakeVisible (info);
+        viewport.setViewedComponent (&grid, false);
+        viewport.setScrollBarsShown (true, false);
+        addAndMakeVisible (viewport);
+        for (int i = 0; i < (int) Theme::all().size(); ++i)
+            grid.addAndMakeVisible (cards.add (new Card (*this, i)));
+    }
+
+    void resized() override
+    {
+        auto r = getLocalBounds().reduced (12);
+        title.setBounds (r.removeFromTop (22));
+        info.setBounds (r.removeFromTop (20));
+        r.removeFromTop (6);
+        viewport.setBounds (r);
+        const int w = r.getWidth() - viewport.getScrollBarThickness() - 4;
+        const int cols = jmax (1, w / 170), cw = w / cols, ch = 112;
+        for (int i = 0; i < cards.size(); ++i)
+            cards[i]->setBounds ((i % cols) * cw, (i / cols) * ch, cw, ch);
+        grid.setSize (w, ((cards.size() + cols - 1) / cols) * ch);
+    }
+
+    void picked (int i)
+    {
+        if (onPick) onPick (i);
+        for (auto* c : cards) c->repaint();
+    }
+
+private:
+    struct Card : public Component
+    {
+        Card (AppearanceSettings& o, int i) : owner (o), index (i) { setMouseCursor (MouseCursor::PointingHandCursor); }
+        void paint (Graphics& g) override
+        {
+            auto& d = Theme::all()[(size_t) index];
+            auto r = getLocalBounds().toFloat().reduced (5.0f);
+            const bool current = index == Theme::currentIndex();
+            g.setColour (Colour (d.bg));
+            g.fillRoundedRectangle (r, 6.0f);
+            g.setColour (current ? Colour (d.accent) : (hover ? Colour (d.muted) : Colour (d.line)));
+            g.drawRoundedRectangle (r, 6.0f, current ? 2.5f : 1.0f);
+            auto inner = r.reduced (7.0f);
+            auto nameRow = inner.removeFromBottom (18.0f);
+            // a tiny mock: header bar, a panel with three "clips", a display with a curve
+            auto top = inner.removeFromTop (10.0f);
+            g.setColour (Colour (d.header));
+            g.fillRoundedRectangle (top, 2.0f);
+            g.setColour (Colour (d.accent));
+            g.fillRoundedRectangle (top.removeFromLeft (16.0f).reduced (2.0f), 1.5f);
+            inner.removeFromTop (3.0f);
+            auto left = inner.removeFromLeft (inner.getWidth() * 0.55f);
+            g.setColour (Colour (d.panel));
+            g.fillRoundedRectangle (left, 2.0f);
+            const uint32 clipCols[] = { d.red, d.green, d.accent };
+            for (int k = 0; k < 3; ++k)
+            {
+                auto row = Rectangle<float> (left.getX() + 3.0f + k * 8.0f, left.getY() + 3.0f + k * 12.0f, left.getWidth() * 0.55f, 9.0f);
+                g.setColour (Colour (clipCols[k]).withAlpha (0.8f));
+                g.fillRoundedRectangle (row, 1.5f);
+            }
+            inner.removeFromLeft (3.0f);
+            g.setColour (Colour (d.well));
+            g.fillRoundedRectangle (inner, 2.0f);
+            Path curve;
+            for (int x = 0; x <= 20; ++x)
+            {
+                const float fx = inner.getX() + inner.getWidth() * x / 20.0f;
+                const float fy = inner.getCentreY() - std::sin (x * 0.45f) * inner.getHeight() * 0.3f;
+                if (x == 0) curve.startNewSubPath (fx, fy); else curve.lineTo (fx, fy);
+            }
+            g.setColour (Colour (d.orange));
+            g.strokePath (curve, PathStrokeType (1.5f));
+            g.setColour (Colour (d.text));
+            g.setFont (FontOptions (12.0f, current ? Font::bold : Font::plain));
+            g.drawText (String (d.name) + (current ? "  (current)" : String()), nameRow, Justification::centredLeft);
+        }
+        void mouseEnter (const MouseEvent&) override { hover = true; repaint(); }
+        void mouseExit (const MouseEvent&) override  { hover = false; repaint(); }
+        void mouseUp (const MouseEvent& e) override  { if (! e.mouseWasDraggedSinceMouseDown()) owner.picked (index); }
+        AppearanceSettings& owner;
+        int index;
+        bool hover = false;
+    };
+
+    std::function<void (int)> onPick;
+    Label title, info;
+    Viewport viewport;
+    Component grid;
+    OwnedArray<Card> cards;
+};
+
+/** Settings dialog: audio / MIDI devices, recording, safety and appearance (themes). */
+inline void showAudioSettingsDialog (te::Engine& engine, te::Edit& edit, PropertiesFile& settings,
+                                     std::function<void (int)> onTheme = {}, bool openAppearance = false)
 {
     auto* tabs = new TabbedComponent (TabbedButtonBar::TabsAtTop);
     tabs->setColour (TabbedComponent::backgroundColourId, Theme::panel);
@@ -204,10 +307,13 @@ inline void showAudioSettingsDialog (te::Engine& engine, te::Edit& edit, Propert
     safety->setSandbox (engine.getPropertyStorage().getPropertiesFile().getBoolValue ("sandboxPlugins", false));
     safety->onSandboxChanged = [&engine] (bool b) { engine.getPropertyStorage().getPropertiesFile().setValue ("sandboxPlugins", b); };
     tabs->addTab ("Safety", Theme::panel2, safety, true);
-    tabs->setSize (580, 660);
+    if (onTheme)
+        tabs->addTab ("Appearance", Theme::panel2, new AppearanceSettings (onTheme), true);
+    if (openAppearance && onTheme) tabs->setCurrentTabIndex (tabs->getNumTabs() - 1);
+    tabs->setSize (720, 660);
 
     DialogWindow::LaunchOptions o;
-    o.dialogTitle = "Audio Settings";
+    o.dialogTitle = "Settings";
     o.dialogBackgroundColour = Theme::panel;
     o.useNativeTitleBar = true;
     o.resizable = true;
