@@ -27,6 +27,7 @@
 #include "Commands.h"
 #include "Modulators.h"
 #include "ClipEnvelopes.h"
+#include "SampleEditor.h"
 
 /** "Pulse Studio.exe --selftest report.txt"
     Builds a scratch project in the temp folder, exercises the editing / routing / device
@@ -1184,6 +1185,95 @@ namespace SelfTest
                        beat ? "beat " + String (*beat, 3) + ", value " + String (pos->getCurrentNormalisedValue(), 3) : String ("not playing"));
             envClip = nullptr;
             lfo = nullptr;
+        }
+
+        // --- audio editing: buffer ops, sample editor, slicing, warp modes ---------------------------------
+        {
+            AudioBuffer<float> b (1, 1000);
+            for (int i = 0; i < 1000; ++i) b.setSample (0, i, (float) i / 1000.0f * 0.5f);
+            auto rev = b; SampleEdit::reverse (rev, { 0, 1000 });
+            auto cutB = b; SampleEdit::cut (cutB, { 100, 300 });
+            auto norm = b; SampleEdit::normalise (norm, { 0, 1000 }, 0.0f);
+            auto fd = b; SampleEdit::fade (fd, { 0, 1000 }, true);
+            rep.check (std::abs (rev.getSample (0, 0) - b.getSample (0, 999)) < 1.0e-6f && cutB.getNumSamples() == 800
+                         && std::abs (cutB.getSample (0, 100) - b.getSample (0, 300)) < 1.0e-6f
+                         && std::abs (norm.getMagnitude (0, 1000) - 1.0f) < 1.0e-3f && std::abs (fd.getSample (0, 0)) < 1.0e-6f,
+                       "Sample edits (reverse, cut, normalise, fade)");
+
+            auto edTrack = ClipImport::createContentTrack (*edit, "SampleEdit", false);
+            auto srcWav = writeTestWav (dir.getChildFile ("toedit.wav"), 2.0, 220.0);
+            te::Clip::Ptr ec = ClipImport::importFile (*edTrack, *edit, srcWav, te::TimePosition());
+            bool applied = false;
+            String applyInfo;
+            if (auto w = dynamic_cast<te::WaveAudioClip*> (ec.get()))
+            {
+                SampleEditor ed (*w);
+                const int n = ed.getAudio().getNumSamples();
+                ed.setSelection ({ 0, n / 2 });
+                ed.runEdit ([] (auto& buf, auto r) { SampleEdit::cut (buf, r); }, true);
+                ed.setSelection ({});
+                ed.runEdit ([] (auto& buf, auto r) { SampleEdit::normalise (buf, r, -1.0f); });
+                ed.apply();
+                auto newFile = w->getOriginalFile();
+                applied = newFile != srcWav && newFile.existsAsFile() && srcWav.existsAsFile()
+                          && std::abs (w->getPosition().getLength().inSeconds() - 1.0) < 0.02
+                          && std::abs (peakDb (engine, newFile) + 1.0f) < 0.1f;
+                applyInfo = newFile.getFileName() + ", " + String (w->getPosition().getLength().inSeconds(), 2) + " s, "
+                            + String (peakDb (engine, newFile), 2) + " dBFS";
+            }
+            rep.check (applied, "Sample editor: cut + normalise applied as a new file (original kept)", applyInfo);
+            ec = nullptr;
+
+            // slicing: four kicks and four hats -> 8 slices on a Drum Rack
+            const double sr = 44100.0;
+            AudioBuffer<float> beat (1, (int) (sr * 2.0));
+            beat.clear();
+            Random rng (7);
+            for (int k = 0; k < 4; ++k)
+            {
+                const int k0 = (int) (k * 0.5 * sr), h0 = (int) ((k * 0.5 + 0.25) * sr);
+                for (int i = 0; i < (int) (0.2 * sr); ++i)
+                {
+                    const double t = i / sr;
+                    beat.addSample (0, k0 + i, (float) (0.9 * std::exp (-t * 18.0) * std::sin (MathConstants<double>::twoPi * (55.0 + 80.0 * std::exp (-t * 40.0)) * t)));
+                }
+                float prev = 0;
+                for (int i = 0; i < (int) (0.06 * sr); ++i)
+                {
+                    const float nz = rng.nextFloat() * 2.0f - 1.0f;
+                    beat.addSample (0, h0 + i, (nz - prev) * 0.35f * (float) std::exp (-i / sr * 60.0));
+                    prev = nz;
+                }
+            }
+            auto beatFile = dir.getChildFile ("beat.wav");
+            SampleEdit::writeWav (beatFile, beat, sr);
+            auto beatTrack = ClipImport::createContentTrack (*edit, "Beat", false);
+            te::Clip::Ptr bc = ClipImport::importFile (*beatTrack, *edit, beatFile, bars (1));
+            int slices = 0, notes = 0;
+            bool padLoaded = false;
+            if (auto w = dynamic_cast<te::WaveAudioClip*> (bc.get()))
+            {
+                auto r = SampleEdit::sliceToDrumRack (*w);
+                slices = r.slices;
+                if (r.track != nullptr)
+                {
+                    if (auto mc = dynamic_cast<te::MidiClip*> (r.track->getClips().getFirst())) notes = mc->getSequence().getNumNotes();
+                    if (auto rack = DrumRack::rackOf (DrumRack::findOnTrack (*r.track))) padLoaded = DrumRack::padName (*rack, 0).isNotEmpty();
+                }
+            }
+            rep.check (slices == 8 && notes == 8 && padLoaded, "Slice audio to a Drum Rack at transients",
+                       String (slices) + " slices, " + String (notes) + " notes");
+
+            // warp modes
+            auto modes = SampleEdit::warpModes (engine);
+            bool warpOk = false;
+            if (auto w = dynamic_cast<te::WaveAudioClip*> (bc.get()); w != nullptr && modes.size() > 1)
+            {
+                SampleEdit::setWarpMode (*w, modes[modes.size() - 1]);
+                warpOk = SampleEdit::currentWarpMode (*w) == modes[modes.size() - 1];
+            }
+            rep.check (warpOk, "Per-clip warp mode", modes.joinIntoString (", "));
+            bc = nullptr;
         }
 
         // --- undo -------------------------------------------------------------------------------

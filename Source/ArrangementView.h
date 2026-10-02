@@ -11,6 +11,7 @@
 #include "AudioToMidi.h"
 #include "Stems.h"
 #include "Timeline.h"
+#include "SampleEditor.h"
 
 //==============================================================================
 /** Draws a bar/beat grid between x positions for the given view. */
@@ -621,6 +622,34 @@ private:
                 }
             });
         m.addSubMenu ("Convert to new MIDI track", toMidi);
+
+        m.addItem ("Edit audio (sample editor)...", [c]
+        {
+            if (auto w = dynamic_cast<te::WaveAudioClip*> (c.get())) showSampleEditor (*w);
+        });
+        m.addItem ("Slice to Drum Rack (at transients)", [c, sm]
+        {
+            if (auto w = dynamic_cast<te::WaveAudioClip*> (c.get()))
+            {
+                w->edit.getUndoManager().beginNewTransaction ("Slice to Drum Rack");
+                auto r = SampleEdit::sliceToDrumRack (*w);
+                if (r.track != nullptr) sm->selectOnly (r.track);
+                else AlertWindow::showMessageBoxAsync (MessageBoxIconType::WarningIcon, "Slice", "Couldn't slice this clip.");
+            }
+        });
+
+        PopupMenu warp;
+        const auto current = SampleEdit::currentWarpMode (wac);
+        for (auto& mode : SampleEdit::warpModes (wac.edit.engine))
+            warp.addItem (mode, true, mode == current, [c, mode]
+            {
+                if (auto w = dynamic_cast<te::WaveAudioClip*> (c.get()))
+                {
+                    w->edit.getUndoManager().beginNewTransaction ("Warp mode");
+                    SampleEdit::setWarpMode (*w, mode);
+                }
+            });
+        m.addSubMenu ("Warp mode (" + current + ")", warp);
 
         m.addItem (String ("Separate stems (Demucs)") + (Stems::isInstalled() ? "..." : " - set up..."), [c]
         {

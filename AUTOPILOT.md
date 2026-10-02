@@ -29,7 +29,7 @@ when you start, touch it after each step, and delete it when you stop.
 
 ## Queue (top first)
 
-1. **Audio editing (v0.17.0)**:
+1. ~~**Audio editing (v0.17.0)**~~ (done):
    - Sample editor for audio clips: zoom, select a range, cut / normalise / fade in-out / reverse / silence the
      range (writes a new file next to the project, repoints the clip, undoable).
    - Transient slicing: slice an audio clip at transients (reuse `AudioToMidi` onset detection) to a new Drum Rack
@@ -52,3 +52,4 @@ when you start, touch it after each step, and delete it when you stop.
 - 2026-10-02: v0.13 UI refresh, v0.14 plugin sandbox / CPU / background export, v0.15 command palette /
   shortcuts / capture MIDI / group freeze, v0.16 automation curves / pencil / modulators / clip envelopes.
   All self-tests pass (107). Next: queue item 1 (audio editing).
+- 2026-10-02: v0.17.0 audio editing done (sample editor, slice to Drum Rack, warp modes incl. bundled Signalsmith stretch). 111 checks pass. Next: queue item 2 (instruments / Drum Rack overhaul).

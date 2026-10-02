@@ -4,7 +4,7 @@ A native Windows DAW built with C++, [JUCE](https://juce.com) and [Tracktion Eng
 
 ## Install
 
-Run `dist/PulseStudio-0.16.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
+Run `dist/PulseStudio-0.17.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
 
 ## Build
 
@@ -66,6 +66,9 @@ Projects are saved as `.tracktionedit` files in `Documents/Pulse Studio/`. Prese
 - **Warp markers** (audio): right-click → *Warp markers*. Double-click the strip at the bottom of the clip to add a marker, drag markers to move audio onto the beat (Alt = no snap), and right-click a marker to delete it. You can also add markers at the playhead or at every detected transient.
 
 ### Audio tools (right-click an audio clip)
+- **Edit audio (sample editor):** a zoomable waveform window. Drag to select (double-click or Ctrl+A selects everything), then Cut (Delete), Silence, Normalise, Fade in/out, Reverse or ±3 dB. It has its own undo (Ctrl+Z). *Apply* writes a new file to `Edited Audio` next to the project and points the clip at it. The original file is never changed, and the whole edit can be undone in the project.
+- **Slice to Drum Rack (at transients):** cuts the clip at its transients into up to 16 slices. Each slice goes on a pad of a new Drum Rack track, and a MIDI clip plays the slices back in the original rhythm.
+- **Warp mode:** picks the time-stretch algorithm for the clip: SoundTouch (Normal / Better) or Signalsmith (Default / Cheaper).
 - **Convert to new MIDI track:** puts a new track under the clip with a MIDI clip lined up to the audio.
   - **Drums:** onsets become kick, snare and hi-hat notes on a Drum Rack.
   - **Melody:** monophonic pitch tracking, played by a Wavetable synth.
@@ -224,7 +227,7 @@ All of these can be changed in *File → Keyboard shortcuts*. New: **Ctrl+P** co
 ## Command line
 
 - `--render out.wav` renders the last project offline and exits.
-- `--selftest report.txt` builds a scratch project and runs 107 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--selftest report.txt` builds a scratch project and runs 111 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
 - `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
 
 ## Code layout
@@ -252,6 +255,7 @@ All app code is header-only in `Source/` and compiled through `Main.cpp`.
 | `Sandbox.h`, `BackgroundRender.h` | Plugin sandbox (helper process), background exports |
 | `Commands.h` | Command registry, command palette, shortcut editor |
 | `Modulators.h`, `ClipEnvelopes.h` | Track modulators, clip envelopes |
+| `SampleEdit.h`, `SampleEditor.h` | Destructive audio edits, transient slicing, warp modes; the sample editor window |
 | `Sharing.h` | Collect All and Save, project templates |
 | `Timeline.h` | Markers, tempo / time signature maths, crossfades, comping |
 | `EditingOps.h` | Clipboard, split, time edits, bounce/flatten/freeze, grouping |
