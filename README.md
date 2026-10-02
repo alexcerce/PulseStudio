@@ -61,6 +61,7 @@ Projects are saved as `.tracktionedit` files in `Documents/Pulse Studio/`. Prese
 - **Modulators:** *+ Modulator* in the device chain adds an LFO, step sequencer, envelope follower, random, MIDI tracker or breakpoint envelope to the track. Right-click any device knob → *Modulate with* to connect one, with an amount from -100% to +100%. Modulated knobs show a purple dot that moves with the modulation.
 - **Clip envelopes:** in the piano roll, set the lane menu to *Device envelope...* and pick any parameter of the track's devices, then draw. The envelope lives in the clip, so it plays wherever the clip plays, including looped and session clips.
 - **Audio clips:** drag the fade handles; double-click for gain, pitch, fades, reverse and **warp to tempo**.
+- **Song sections:** the *Sections* strip above the ruler holds named, coloured parts of the song (Intro, Verse, Chorus...). Double-click it to add one (8 bars, named in song order), click a section to loop and select it, drag it before another section to move it **with everything in it on every track**, drag its right edge to change its length, double-click to rename. Right-click for colour, *Duplicate* (inserts a copy after it) and *Delete* (removes its content and closes the gap). Clips crossing a section's edge are split there first.
 - **Markers:** the strip above the ruler holds song markers (verse, chorus...).
   - Double-click the strip or press **Ctrl+K** to add one at the playhead.
   - Click a marker to jump to it, drag to move it, and double-click to rename it.

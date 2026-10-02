@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EditViewState.h"
+#include "Sections.h"
 #include "BusLanes.h"
 #include "PluginMenu.h"
 #include "AutomationLane.h"
@@ -2080,6 +2081,225 @@ private:
 };
 
 //==============================================================================
+/** Song sections: coloured blocks above the ruler. Click to loop and select a section, drag one
+    to move it (with everything in it) before another, drag its right edge to change its length,
+    double-click empty space to add one; right-click for rename, colour, duplicate and delete. */
+class SectionStrip : public Component,
+                     private Timer
+{
+public:
+    explicit SectionStrip (EditViewState& e) : evs (e) { startTimerHz (10); }
+
+    void paint (Graphics& g) override
+    {
+        g.fillAll (Theme::bg2);
+        const auto list = Sections::all (evs.edit);
+        g.setFont (FontOptions (12.0f, Font::bold));
+        for (auto& sec : list)
+        {
+            auto r = rectOf (sec);
+            if (r.getRight() < 0 || r.getX() > getWidth()) continue;
+            const bool sel = sec.index == selected, dragging = sec.index == dragIndex && moving;
+            g.setColour (sec.colour.withAlpha (dragging ? 0.35f : (sel ? 0.95f : 0.75f)));
+            g.fillRoundedRectangle (r.reduced (1.0f, 2.0f), 4.0f);
+            if (sel) { g.setColour (Colours::white); g.drawRoundedRectangle (r.reduced (1.0f, 2.0f), 4.0f, 1.5f); }
+            g.setColour (sec.colour.getPerceivedBrightness() > 0.6f ? Colour (0xff111317) : Colours::white);
+            g.drawText (sec.name, r.reduced (7.0f, 0.0f), Justification::centredLeft, true);
+        }
+        if (moving && dropX >= 0.0f)
+        {
+            g.setColour (Theme::ink);
+            g.fillRect (dropX - 1.5f, 0.0f, 3.0f, (float) getHeight());
+        }
+        if (list.empty())
+        {
+            g.setColour (Theme::muted.withAlpha (0.6f));
+            g.setFont (FontOptions (11.0f));
+            g.drawText ("Double-click to add a section (Intro, Verse, Chorus...)", getLocalBounds().reduced (8, 0), Justification::centredLeft);
+        }
+    }
+
+    Rectangle<float> rectOf (const Sections::Section& sec) const
+    {
+        const float x0 = evs.beatToX (sec.start), x1 = evs.beatToX (sec.end());
+        return { x0, 0.0f, jmax (6.0f, x1 - x0), (float) getHeight() };
+    }
+
+    int sectionAt (float x) const
+    {
+        for (auto& sec : Sections::all (evs.edit))
+            if (auto r = rectOf (sec); x >= r.getX() && x < r.getRight()) return sec.index;
+        return -1;
+    }
+
+    bool onRightEdge (float x, int index) const
+    {
+        for (auto& sec : Sections::all (evs.edit))
+            if (sec.index == index) return std::abs (x - rectOf (sec).getRight()) < 6.0f;
+        return false;
+    }
+
+    /** The section boundary nearest to x (for drops). */
+    double boundaryNear (float x, float& outX) const
+    {
+        double best = 0; float bestD = 1e9f;
+        for (auto& sec : Sections::all (evs.edit))
+            for (double b : { sec.start, sec.end() })
+                if (auto d = std::abs (evs.beatToX (b) - x); d < bestD) { bestD = d; best = b; }
+        outX = evs.beatToX (best);
+        return best;
+    }
+
+    void mouseMove (const MouseEvent& e) override
+    {
+        const int i = sectionAt (e.position.x - 3.0f);
+        setMouseCursor (i >= 0 && onRightEdge (e.position.x, i) ? MouseCursor::LeftRightResizeCursor
+                                                                  : sectionAt (e.position.x) >= 0 ? MouseCursor::DraggingHandCursor : MouseCursor::NormalCursor);
+    }
+
+    void mouseDown (const MouseEvent& e) override
+    {
+        const int i = sectionAt (e.position.x - 3.0f);
+        resizing = i >= 0 && onRightEdge (e.position.x, i);
+        dragIndex = resizing ? i : sectionAt (e.position.x);
+        moving = false;
+        if (e.mods.isPopupMenu()) { showMenu (dragIndex, e.position.x); dragIndex = -1; return; }
+        if (dragIndex >= 0 && ! resizing) select (dragIndex);
+    }
+
+    void mouseDrag (const MouseEvent& e) override
+    {
+        if (dragIndex < 0) return;
+        if (resizing)
+        {
+            for (auto& sec : Sections::all (evs.edit))
+                if (sec.index == dragIndex)
+                {
+                    const double end = jmax (sec.start + 1.0, evs.snap (evs.xToBeat (e.position.x)));
+                    if (! startedEdit) { evs.edit.getUndoManager().beginNewTransaction ("Section length"); startedEdit = true; }
+                    Sections::setLength (evs.edit, dragIndex, end - sec.start);
+                }
+            repaint();
+            return;
+        }
+        if (e.getDistanceFromDragStart() > 6) moving = true;
+        if (moving) { boundaryNear (e.position.x, dropX); repaint(); }
+    }
+
+    void mouseUp (const MouseEvent& e) override
+    {
+        if (moving && dragIndex >= 0)
+        {
+            float x = 0;
+            const double target = boundaryNear (e.position.x, x);
+            evs.edit.getUndoManager().beginNewTransaction ("Move section");
+            Sections::move (evs.edit, dragIndex, target, &evs.selectionManager);
+            select (-1);
+        }
+        moving = resizing = startedEdit = false;
+        dragIndex = -1;
+        dropX = -1.0f;
+        repaint();
+    }
+
+    void mouseDoubleClick (const MouseEvent& e) override
+    {
+        const int i = sectionAt (e.position.x);
+        if (i >= 0) { rename (i); return; }
+        const double bar = EngineHelpers::beatsPerBar (evs.edit);
+        const double start = std::floor (evs.xToBeat (e.position.x) / bar) * bar;
+        evs.edit.getUndoManager().beginNewTransaction ("Add section");
+        const char* names[] = { "Intro", "Verse", "Chorus", "Verse 2", "Chorus 2", "Bridge", "Drop", "Outro" };
+        const int n = Sections::add (evs.edit, names[jmin (7, (int) Sections::all (evs.edit).size())], jmax (0.0, start), bar * 8);
+        if (n >= 0) select (n);
+    }
+
+    /** Selects a section: the loop range covers it and its clips are selected. */
+    void select (int index)
+    {
+        selected = index;
+        for (auto& sec : Sections::all (evs.edit))
+            if (sec.index == index)
+            {
+                const auto r = Sections::timeRange (evs.edit, sec);
+                evs.edit.getTransport().setLoopRange (r);
+                te::SelectableList clips;
+                for (auto t : EngineHelpers::getUserTracks (evs.edit))
+                    for (auto c : t->getClips())
+                        if (c->getEditTimeRange().overlaps (r)) clips.add (c);
+                evs.selectionManager.select (clips);
+            }
+        repaint();
+    }
+
+private:
+    void rename (int index)
+    {
+        auto* w = new AlertWindow ("Rename section", {}, MessageBoxIconType::NoIcon);
+        w->addTextEditor ("name", Sections::node (evs.edit, index)[Sections::nameID].toString());
+        w->addButton ("OK", 1, KeyPress (KeyPress::returnKey));
+        w->addButton ("Cancel", 0, KeyPress (KeyPress::escapeKey));
+        w->enterModalState (true, ModalCallbackFunction::create ([this, w, index] (int r)
+        {
+            const auto n = w->getTextEditorContents ("name").trim();
+            if (r == 1 && n.isNotEmpty()) { evs.edit.getUndoManager().beginNewTransaction ("Rename section"); Sections::rename (evs.edit, index, n); }
+        }), true);
+    }
+
+    void showMenu (int index, float x)
+    {
+        PopupMenu m;
+        auto& edit = evs.edit;
+        if (index >= 0)
+        {
+            m.addItem ("Rename...", [this, index] { rename (index); });
+            PopupMenu cols;
+            for (int c = 0; c < 8; ++c)
+                cols.addColouredItem (c + 1, "Colour " + String (c + 1), Sections::defaultColour (c), true, false, nullptr);
+            m.addSubMenu ("Colour", cols);
+            m.addItem ("Loop and select it", [this, index] { select (index); });
+            m.addSeparator();
+            m.addItem ("Duplicate (with its content)", [&edit, index] { edit.getUndoManager().beginNewTransaction ("Duplicate section"); Sections::duplicate (edit, index); });
+            m.addItem ("Delete (with its content, close the gap)", [this, &edit, index] { edit.getUndoManager().beginNewTransaction ("Delete section"); Sections::remove (edit, index, &evs.selectionManager); });
+            m.addItem ("Remove the section only (keep the content)", [&edit, index] { edit.getUndoManager().beginNewTransaction ("Remove section"); Sections::removeMarker (edit, index); });
+            m.showMenuAsync ({}, [&edit, index] (int r)
+            {
+                if (r >= 1 && r <= 8) { edit.getUndoManager().beginNewTransaction ("Section colour"); Sections::setColour (edit, index, Sections::defaultColour (r - 1)); }
+            });
+            return;
+        }
+        m.addItem ("Add a section here", [this, x]
+        {
+            const double bar = EngineHelpers::beatsPerBar (evs.edit);
+            evs.edit.getUndoManager().beginNewTransaction ("Add section");
+            Sections::add (evs.edit, "Section", jmax (0.0, std::floor (evs.xToBeat (x) / bar) * bar), bar * 8);
+        });
+        const auto loop = edit.getTransport().getLoopRange();
+        m.addItem ("Add a section for the loop range", ! loop.isEmpty(), false, [this, loop]
+        {
+            evs.edit.getUndoManager().beginNewTransaction ("Add section");
+            const double b0 = EngineHelpers::timeToBeat (evs.edit, loop.getStart()), b1 = EngineHelpers::timeToBeat (evs.edit, loop.getEnd());
+            Sections::add (evs.edit, "Section", b0, b1 - b0);
+        });
+        m.showMenuAsync ({});
+    }
+
+    void timerCallback() override
+    {
+        String sig;
+        for (auto& sec : Sections::all (evs.edit)) sig << sec.name << sec.start << sec.length << sec.colour.toString();
+        sig << evs.viewStartBeat << evs.pixelsPerBeat;
+        if (sig != lastSig) { lastSig = sig; repaint(); }
+    }
+
+    EditViewState& evs;
+    int selected = -1, dragIndex = -1;
+    bool moving = false, resizing = false, startedEdit = false;
+    float dropX = -1.0f;
+    String lastSig;
+};
+
+//==============================================================================
 /** Strip above the ruler: song markers (click to jump, drag to move, double-click to rename)
     and time-signature changes. */
 class MarkerStrip : public Component,
@@ -2417,8 +2637,9 @@ class ArrangementView : public Component,
 public:
     static constexpr int headerWidth = 230;
 
-    explicit ArrangementView (EditViewState& e) : evs (e), ruler (e), markerStrip (e), tempoLane (e), content (e), playhead (e), buses (e, headerWidth)
+    explicit ArrangementView (EditViewState& e) : evs (e), ruler (e), markerStrip (e), sectionStrip (e), tempoLane (e), content (e), playhead (e), buses (e, headerWidth)
     {
+        addAndMakeVisible (sectionStrip);
         addAndMakeVisible (buses);
         addAndMakeVisible (ruler);
         addAndMakeVisible (markerStrip);
@@ -2483,8 +2704,9 @@ public:
         g.setColour (Theme::muted);
         g.setFont (FontOptions (11.0f, Font::bold));
         g.drawText ("MARKERS", 10, 0, headerWidth - 20, markerStripHeight, Justification::centredLeft);
+        g.drawText ("SECTIONS", 10, markerStripHeight, headerWidth - 20, sectionStripHeight, Justification::centredLeft);
         if (tempoLane.isVisible())
-            g.drawText ("TEMPO", 10, markerStripHeight + rulerHeight, headerWidth - 20, tempoLaneHeight, Justification::centredLeft);
+            g.drawText ("TEMPO", 10, markerStripHeight + sectionStripHeight + rulerHeight, headerWidth - 20, tempoLaneHeight, Justification::centredLeft);
         g.setColour (Theme::line);
         g.drawHorizontalLine (topHeight() - 1, 0.0f, (float) getWidth());
     }
@@ -2500,6 +2722,7 @@ public:
         pencilBtn.setBounds (stripTools.removeFromRight (26));
         stripTools.removeFromRight (3);
         tempoBtn.setBounds (stripTools.removeFromRight (52));
+        sectionStrip.setBounds (r.removeFromTop (sectionStripHeight).withTrimmedLeft (headerWidth));
         auto top = r.removeFromTop (rulerHeight);
         if (tempoLane.isVisible())
             tempoLane.setBounds (r.removeFromTop (tempoLaneHeight).withTrimmedLeft (headerWidth));
@@ -2547,8 +2770,8 @@ public:
     }
 
 private:
-    static constexpr int rulerHeight = 30, markerStripHeight = 20, tempoLaneHeight = 64;
-    int topHeight() const { return markerStripHeight + rulerHeight + (tempoLane.isVisible() ? tempoLaneHeight : 0); }
+    static constexpr int rulerHeight = 30, markerStripHeight = 20, sectionStripHeight = 22, tempoLaneHeight = 64;
+    int topHeight() const { return markerStripHeight + sectionStripHeight + rulerHeight + (tempoLane.isVisible() ? tempoLaneHeight : 0); }
 
     /** Holds the rows; drops on the empty area below the tracks create a new track. */
     struct Content : public Component,
@@ -2883,6 +3106,7 @@ private:
     EditViewState& evs;
     Ruler ruler;
     MarkerStrip markerStrip;
+    SectionStrip sectionStrip;
     TempoLane tempoLane;
     TextButton tempoBtn { "Tempo" }, xfadeBtn { "X-fade" };
     IconButton pencilBtn { Icons::Type::pencil, "Pencil (D)" };

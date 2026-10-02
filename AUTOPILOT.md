@@ -173,3 +173,6 @@ when you start, touch it after each step, and delete it when you stop.
   menus, 5 rendered metronome sounds + level + accent, input meter with clip warning on armed tracks (guarded against
   devices going away). Audio loop takes: the engine only splits audio loop passes into takes with Tracktion projects;
   not done (MIDI takes work). 210 checks pass.
+- 2026-10-02: v0.49.0 Sections.h + SectionStrip (move / duplicate / delete whole song sections with their content, split at
+  edges, sections shift with the edits; demo song has Intro / Build / Drop). Session follow actions already existed.
+  Automation inside a moved section is not copied (clips only). 211 checks pass.

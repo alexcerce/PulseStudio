@@ -46,6 +46,7 @@
 #include "Mixer.h"
 #include "UndoHistory.h"
 #include "TransportBar.h"
+#include "Sections.h"
 
 /** "Pulse Studio.exe --selftest report.txt"
     Builds a scratch project in the temp folder, exercises the editing / routing / device
@@ -3409,6 +3410,7 @@ namespace SelfTest
             const int written = FactorySounds::renderAll (engine);
             const double secs = (Time::getMillisecondCounterHiRes() - t0) / 1000.0;
             auto all = FactorySounds::folder (engine).findChildFiles (File::findFiles, true, "*.wav");
+            all.removeIf ([] (const File& f) { return f.getParentDirectory().getFileName() == "Clicks"; });   // metronome sounds live here too
             int silent = 0;
             AudioFormatManager afm;
             afm.registerBasicFormats();
@@ -3837,6 +3839,53 @@ namespace SelfTest
                            "Recording: metronome sounds, punch in / out, count-in, input meter safety",
                            String (clicksOk) + " click styles, punch " + (punchOn && punchOff ? "ok" : "no") + ", count-in " + String (beats) + " beats");
             }
+        }
+
+        // --- v0.49: song sections ------------------------------------------------------------------------
+        {
+            rep.step ("sections");
+            auto ed = te::createEmptyEdit (engine, dir.getChildFile ("sections.tracktionedit"));
+            ed->ensureNumberOfAudioTracks (1);
+            auto* t = te::getAudioTracks (*ed).getFirst();
+            auto b2t = [&] (double b) { return EngineHelpers::beatToTime (*ed, b); };
+            auto clipAt = [&] (double beat) -> String
+            {
+                for (auto c : t->getClips()) if (std::abs (EngineHelpers::timeToBeat (*ed, c->getPosition().getStart()) - beat) < 0.01) return c->getName();
+                return "-";
+            };
+            auto addClip = [&] (const String& name, double b0, double b1)
+            {
+                if (auto c = t->insertNewClip (te::TrackItem::Type::midi, name, { b2t (b0), b2t (b1) }, nullptr)) c->setName (name);
+            };
+            addClip ("A", 0, 8); addClip ("B", 8, 16); addClip ("C", 16, 24);
+            const int a = Sections::add (*ed, "Intro", 0, 8), b = Sections::add (*ed, "Verse", 8, 8), c = Sections::add (*ed, "Chorus", 16, 8);
+            // move the chorus to the start: C A B
+            Sections::move (*ed, c, 0.0);
+            const String afterMove = clipAt (0) + clipAt (8) + clipAt (16);
+            auto order = [&]
+            {
+                String o;
+                for (auto& sec : Sections::all (*ed)) o << sec.name.substring (0, 1) << (int) sec.start << " ";
+                return o.trim();
+            };
+            const String secAfterMove = order();
+            // move the intro (now at 8) to the end: C B A
+            Sections::move (*ed, a, 24.0);
+            const String afterMove2 = clipAt (0) + clipAt (8) + clipAt (16);
+            // duplicate the verse (at 8): C B B A
+            Sections::duplicate (*ed, b);
+            const String afterDup = clipAt (0) + clipAt (8) + clipAt (16) + clipAt (24);
+            // delete the chorus (at 0): B B A
+            Sections::remove (*ed, c);
+            const String afterDel = clipAt (0) + clipAt (8) + clipAt (16);
+            // a section that starts inside another is placed after it; one that would overlap the next is cut short
+            const int d = Sections::add (*ed, "Tag", 4, 100);
+            double dStart = -1, dLen = -1;
+            for (auto& sec : Sections::all (*ed)) if (sec.index == d) { dStart = sec.start; dLen = sec.length; }
+            rep.check (afterMove == "CAB" && secAfterMove == "C0 I8 V16" && afterMove2 == "CBA" && afterDup == "CBBA" && afterDel == "BBA" && dStart >= 8.0,
+                       "Song sections move, duplicate and delete their content",
+                       afterMove + " / " + afterMove2 + " / " + afterDup + " / " + afterDel + " | " + secAfterMove + " | added at " + String (dStart) + " len " + String (dLen));
+            ed = nullptr;
         }
 
         // --- sharing: project zip, crash bundle, update check -----------------------------------------

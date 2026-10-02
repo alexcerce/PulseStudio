@@ -1015,10 +1015,16 @@ private:
             }
         }
 
+        // song sections over the demo
+        Sections::add (*edit, "Intro", 0.0, 8.0);
+        Sections::add (*edit, "Build", 8.0, 8.0);
+        Sections::add (*edit, "Drop", 16.0, 16.0);
+
         auto& tc = edit->getTransport();
         tc.setLoopRange ({ bars (0), bars (8) });
         tc.looping = true;
         te::EditFileOperations (*edit).save (true, true, false);
+
     }
 
     //==============================================================================
