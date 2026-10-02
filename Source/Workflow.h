@@ -2,6 +2,7 @@
 
 #include "Common.h"
 #include "ClipImport.h"
+#include "AudioToMidi.h"
 
 /** Arrangement workflow helpers: keyboard nudging, clip looping, warp markers,
     MIDI file export and track presets. */
@@ -392,11 +393,37 @@ namespace Workflow
     }
 
     /** Adds a marker at every detected transient (keeps the start/end markers). */
+    /** Onsets in the clip's source file (seconds), from Pulse's own detector (cached per file). */
+    inline Array<te::TimePosition> sourceTransients (te::AudioClipBase& ac)
+    {
+        static std::map<String, Array<te::TimePosition>> cache;
+        const auto f = ac.getOriginalFile();
+        const auto key = f.getFullPathName() + ":" + String (f.getLastModificationTime().toMilliseconds());
+        if (auto it = cache.find (key); it != cache.end()) return it->second;
+
+        Array<te::TimePosition> out;
+        std::unique_ptr<AudioFormatReader> r (ac.edit.engine.getAudioFileFormatManager().readFormatManager.createReaderFor (f));
+        if (r != nullptr && r->lengthInSamples > 0)
+        {
+            const int len = (int) jmin<int64> (r->lengthInSamples, (int64) (r->sampleRate * 600.0));
+            AudioBuffer<float> b ((int) jmin (2u, r->numChannels), len);
+            r->read (&b, 0, len, 0, true, b.getNumChannels() > 1);
+            if (b.getNumChannels() > 1) { b.addFrom (0, 0, b, 1, 0, len); b.applyGain (0, 0, len, 0.5f); }
+            for (auto& n : AudioToMidi::detectDrums (b.getReadPointer (0), len, r->sampleRate))
+                out.add (te::TimePosition::fromSeconds (n.start));
+        }
+        cache[key] = out;
+        return out;
+    }
+
     inline int addWarpMarkersAtTransients (te::AudioClipBase& ac)
     {
         auto& wm = ac.getWarpTimeManager();
-        auto [ready, times] = wm.getTransientTimes();
-        if (! ready)
+        auto [ready, engineTimes] = wm.getTransientTimes();
+        auto times = engineTimes;
+        if (times.isEmpty())   // the engine's detector found nothing (or hasn't run): use Pulse's
+            times = sourceTransients (ac);
+        if (times.isEmpty() && ! ready)
             return -1;
 
         int added = 0;
@@ -412,6 +439,30 @@ namespace Workflow
             }
         }
         return added;
+    }
+
+    /** Audio quantize: warp markers at the transients are pulled towards the grid
+        (strength 1 = exactly on the grid). Returns the number of markers moved, or -1 while the
+        transient analysis is still running. */
+    inline int quantizeAudio (te::AudioClipBase& ac, double gridBeats, double strength)
+    {
+        if (gridBeats <= 0) return 0;
+        if (! ac.getWarpTime()) enableWarpMarkers (ac, true);
+        if (addWarpMarkersAtTransients (ac) < 0) return -1;
+        auto& wm = ac.getWarpTimeManager();
+        int moved = 0;
+        const auto markers = wm.getMarkers();
+        for (int i = 1; i < markers.size() - 1; ++i)   // keep the start and end markers
+        {
+            auto* m = wm.getMarkers()[i];
+            const double beat = warpTimeToEditBeat (ac, m->warpTime);
+            const double grid = std::round (beat / gridBeats) * gridBeats;
+            const double target = beat + (grid - beat) * jlimit (0.0, 1.0, strength);
+            if (std::abs (target - beat) < 1.0e-4) continue;
+            wm.moveMarker (i, editBeatToWarpTime (ac, target));
+            ++moved;
+        }
+        return moved;
     }
 }
 

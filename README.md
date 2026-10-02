@@ -4,7 +4,7 @@ A native Windows DAW built with C++, [JUCE](https://juce.com) and [Tracktion Eng
 
 ## Install
 
-Run `dist/PulseStudio-0.23.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
+Run `dist/PulseStudio-0.24.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
 
 ## Build
 
@@ -165,6 +165,9 @@ Pulse's own devices have cards with labelled sections and a live display. Every 
   - **Chain presets:** saves and loads the whole device chain. Chain presets also appear in the browser, so you can drag one onto a track.
 - **Macros:** 8 per track. Right-click any device knob → *Map to Macro*; a blue dot marks mapped knobs.
 - **Browser layout:** a sidebar with *Collections* (Favourites), *Categories* (Instruments, Drums, Audio Effects, MIDI Effects, Plugins, Presets) and *Places* (your folders; *+ Add folder...*, right-click to remove one). The search box at the top filters whatever is shown: devices by name in a category, or files in a place and all its sub-folders.
+- **MIDI tools** (piano roll → *Tools*, on the selected notes or the whole clip): humanize (light / medium / heavy), legato, strum chords up or down, fit to scale (uses the scale chosen in the piano roll), velocity (louder, softer, compress, all 100, crescendo, decrescendo, randomise), reverse, invert, double / half speed.
+- **Audio quantize:** right-click an audio clip → *Warp* → *Quantize audio* pulls the transients onto the 1/16, 1/8 or 1/4 grid (100 %, or 50 % to keep some feel) with warp markers, so you can still adjust them by hand.
+- **MIDI recording modes:** right-click the record button: *Overdub* (merge into the clip), *New take on every loop pass* (pick takes from the clip's *Takes* menu) or *Replace*.
 - **Piano roll:** notes are drawn in the track colour, darker for softer velocities, with their names when there's room; velocities show as lollipops. On a Drum Rack track the keyboard shows the pad names.
 - **Browser:** files with preview, plus **Sync**. While the song plays, loops are time-stretched to the project tempo and start on the next bar. Tempo is detected from the file's tag, "120bpm" in the name, or the loop length.
   - **Search:** type in the box under the place list to search the place and all its sub-folders (every word must appear in the file name, in any order; Esc clears). Results can be previewed and dragged like the folder tree.
@@ -249,7 +252,7 @@ All of these can be changed in *File → Keyboard shortcuts*. New: **Ctrl+P** co
 ## Command line
 
 - `--render out.wav` renders the last project offline and exits.
-- `--selftest report.txt` builds a scratch project and runs 143 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--selftest report.txt` builds a scratch project and runs 146 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
 - `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
 
 ## Code layout

@@ -342,6 +342,13 @@ private:
         TransportBar::Actions a;
         a.newProject     = [this] { newProject(); };
         a.openProject    = [this] { openProject(); };
+        a.midiRecordMode = [this] { return midiRecordMode(); };
+        a.setMidiRecordMode = [this] (int m)
+        {
+            settings().setValue ("midiRecordMode", m);
+            settings().setValue ("midiOverdub", m == 0);
+            RecordingSettings::applyMidiMode (engine, m);
+        };
         a.recentProjects = [this] { return StringArray::fromLines (settings().getValue ("recentProjects")); };
         a.openRecent     = [this] (const File& f) { if (f.existsAsFile()) { saveIfNeeded(); loadEdit (f, false); } };
         a.clearRecent    = [this] { settings().setValue ("recentProjects", String()); };
@@ -383,6 +390,12 @@ private:
         resized();
     }
 
+    int midiRecordMode()
+    {
+        if (settings().containsKey ("midiRecordMode")) return jlimit (0, 2, settings().getIntValue ("midiRecordMode"));
+        return settings().getBoolValue ("midiOverdub", true) ? 0 : 2;
+    }
+
     void toggleSession()
     {
         showSession = ! showSession;
@@ -404,7 +417,7 @@ private:
     void enableInputs()
     {
         auto& dm = engine.getDeviceManager();
-        RecordingSettings::applyOverdub (engine, settings().getBoolValue ("midiOverdub", true));
+        RecordingSettings::applyMidiMode (engine, midiRecordMode());
 
         for (auto& midiIn : dm.getMidiInDevices())
         {

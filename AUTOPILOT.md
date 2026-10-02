@@ -52,7 +52,7 @@ when you start, touch it after each step, and delete it when you stop.
    - ~~v0.23 Look and feel~~ (done): browser with category sidebar (Instruments, Audio Effects, MIDI Effects, Drums,
      Plugins, Samples, Favourites, Places); piano roll notes in track colour with velocity shading; device and
      instrument displays polish; transport polish.
-   - v0.24 Editing: audio quantize, MIDI tools (velocity editing, humanize, legato, strum, fit to scale),
+   - ~~v0.24 Editing~~ (done): audio quantize, MIDI tools (velocity editing, humanize, legato, strum, fit to scale),
      draggable clip fades, MIDI loop-record takes.
    - v0.25 Mixing: sidechain picker, mixer groups / VCA, LUFS + true-peak master meter and export
      normalisation, mixer snapshots.
@@ -88,3 +88,4 @@ when you start, touch it after each step, and delete it when you stop.
   audio device being free; meter logic is covered by a self-test instead.
 - 2026-10-02: v0.22.0 drag and drop: tracks, devices (reorder / to other tracks, Ctrl copy), session clips, scene rename. 143 checks pass.
 - 2026-10-02: v0.23.0 browser sidebar (collections / categories / places, one search box), piano roll notes and drum pad names. 143 checks pass.
+- 2026-10-02: v0.24.0 MIDI tools, audio quantize (own onset detector; the engine transient detector returns none), MIDI record modes (overdub / takes / replace). 146 checks pass.

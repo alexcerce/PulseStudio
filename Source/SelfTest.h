@@ -8,6 +8,8 @@
 #include "Presets.h"
 #include "Macros.h"
 #include "Meters.h"
+#include "AudioSettings.h"
+#include "MidiTools.h"
 #include "DragDrop.h"
 #include "DeviceChain.h"
 #include "PulseLookAndFeel.h"
@@ -1910,6 +1912,121 @@ namespace SelfTest
             }
             rep.check (slotMove && slotCopy, "Drag session clips between slots (move, Ctrl copies)");
             for (auto t : { ta, tb, tc }) if (t != nullptr) edit->deleteTrack (t);
+        }
+
+        // --- MIDI tools, audio quantize, MIDI record modes --------------------------------------------
+        {
+            rep.step ("editing tools");
+            auto t = ClipImport::createContentTrack (*edit, "Tools", true);
+            auto mc = t != nullptr ? t->insertMIDIClip ("Tools", { te::TimePosition(), te::TimePosition::fromSeconds (8.0) }, nullptr) : nullptr;
+            if (mc != nullptr)
+            {
+                auto& sq = mc->getSequence();
+                auto beat = [] (double b) { return te::BeatPosition::fromBeats (b); };
+                auto len = [] (double b) { return te::BeatDuration::fromBeats (b); };
+                auto notesAt = [&sq] { Array<te::MidiNote*> a; for (auto n : sq.getNotes()) a.add (n); return a; };
+
+                // legato
+                sq.addNote (60, beat (0), len (0.25), 100, 0, nullptr);
+                sq.addNote (62, beat (1), len (0.25), 100, 0, nullptr);
+                sq.addNote (64, beat (3), len (0.5), 100, 0, nullptr);
+                MidiTools::legato (*mc, {});
+                auto ns = MidiTools::byStart (notesAt());
+                const bool legato = std::abs (ns[0]->getLengthBeats().inBeats() - 1.0) < 1e-6 && std::abs (ns[1]->getLengthBeats().inBeats() - 2.0) < 1e-6
+                                    && std::abs (ns[2]->getLengthBeats().inBeats() - 0.5) < 1e-6;
+
+                // fit to scale (C major): C# -> C, F# -> F (down on ties)
+                sq.clear (nullptr);
+                sq.addNote (61, beat (0), len (1), 100, 0, nullptr);
+                sq.addNote (66, beat (1), len (1), 100, 0, nullptr);
+                sq.addNote (64, beat (2), len (1), 100, 0, nullptr);
+                int majorIdx = -1;
+                for (int i = 0; i < (int) Scales::all().size(); ++i) if (String (Scales::all()[(size_t) i].name).containsIgnoreCase ("major")) { majorIdx = i; break; }
+                const int moved = MidiTools::fitToScale (*mc, {}, majorIdx, 0);
+                ns = MidiTools::byStart (notesAt());
+                const bool fit = moved == 2 && ns[0]->getNoteNumber() == 60 && ns[1]->getNoteNumber() == 65 && ns[2]->getNoteNumber() == 64;
+
+                // strum: a C major chord spread upwards by 1/16 beat
+                sq.clear (nullptr);
+                for (int p : { 64, 60, 67 }) sq.addNote (p, beat (4), len (1), 100, 0, nullptr);
+                MidiTools::strum (*mc, {}, 0.0625, true);
+                ns = MidiTools::byStart (notesAt());
+                const bool strum = ns[0]->getNoteNumber() == 60 && ns[1]->getNoteNumber() == 64 && ns[2]->getNoteNumber() == 67
+                                   && std::abs (ns[2]->getStartBeat().inBeats() - 4.125) < 1e-6 && std::abs (ns[2]->getEndBeat().inBeats() - 5.0) < 1e-6;
+
+                // velocity ramp, invert, reverse, humanize, stretch
+                MidiTools::Notes none;
+                Random rng (1);
+                MidiTools::velocities (*mc, none, MidiTools::Velocity::rampUp, rng);
+                ns = MidiTools::byStart (notesAt());
+                const bool ramp = ns[0]->getVelocity() == 40 && ns[2]->getVelocity() == 127;
+                MidiTools::invert (*mc, none);
+                ns = MidiTools::byStart (notesAt());
+                const bool inv = ns[0]->getNoteNumber() == 67 && ns[2]->getNoteNumber() == 60;
+                MidiTools::stretch (*mc, none, 2.0);
+                ns = MidiTools::byStart (notesAt());
+                const bool stretched = std::abs (ns[2]->getStartBeat().inBeats() - 4.25) < 1e-6;
+                double before = 0, after = 0;
+                for (auto n : sq.getNotes()) before += n->getStartBeat().inBeats();
+                MidiTools::humanize (*mc, none, 0.05, 10, rng);
+                for (auto n : sq.getNotes()) after += n->getStartBeat().inBeats();
+                const bool hum = std::abs (after - before) > 1e-6 && std::abs (after - before) < 0.16;
+                rep.check (legato && fit && strum && ramp && inv && stretched && hum, "MIDI tools (legato, fit to scale, strum, velocity, invert, stretch, humanize)",
+                           String ((int) legato) + String ((int) fit) + String ((int) strum) + String ((int) ramp) + String ((int) inv) + String ((int) stretched) + String ((int) hum));
+            }
+            if (t != nullptr) edit->deleteTrack (t);
+
+            // audio quantize: kicks slightly off the beat get pulled onto it
+            auto aq = ClipImport::createContentTrack (*edit, "AudioQuantize", false);
+            const double sr = 44100.0, spb = 60.0 / 120.0;
+            AudioBuffer<float> beatBuf (1, (int) (sr * 4.0));
+            beatBuf.clear();
+            const double offsets[] = { 0.0, 0.03, -0.025, 0.04, 0.0, 0.02, -0.03, 0.035 };   // seconds off the grid
+            for (int k = 0; k < 8; ++k)
+            {
+                const int s0 = (int) ((k * spb + offsets[k] + 0.05) * sr);
+                for (int i = 0; i < (int) (0.15 * sr) && s0 + i < beatBuf.getNumSamples(); ++i)
+                {
+                    const double tt = i / sr;
+                    beatBuf.addSample (0, s0 + i, (float) (0.9 * std::exp (-tt * 25.0) * std::sin (MathConstants<double>::twoPi * (50.0 + 100.0 * std::exp (-tt * 40.0)) * tt)));
+                }
+            }
+            auto loose = dir.getChildFile ("loose_kicks.wav");
+            SampleEdit::writeWav (loose, beatBuf, sr);
+            int movedMarkers = -2;
+            String aqInfo;
+            double maxErrBefore = 0, maxErrAfter = 0;
+            if (aq != nullptr)
+            {
+                edit->tempoSequence.getTempo (0)->setBpm (120.0);
+                te::Clip::Ptr c = ClipImport::importFile (*aq, *edit, loose, te::TimePosition());
+                if (auto ac = dynamic_cast<te::AudioClipBase*> (c.get()))
+                {
+                    Workflow::enableWarpMarkers (*ac, true);
+                    for (int tries = 0; tries < 200 && (movedMarkers = Workflow::quantizeAudio (*ac, 0.25, 1.0)) < 0; ++tries)
+                        MessageManager::getInstance()->runDispatchLoopUntil (50);
+                    aqInfo = String (ac->getWarpTimeManager().getMarkers().size()) + " markers, ";
+                    // marker positions vs the 1/16 grid, before (source) and after (warp)
+                    for (auto m : ac->getWarpTimeManager().getMarkers())
+                    {
+                        const double srcBeat = m->sourceTime.inSeconds() / spb, warpBeat = Workflow::warpTimeToEditBeat (*ac, m->warpTime);
+                        maxErrBefore = jmax (maxErrBefore, std::abs (srcBeat - std::round (srcBeat * 4.0) / 4.0));
+                        maxErrAfter = jmax (maxErrAfter, std::abs (warpBeat - std::round (warpBeat * 4.0) / 4.0));
+                    }
+                }
+                edit->deleteTrack (aq);
+            }
+            rep.check (movedMarkers >= 4 && maxErrAfter < 0.01 && maxErrBefore > 0.05, "Audio quantize (transients to the 1/16 grid)",
+                       aqInfo + String (movedMarkers) + " moved, worst " + String (maxErrBefore, 3) + " -> " + String (maxErrAfter, 4) + " beats off");
+
+            // MIDI record modes reach the inputs
+            const int inputs = RecordingSettings::applyMidiMode (engine, 1);
+            bool takesMode = true;
+            for (auto& d : engine.getDeviceManager().getMidiInDevices()) takesMode = takesMode && ! d->mergeRecordings && ! d->replaceExistingClips;
+            RecordingSettings::applyMidiMode (engine, 0);
+            bool overdubMode = true;
+            for (auto& d : engine.getDeviceManager().getMidiInDevices()) overdubMode = overdubMode && d->mergeRecordings;
+            rep.check (takesMode && overdubMode, "MIDI record modes (overdub / takes / replace)", String (inputs) + " inputs");
         }
 
         // --- undo -------------------------------------------------------------------------------

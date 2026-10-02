@@ -735,6 +735,19 @@ private:
             a.getWarpTimeManager().removeAllMarkers();
             repaintSelf();
         }));
+
+        PopupMenu q;
+        for (auto [label, grid, strength] : { std::tuple<const char*, double, double> { "1/16, 100%", 0.25, 1.0 }, { "1/16, 50% (keeps some feel)", 0.25, 0.5 },
+                                              { "1/8, 100%", 0.5, 1.0 }, { "1/4, 100%", 1.0, 1.0 } })
+            q.addItem (label, withClip ([um, repaintSelf, grid = grid, strength = strength] (te::AudioClipBase& a)
+            {
+                um->beginNewTransaction ("Quantize audio");
+                if (Workflow::quantizeAudio (a, grid, strength) < 0)
+                    AlertWindow::showMessageBoxAsync (MessageBoxIconType::InfoIcon, "Quantize audio",
+                                                      "Transients are still being analysed. Try again in a moment.");
+                repaintSelf();
+            }));
+        m.addSubMenu ("Quantize audio (transients to grid)", q);
     }
 
     void showContextMenu()

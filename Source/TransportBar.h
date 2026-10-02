@@ -18,6 +18,8 @@ public:
         std::function<StringArray()> recentProjects;
         std::function<void (const File&)> openRecent;
         std::function<void()> clearRecent;
+        std::function<int()> midiRecordMode;
+        std::function<void (int)> setMidiRecordMode;
         std::function<String()> controllerStatus;
         std::function<void()> toggleLink, cancelRender;
         std::function<float()> renderProgress;     // < 0 when idle
@@ -36,7 +38,7 @@ public:
         };
         setupToggle (stopBtn, Theme::accent, "Stop (press again to return to start)");
         setupToggle (playBtn, Theme::green, "Play / Stop (Space)");
-        setupToggle (recBtn, Theme::red, "Record armed tracks (R)");
+        setupToggle (recBtn, Theme::red, "Record armed tracks (R). Right-click: MIDI overdub / takes / replace");
         setupToggle (loopBtn, Theme::orange, "Loop (L) - drag on the ruler to set the range");
         setupToggle (clickBtn, Theme::accent, "Metronome (M)");
         setupToggle (linkBtn, Theme::green, "Ableton Link: sync tempo, bars and start/stop with other apps and devices on your network");
@@ -52,6 +54,7 @@ public:
         };
         playBtn.onClick = [this] { EngineHelpers::togglePlay (*edit); };
         recBtn.onClick  = [this] { EngineHelpers::toggleRecord (*edit); };
+        recBtn.addMouseListener (this, false);
         loopBtn.onClick = [this] { auto& tc = edit->getTransport(); tc.looping = ! tc.looping.get(); };
         clickBtn.onClick = [this] { edit->clickTrackEnabled = ! edit->clickTrackEnabled.get(); };
 
@@ -274,6 +277,19 @@ public:
         pluginsBtn.setBounds (r.removeFromRight (80)); r.removeFromRight (4);
         audioBtn.setBounds (r.removeFromRight (72));  r.removeFromRight (4);
         fileBtn.setBounds (r.removeFromRight (70));
+    }
+
+    void mouseDown (const MouseEvent& e) override
+    {
+        if (e.eventComponent == &recBtn && e.mods.isPopupMenu() && actions.midiRecordMode)
+        {
+            PopupMenu m;
+            m.addSectionHeader ("MIDI recording");
+            const char* names[] = { "Overdub (merge into the clip)", "New take on every loop pass", "Replace" };
+            for (int i = 0; i < 3; ++i)
+                m.addItem (names[i], true, actions.midiRecordMode() == i, [this, i] { if (actions.setMidiRecordMode) actions.setMidiRecordMode (i); });
+            m.showMenuAsync (PopupMenu::Options().withTargetComponent (&recBtn));
+        }
     }
 
     void mouseDrag (const MouseEvent& e) override

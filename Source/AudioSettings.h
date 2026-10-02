@@ -60,14 +60,23 @@ public:
     }
 
     /** Applies the overdub preference to every MIDI input (also called at startup). */
-    static void applyOverdub (te::Engine& engine, bool overdubOn)
+    static void applyOverdub (te::Engine& engine, bool overdubOn) { applyMidiMode (engine, overdubOn ? 0 : 2); }
+
+    /** MIDI recording: 0 = overdub (merge into the clip), 1 = a new take on every loop pass,
+        2 = replace. Returns how many inputs were set. */
+    static int applyMidiMode (te::Engine& engine, int mode)
     {
+        int n = 0;
         for (auto& d : engine.getDeviceManager().getMidiInDevices())
         {
-            d->mergeRecordings = overdubOn;
-            d->replaceExistingClips = ! overdubOn;
+            d->mergeRecordings = mode == 0;
+            d->replaceExistingClips = mode == 2;
+            ++n;
         }
+        return n;
     }
+
+    static inline const StringArray midiModeNames { "Overdub (merge into the clip)", "New take on every loop pass", "Replace" };
 
     void resized() override
     {

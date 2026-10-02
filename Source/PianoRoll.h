@@ -2,6 +2,7 @@
 
 #include "Meters.h"
 #include "DrumRack.h"
+#include "MidiTools.h"
 
 #include "EditViewState.h"
 #include "Scales.h"
@@ -29,6 +30,9 @@ public:
 
         quantizeBtn.onClick = [this] { quantize(); };
         addAndMakeVisible (quantizeBtn);
+        toolsBtn.setTooltip ("MIDI tools for the selected notes (or all notes): humanize, legato, strum, fit to scale, velocity...");
+        toolsBtn.onClick = [this] { showTools(); };
+        addAndMakeVisible (toolsBtn);
 
         laneBox.addItemList ({ "Velocity", "Pitch Bend", "Mod Wheel (CC1)", "Volume (CC7)", "Pan (CC10)", "Expression (CC11)", "Sustain (CC64)",
                                "Device envelope..." }, 1);
@@ -123,6 +127,8 @@ public:
         gridBox.setBounds (r.removeFromLeft (80));
         r.removeFromLeft (6);
         quantizeBtn.setBounds (r.removeFromLeft (80));
+        r.removeFromLeft (4);
+        toolsBtn.setBounds (r.removeFromLeft (64));
         r.removeFromLeft (6);
         laneBox.setBounds (r.removeFromLeft (140));
         r.removeFromLeft (10);
@@ -900,6 +906,54 @@ private:
         repaint();
     }
 
+    void showTools()
+    {
+        if (clip == nullptr) return;
+        using MT = MidiTools::Velocity;
+        auto run = [this] (const String& name, std::function<void (te::MidiClip&, const MidiTools::Notes&)> fn)
+        {
+            return [this, name, fn]
+            {
+                if (clip == nullptr) return;
+                um().beginNewTransaction (name);
+                fn (*clip, selected);
+                repaint();
+            };
+        };
+        const int scale = scaleBox.getSelectedId() - 2, root = rootBox.getSelectedId() - 1;
+        PopupMenu m;
+        m.addSectionHeader (selected.isEmpty() ? "All notes" : String (selected.size()) + " selected notes");
+        PopupMenu hum;
+        hum.addItem ("Light", run ("Humanize", [] (auto& c, auto& n) { Random r; MidiTools::humanize (c, n, 0.01, 6, r); }));
+        hum.addItem ("Medium", run ("Humanize", [] (auto& c, auto& n) { Random r; MidiTools::humanize (c, n, 0.025, 12, r); }));
+        hum.addItem ("Heavy", run ("Humanize", [] (auto& c, auto& n) { Random r; MidiTools::humanize (c, n, 0.05, 20, r); }));
+        m.addSubMenu ("Humanize", hum);
+        m.addItem ("Legato", run ("Legato", [] (auto& c, auto& n) { MidiTools::legato (c, n); }));
+        PopupMenu strum;
+        strum.addItem ("Up (1/64)", run ("Strum", [] (auto& c, auto& n) { MidiTools::strum (c, n, 1.0 / 16.0, true); }));
+        strum.addItem ("Up (1/32)", run ("Strum", [] (auto& c, auto& n) { MidiTools::strum (c, n, 1.0 / 8.0, true); }));
+        strum.addItem ("Down (1/64)", run ("Strum", [] (auto& c, auto& n) { MidiTools::strum (c, n, 1.0 / 16.0, false); }));
+        strum.addItem ("Down (1/32)", run ("Strum", [] (auto& c, auto& n) { MidiTools::strum (c, n, 1.0 / 8.0, false); }));
+        m.addSubMenu ("Strum chords", strum);
+        m.addItem ("Fit to scale" + String (scale < 0 ? "  (choose a scale first)" : ""), scale >= 0, false,
+                   run ("Fit to scale", [scale, root] (auto& c, auto& n) { MidiTools::fitToScale (c, n, scale, root); }));
+        PopupMenu vel;
+        vel.addItem ("Louder (+10%)", run ("Velocity", [] (auto& c, auto& n) { Random r; MidiTools::velocities (c, n, MT::louder, r); }));
+        vel.addItem ("Softer (-10%)", run ("Velocity", [] (auto& c, auto& n) { Random r; MidiTools::velocities (c, n, MT::softer, r); }));
+        vel.addItem ("Compress (towards the average)", run ("Velocity", [] (auto& c, auto& n) { Random r; MidiTools::velocities (c, n, MT::compress, r); }));
+        vel.addItem ("All 100", run ("Velocity", [] (auto& c, auto& n) { Random r; MidiTools::velocities (c, n, MT::fixed, r); }));
+        vel.addItem ("Crescendo", run ("Velocity", [] (auto& c, auto& n) { Random r; MidiTools::velocities (c, n, MT::rampUp, r); }));
+        vel.addItem ("Decrescendo", run ("Velocity", [] (auto& c, auto& n) { Random r; MidiTools::velocities (c, n, MT::rampDown, r); }));
+        vel.addItem ("Randomise", run ("Velocity", [] (auto& c, auto& n) { Random r; MidiTools::velocities (c, n, MT::randomise, r); }));
+        m.addSubMenu ("Velocity", vel);
+        m.addSeparator();
+        m.addItem ("Reverse", run ("Reverse", [] (auto& c, auto& n) { MidiTools::reverse (c, n); }));
+        m.addItem ("Invert (flip pitches)", run ("Invert", [] (auto& c, auto& n) { MidiTools::invert (c, n); }));
+        m.addItem ("Double speed", run ("Double speed", [] (auto& c, auto& n) { MidiTools::stretch (c, n, 0.5); }));
+        m.addItem ("Half speed", run ("Half speed", [] (auto& c, auto& n) { MidiTools::stretch (c, n, 2.0); }));
+        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&toolsBtn));
+    }
+
     void timerCallback() override
     {
         if (clip != nullptr && evs.edit.getTransport().isPlaying())
@@ -937,6 +991,6 @@ private:
     mutable std::vector<int> rows;
     mutable std::array<int, 128> rowOf {};
     mutable String rowsKey;
-    TextButton quantizeBtn { "Quantize" };
+    TextButton quantizeBtn { "Quantize" }, toolsBtn { "Tools" };
     Label title, hint;
 };
