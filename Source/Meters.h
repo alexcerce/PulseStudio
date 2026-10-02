@@ -37,14 +37,27 @@ class LevelMeter : public Component,
                    private Timer
 {
 public:
-    explicit LevelMeter (te::LevelMeterPlugin& p, bool isVertical = true) : holder (&p), plugin (p), vertical (isVertical)
+    explicit LevelMeter (te::LevelMeterPlugin& p, bool isVertical = true) : holder (&p), measurer (p.measurer), vertical (isVertical)
     {
-        plugin.measurer.addClient (client);
+        measurer.addClient (client);
         setTooltip ("Level (the light at the end turns red after clipping; click to reset)");
         startTimerHz (30);
     }
 
-    ~LevelMeter() override { plugin.measurer.removeClient (client); }
+    /** A meter on any measurer (e.g. an input device's). The measurer must outlive the meter. */
+    LevelMeter (te::LevelMeasurer& m, bool isVertical) : measurer (m), vertical (isVertical)
+    {
+        measurer.addClient (client);
+        startTimerHz (30);
+    }
+
+    ~LevelMeter() override { if (! stillValid || stillValid()) measurer.removeClient (client); }
+
+    /** For measurers owned by things that can disappear (input devices): when this says false
+        the meter stops and never touches the measurer again. */
+    std::function<bool()> stillValid;
+
+    bool hasClipped() const { return clipped; }
 
     /** Highest peak since the last reset (dB). */
     float getMaxPeak() const { return maxPeak; }
@@ -120,7 +133,7 @@ private:
     }
 
     te::Plugin::Ptr holder;          // keeps the plugin (and its measurer) alive
-    te::LevelMeterPlugin& plugin;
+    te::LevelMeasurer& measurer;
     te::LevelMeasurer::Client client;
     const bool vertical;
     float level[2] { -100.0f, -100.0f }, peak[2] { -100.0f, -100.0f }, maxPeak = -100.0f;

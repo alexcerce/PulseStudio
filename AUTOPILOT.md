@@ -169,3 +169,7 @@ when you start, touch it after each step, and delete it when you stop.
   knob, drive / chorus / delay / reverb, 52 presets; old ids kept), graph-first full panels for Prism EQ / Compressor /
   Multiband / Limiter (floating band panels, bottom bar), ParamToggle / ParamChoice / ParamCombo instead of knobs for
   choices, --device-shots <dir> for quick UI pictures. 209 checks pass.
+- 2026-10-02: v0.48.0 recording: punch in / out button (ruler shows the punch range), count-in in the record / metronome
+  menus, 5 rendered metronome sounds + level + accent, input meter with clip warning on armed tracks (guarded against
+  devices going away). Audio loop takes: the engine only splits audio loop passes into takes with Tracktion projects;
+  not done (MIDI takes work). 210 checks pass.

@@ -1556,6 +1556,13 @@ public:
 
     void paintOverChildren (Graphics& g) override
     {
+        if (inputClipped)
+        {
+            g.setColour (Theme::red);
+            g.drawRect (getLocalBounds(), 2);
+            g.setFont (FontOptions (10.0f, Font::bold));
+            g.drawText ("INPUT CLIPPING", getLocalBounds().reduced (6, 3).removeFromBottom (12), Justification::centredRight);
+        }
         if (! dropHover) return;
         g.setColour (Theme::accent.withAlpha (0.18f));
         g.fillRect (getLocalBounds());
@@ -1564,6 +1571,55 @@ public:
     }
 
     te::AudioTrack* getTrack() const { return track.get(); }
+
+    /** While the track is armed, the meter shows what comes in (with a clip warning). */
+    void updateInputMeter()
+    {
+        auto& dm = track->edit.engine.getDeviceManager();
+        auto exists = [&dm] (te::InputDevice* d)
+        {
+            for (int i = 0; i < dm.getNumWaveInDevices(); ++i) if (dm.getWaveInDevice (i) == d) return true;
+            return false;
+        };
+        if (inputDevice != nullptr && ! exists (inputDevice))   // the device went away (audio settings changed)
+        {
+            if (inputMeter != nullptr) inputMeter->stillValid = [] { return false; };
+            inputMeter.reset();
+            inputDevice = nullptr;
+        }
+        te::InputDevice* dev = nullptr;
+        if (EngineHelpers::isTrackArmed (*track))
+            for (auto in : track->edit.getAllInputDevices())
+                if (te::isOnTargetTrack (*in, *track, 0) && in->owner.getDeviceType() == te::InputDevice::waveDevice) { dev = &in->owner; break; }
+        if (dev != inputDevice)
+        {
+            inputMeter.reset();
+            inputDevice = dev;
+            if (dev != nullptr)
+            {
+                inputMeter = std::make_unique<LevelMeter> (dev->levelMeasurer, true);
+                inputMeter->stillValid = [&dm, dev]
+                {
+                    for (int i = 0; i < dm.getNumWaveInDevices(); ++i) if (dm.getWaveInDevice (i) == dev) return true;
+                    return false;
+                };
+                inputMeter->setTooltip ("Input level of " + dev->getName() + " (the top light turns red if the input clips: turn the input gain down)");
+                addAndMakeVisible (*inputMeter);
+            }
+            if (meter != nullptr) meter->setVisible (inputMeter == nullptr);
+            resized();
+        }
+        if (inputMeter != nullptr)
+        {
+            if (meter != nullptr) inputMeter->setBounds (meter->getBounds());
+            const bool clip = inputMeter->hasClipped();
+            if (clip != inputClipped) { inputClipped = clip; repaint(); }
+        }
+    }
+
+    std::unique_ptr<LevelMeter> inputMeter;
+    te::InputDevice* inputDevice = nullptr;
+    bool inputClipped = false;
     bool resizing = false;
     int resizeStart = 0;
 
@@ -1587,6 +1643,7 @@ private:
         muteBtn.setToggleState (track->isMuted (false), dontSendNotification);
         soloBtn.setToggleState (track->isSolo (false), dontSendNotification);
         armBtn.setToggleState (EngineHelpers::isTrackArmed (*track), dontSendNotification);
+        updateInputMeter();
         autoBtn.setToggleState (evs.isAutomationVisible (*track), dontSendNotification);
 
         if (! volume.isMouseButtonDown())
@@ -1724,8 +1781,15 @@ public:
         auto& tc = evs.edit.getTransport();
         auto lr = tc.getLoopRange();
         auto lx1 = evs.timeToX (lr.getStart()), lx2 = evs.timeToX (lr.getEnd());
-        g.setColour (tc.looping ? Theme::orange.withAlpha (0.6f) : Theme::ink.withAlpha (0.12f));
+        const bool punch = evs.edit.recordingPunchInOut.get();
+        g.setColour (punch ? Theme::red.withAlpha (0.75f) : tc.looping ? Theme::orange.withAlpha (0.6f) : Theme::ink.withAlpha (0.12f));
         g.fillRect (lx1, 0.0f, lx2 - lx1, 7.0f);
+        if (punch)
+        {
+            g.setColour (Theme::red);
+            g.fillRect (lx1 - 1.0f, 0.0f, 2.0f, (float) getHeight());
+            g.fillRect (lx2 - 1.0f, 0.0f, 2.0f, (float) getHeight());
+        }
 
         const int bpb = EngineHelpers::beatsPerBar (evs.edit);
         int barStep = 1;

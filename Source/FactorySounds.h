@@ -223,6 +223,65 @@ namespace FactorySounds
     }
 
     //==============================================================================
+    // metronome sounds (bar = accented, beat = normal)
+    inline const StringArray& clickStyles() { static StringArray s { "Engine default", "Woodblock", "Rim", "Hi-hat", "Beep", "Cowbell" }; return s; }
+
+    inline File clickFile (te::Engine& e, int style, bool bar)
+    {
+        return folder (e).getChildFile ("Clicks").getChildFile (clickStyles()[style] + (bar ? " Bar.wav" : " Beat.wav"));
+    }
+
+    /** Renders a click sound (style 1..5). */
+    inline AudioBuffer<float> renderClick (int style, bool bar)
+    {
+        using D = pulse::DrumVoice;
+        AudioBuffer<float> b (2, (int) (sampleRate * 0.25));
+        b.clear();
+        if (style == 4)   // beep: a short sine
+        {
+            const double hz = bar ? 1760.0 : 1320.0;
+            for (int i = 0; i < b.getNumSamples(); ++i)
+            {
+                const double t = i / sampleRate;
+                const float env = (float) std::exp (-t * 40.0) * (float) jmin (1.0, t * 2000.0);
+                const float x = 0.6f * env * (float) std::sin (MathConstants<double>::twoPi * hz * t);
+                b.setSample (0, i, x); b.setSample (1, i, x);
+            }
+        }
+        else
+        {
+            const int type = style == 1 ? D::tom : style == 2 ? D::rim : style == 3 ? D::closedHat : D::cowbell;
+            const float tune = style == 1 ? (bar ? 24.0f : 19.0f) : (bar ? 3.0f : 0.0f);
+            D v;
+            v.start (sampleRate, type, tune, style == 1 ? 0.15f : 0.4f, 0.8f, 0.9f, 0.0f, 99u);
+            for (int i = 0; i < b.getNumSamples(); ++i) { const float x = v.next() * (bar ? 0.9f : 0.6f); b.setSample (0, i, x); b.setSample (1, i, x); }
+        }
+        trim (b);
+        return b;
+    }
+
+    /** Uses a metronome style (0 = the engine's own click). */
+    inline void setClickStyle (te::Engine& e, int style)
+    {
+        if (style <= 0)
+        {
+            e.getPropertyStorage().setProperty (te::SettingID::clickTrackSampleBig, String());
+            e.getPropertyStorage().setProperty (te::SettingID::clickTrackSampleSmall, String());
+        }
+        else
+            for (bool bar : { true, false })
+            {
+                auto f = clickFile (e, style, bar);
+                if (! f.existsAsFile()) writeWav (f, renderClick (style, bar));
+                e.getPropertyStorage().setProperty (bar ? te::SettingID::clickTrackSampleBig : te::SettingID::clickTrackSampleSmall, f.getFullPathName());
+            }
+        e.getPropertyStorage().getPropertiesFile().setValue ("clickStyle", style);
+        te::TransportControl::restartAllTransports (e, false);   // the click loads its sounds again
+    }
+
+    inline int clickStyle (te::Engine& e) { return e.getPropertyStorage().getPropertiesFile().getIntValue ("clickStyle", 0); }
+
+    //==============================================================================
     // using the sounds
     /** Which instrument suits a Simpler preset (keys unless the name says otherwise). */
     inline String instrumentFor (const String& presetName)

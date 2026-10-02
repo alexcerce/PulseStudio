@@ -69,6 +69,11 @@ Projects are saved as `.tracktionedit` files in `Documents/Pulse Studio/`. Prese
   - **Tempo** (above the track headers) opens the tempo lane: double-click to add a tempo change, drag points up or down (BPM) and sideways (position), and right-click to delete one.
   - Right-click the marker strip to add a time signature (e.g. 3/4, 7/8) at that bar.
   - The ruler, grid and LCD follow both.
+- **Recording:**
+  - **Punch** (next to the metronome) records only inside the loop range, which turns red on the ruler (looping switches off while punching).
+  - Right-click the record or metronome button for the **count-in** (off, 1 or 2 beats, 1 or 2 bars); right-click the metronome for its **sound** (engine default, woodblock, rim, hi-hat, beep, cowbell), **level** and bar accent.
+  - An armed track's meter shows its **input**; if the input clips, the header gets a red frame and *INPUT CLIPPING*.
+  - Recording offsets per input are in *Settings → Recording*. Loop-recorded MIDI makes takes (right-click the record button for the mode).
 - **Takes and comping:**
   - Loop-recorded MIDI takes appear under right-click → *Takes*.
   - For audio, select several recorded passes and choose *Combine into takes*.

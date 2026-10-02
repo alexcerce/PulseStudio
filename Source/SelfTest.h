@@ -45,6 +45,7 @@
 #include "PrismEQDisplay.h"
 #include "Mixer.h"
 #include "UndoHistory.h"
+#include "TransportBar.h"
 
 /** "Pulse Studio.exe --selftest report.txt"
     Builds a scratch project in the temp folder, exercises the editing / routing / device
@@ -3793,6 +3794,49 @@ namespace SelfTest
                 rep.check (accepts && rs.size() == 1 && rs[0].source == 3 && rs[0].dest == W::pCutoff, "Drag a modulation source onto a knob");
             }
             wp = nullptr;
+        }
+
+        // --- v0.48: recording workflow --------------------------------------------------------------------
+        {
+            rep.step ("recording workflow");
+            // metronome sounds: each style renders, is stored, and the engine is pointed at it
+            int clicksOk = 0;
+            for (int st = 1; st < FactorySounds::clickStyles().size(); ++st)
+            {
+                FactorySounds::setClickStyle (engine, st);
+                const auto bar = FactorySounds::clickFile (engine, st, true), beat = FactorySounds::clickFile (engine, st, false);
+                const bool set = engine.getPropertyStorage().getProperty (te::SettingID::clickTrackSampleBig).toString() == bar.getFullPathName();
+                if (bar.existsAsFile() && beat.existsAsFile() && set && FactorySounds::renderClick (st, true).getMagnitude (0, 0, 2400) > 0.1f) ++clicksOk;
+            }
+            FactorySounds::setClickStyle (engine, 0);
+            const bool restored = engine.getPropertyStorage().getProperty (te::SettingID::clickTrackSampleBig).toString().isEmpty();
+            // punch in / out turns looping off; count-in modes
+            edit->getTransport().looping = true;
+            edit->recordingPunchInOut = false;
+            {
+                TransportBar tb (engine, {});
+                tb.setEdit (edit.get());
+                tb.clickPunch();
+                const bool punchOn = edit->recordingPunchInOut.get() && ! edit->getTransport().looping.get();
+                tb.clickPunch();
+                const bool punchOff = ! edit->recordingPunchInOut.get();
+                edit->setCountInMode (te::Edit::CountIn::oneBar);
+                const int beats = edit->getNumCountInBeats();
+                edit->setCountInMode (te::Edit::CountIn::none);
+                tb.setEdit (nullptr);
+                // an input meter whose device went away is dropped without touching it
+                bool safe = true;
+                {
+                    auto measurer = std::make_unique<te::LevelMeasurer>();
+                    auto m = std::make_unique<LevelMeter> (*measurer, true);
+                    m->stillValid = [] { return false; };
+                    measurer.reset();   // the "device" is gone first
+                    m.reset();          // must not touch it
+                }
+                rep.check (clicksOk == FactorySounds::clickStyles().size() - 1 && restored && punchOn && punchOff && beats == EngineHelpers::beatsPerBar (*edit) && safe,
+                           "Recording: metronome sounds, punch in / out, count-in, input meter safety",
+                           String (clicksOk) + " click styles, punch " + (punchOn && punchOff ? "ok" : "no") + ", count-in " + String (beats) + " beats");
+            }
         }
 
         // --- sharing: project zip, crash bundle, update check -----------------------------------------

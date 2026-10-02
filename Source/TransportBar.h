@@ -4,6 +4,7 @@
 #include "Icons.h"
 #include "Meters.h"
 #include "UndoHistory.h"
+#include "FactorySounds.h"
 
 /** Top bar: transport, tempo, position display and app actions. */
 class TransportBar : public Component,
@@ -60,6 +61,18 @@ public:
         playBtn.onClick = [this] { EngineHelpers::togglePlay (*edit); };
         recBtn.onClick  = [this] { EngineHelpers::toggleRecord (*edit); };
         recBtn.addMouseListener (this, false);
+        clickBtn.addMouseListener (this, false);
+        punchBtn.setClickingTogglesState (false);
+        punchBtn.setColour (TextButton::buttonOnColourId, Theme::red.withAlpha (0.85f));
+        punchBtn.setTooltip ("Punch in / out: record only inside the loop range (looping turns off while punching)");
+        punchBtn.onClick = [this]
+        {
+            if (edit == nullptr) return;
+            const bool on = ! edit->recordingPunchInOut.get();
+            edit->recordingPunchInOut = on;
+            if (on) edit->getTransport().looping = false;   // the engine can't do both at once
+        };
+        addAndMakeVisible (punchBtn);
         loopBtn.onClick = [this] { auto& tc = edit->getTransport(); tc.looping = ! tc.looping.get(); };
         clickBtn.onClick = [this] { edit->clickTrackEnabled = ! edit->clickTrackEnabled.get(); };
 
@@ -273,6 +286,8 @@ public:
             b->setBounds (r.removeFromLeft (36));
             r.removeFromLeft (4);
         }
+        punchBtn.setBounds (r.removeFromLeft (46).reduced (0, 4));
+        r.removeFromLeft (4);
         linkBtn.setBounds (r.removeFromLeft (58));
         r.removeFromLeft (8);
 
@@ -319,14 +334,38 @@ public:
             UndoHistory::showMenu (*edit, *e.eventComponent, e.eventComponent == &redoBtn);
             return;
         }
-        if (e.eventComponent == &recBtn && e.mods.isPopupMenu() && actions.midiRecordMode)
+        if ((e.eventComponent == &recBtn || e.eventComponent == &clickBtn) && e.mods.isPopupMenu() && edit != nullptr)
         {
             PopupMenu m;
-            m.addSectionHeader ("MIDI recording");
-            const char* names[] = { "Overdub (merge into the clip)", "New take on every loop pass", "Replace" };
-            for (int i = 0; i < 3; ++i)
-                m.addItem (names[i], true, actions.midiRecordMode() == i, [this, i] { if (actions.setMidiRecordMode) actions.setMidiRecordMode (i); });
-            m.showMenuAsync (PopupMenu::Options().withTargetComponent (&recBtn));
+            if (e.eventComponent == &recBtn && actions.midiRecordMode)
+            {
+                m.addSectionHeader ("MIDI recording");
+                const char* names[] = { "Overdub (merge into the clip)", "New take on every loop pass", "Replace" };
+                for (int i = 0; i < 3; ++i)
+                    m.addItem (names[i], true, actions.midiRecordMode() == i, [this, i] { if (actions.setMidiRecordMode) actions.setMidiRecordMode (i); });
+                m.addItem ("Punch in / out (record only in the loop range)", true, edit->recordingPunchInOut.get(), [this] { punchBtn.onClick(); });
+            }
+            PopupMenu counts;
+            const std::pair<te::Edit::CountIn, const char*> modes[] = { { te::Edit::CountIn::none, "Off" }, { te::Edit::CountIn::oneBeat, "1 beat" },
+                                                                         { te::Edit::CountIn::twoBeat, "2 beats" }, { te::Edit::CountIn::oneBar, "1 bar" },
+                                                                         { te::Edit::CountIn::twoBar, "2 bars" } };
+            for (auto [mode, name] : modes)
+                counts.addItem (name, true, edit->getCountInMode() == mode, [this, mode] { edit->setCountInMode (mode); });
+            m.addSubMenu ("Count-in before recording", counts);
+            if (e.eventComponent == &clickBtn)
+            {
+                PopupMenu sounds, levels;
+                auto& eng = edit->engine;
+                for (int s = 0; s < FactorySounds::clickStyles().size(); ++s)
+                    sounds.addItem (FactorySounds::clickStyles()[s], true, FactorySounds::clickStyle (eng) == s, [&eng, s] { FactorySounds::setClickStyle (eng, s); });
+                for (float lv : { 0.25f, 0.5f, 0.75f, 1.0f })
+                    levels.addItem (String (roundToInt (lv * 100)) + "%", true, std::abs (edit->getClickTrackVolume() - lv) < 0.05f, [this, lv] { edit->setClickTrackVolume (lv); });
+                m.addSubMenu ("Metronome sound", sounds);
+                m.addSubMenu ("Metronome level", levels);
+                m.addItem ("Accent the first beat of each bar", true, edit->clickTrackEmphasiseBars.get(),
+                           [this] { edit->clickTrackEmphasiseBars = ! edit->clickTrackEmphasiseBars.get(); });
+            }
+            m.showMenuAsync (PopupMenu::Options().withTargetComponent (e.eventComponent));
         }
     }
 
@@ -372,6 +411,7 @@ private:
         recBtn.setToggleState (tc.isRecording(), dontSendNotification);
         recBtn.setIconColour (tc.isRecording() ? Colours::black.withAlpha (0.85f) : Theme::red);
         loopBtn.setToggleState (tc.looping.get(), dontSendNotification);
+        punchBtn.setToggleState (edit->recordingPunchInOut.get(), dontSendNotification);
         clickBtn.setToggleState (edit->clickTrackEnabled.get(), dontSendNotification);
         if (actions.isLinkEnabled)
         {
@@ -438,4 +478,8 @@ public:
     std::unique_ptr<LevelMeter> masterMeter;
     te::LevelMeterPlugin* meterPlugin = nullptr;
     int meterCheck = 0;
+    public:
+    void clickPunch() { punchBtn.onClick(); }
+    private:
+    TextButton punchBtn { "Punch" };
 };
