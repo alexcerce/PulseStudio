@@ -4,7 +4,7 @@ A native Windows DAW built with C++, [JUCE](https://juce.com) and [Tracktion Eng
 
 ## Install
 
-Run `dist/PulseStudio-0.11.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
+Run `dist/PulseStudio-0.12.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
 
 ## Build
 
@@ -160,6 +160,10 @@ Pulse's own devices have cards with labelled sections and a live display. Every 
 - **Export selection** (Ctrl+Shift+E): exports just the selected clips' time range (or the loop range).
 - **Export MIDI** (Ctrl+Shift+M): writes the selected MIDI clips, or every MIDI clip, to a `.mid` file. You get one track per Pulse track with the tempo map, and looped clips are written out in full. A track header's right-click menu exports that track's clips.
 
+### Projects and sharing (File menu)
+- **Collect all and save** copies every sample the project uses into a `<project> Samples` folder next to it, then points the project at the copies. That covers audio clips, audio takes, Simpler and Drum Rack samples. Zip the project folder and it opens on any machine. Missing files are listed.
+- **Templates:** *Save as template...* keeps your favourite setup (tracks, devices, routing, returns, even clips). *New Project...* then offers an empty project, the demo song or any of your templates. Templates live in `Documents/Pulse Studio/Templates`.
+
 ### Safety
 - **Autosave every minute**, with recovery after a crash.
 - **Crash reports:** if Pulse Studio crashes, it saves a log with a stack trace. It also notes which plugin the crash happened in, or which plugin was loading at the time.
@@ -201,7 +205,7 @@ Pulse's own devices have cards with labelled sections and a live display. Every 
 ## Command line
 
 - `--render out.wav` renders the last project offline and exits.
-- `--selftest report.txt` builds a scratch project and runs 93 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--selftest report.txt` builds a scratch project and runs 95 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
 - `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
 
 ## Code layout
@@ -226,6 +230,7 @@ All app code is header-only in `Source/` and compiled through `Main.cpp`.
 | `DeviceChain.h` | Device rack: device cards, macros, Drum Rack editor, presets |
 | `DrumRack.h`, `Presets.h`, `Macros.h`, `MidiLearn.h` | Sound design and controller features |
 | `MidiFx.h`, `Scales.h` | MIDI effects (Arpeggiator, Chord, Scale, Note Echo), shared scales |
+| `Sharing.h` | Collect All and Save, project templates |
 | `Timeline.h` | Markers, tempo / time signature maths, crossfades, comping |
 | `EditingOps.h` | Clipboard, split, time edits, bounce/flatten/freeze, grouping |
 | `Workflow.h` | Keyboard nudging, clip looping, warp markers, MIDI export, track presets, groove |

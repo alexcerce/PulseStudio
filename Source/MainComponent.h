@@ -21,6 +21,7 @@
 #include "AudioSettings.h"
 #include "Push2.h"
 #include "CrashGuard.h"
+#include "Sharing.h"
 
 //==============================================================================
 /** Owns the current Edit and lays out transport, browser, arrangement/session and the
@@ -270,6 +271,8 @@ private:
         a.openProject    = [this] { openProject(); };
         a.saveProject    = [this] { saveProject(); };
         a.exportWav      = [this] { exportWav(); };
+        a.collectAll     = [this] { collectAll(); };
+        a.saveTemplate   = [this] { saveAsTemplate(); };
         a.exportSelection = [this] { exportSelection(); };
         a.exportMidi     = [this] { exportMidi(); };
         a.audioSettings  = [this] { showAudioSettings(); };
@@ -685,20 +688,68 @@ private:
         saveIfNeeded();
     }
 
+    /** New project: empty, the demo song, or one of your templates. */
     void newProject()
+    {
+        PopupMenu m;
+        m.addSectionHeader ("New project from...");
+        m.addItem ("Empty project", [this] { createProject ({}, false); });
+        m.addItem ("Demo song", [this] { createProject ({}, true); });
+        auto templates = Sharing::templates();
+        if (! templates.isEmpty())
+        {
+            m.addSeparator();
+            for (auto& t : templates)
+                m.addItem (t.getFileNameWithoutExtension(), [this, t] { createProject (t, false); });
+        }
+        m.addSeparator();
+        m.addItem ("Show templates folder", [] { Sharing::templatesFolder().revealToUser(); });
+        m.showMenuAsync ({});
+    }
+
+    void createProject (File templateFile, bool demo)
     {
         chooser = std::make_shared<FileChooser> ("New project", projectsFolder().getNonexistentChildFile ("Untitled", ".tracktionedit"), "*.tracktionedit");
         chooser->launchAsync (FileBrowserComponent::saveMode | FileBrowserComponent::canSelectFiles | FileBrowserComponent::warnAboutOverwriting,
-                              [this] (const FileChooser& fc)
+                              [this, templateFile, demo] (const FileChooser& fc)
                               {
                                   auto f = fc.getResult();
                                   if (f == File()) return;
+                                  f = f.withFileExtension (".tracktionedit");
                                   saveIfNeeded();
                                   f.deleteFile();
-                                  loadEdit (f.withFileExtension (".tracktionedit"), false);
-                                  addTrack (true);
-                                  addTrack (false);
+                                  if (templateFile.existsAsFile())
+                                  {
+                                      templateFile.copyFileTo (f);
+                                      loadEdit (f, false);
+                                      return;
+                                  }
+                                  loadEdit (f, demo);
+                                  if (! demo)
+                                  {
+                                      addTrack (true);
+                                      addTrack (false);
+                                  }
                               });
+    }
+
+    void collectAll()
+    {
+        saveIfNeeded();
+        auto r = Sharing::collectAll (*edit);
+        AlertWindow::showMessageBoxAsync (r.missing.isEmpty() ? MessageBoxIconType::InfoIcon : MessageBoxIconType::WarningIcon,
+                                          "Collect all and save", r.summary());
+    }
+
+    void saveAsTemplate()
+    {
+        saveIfNeeded();
+        Presets::askForName ("Save as template", editFile.getFileNameWithoutExtension(), [this] (const String& name)
+        {
+            const bool ok = Sharing::saveTemplate (*edit, name);
+            AlertWindow::showMessageBoxAsync (ok ? MessageBoxIconType::InfoIcon : MessageBoxIconType::WarningIcon, "Template",
+                                              ok ? "Saved \"" + name + "\". Choose it from File > New Project." : String ("Couldn't save the template."));
+        });
     }
 
     void openProject()

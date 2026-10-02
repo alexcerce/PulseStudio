@@ -11,7 +11,7 @@ public:
     {
         std::function<void()> newProject, openProject, saveProject, saveProjectAs, exportWav, exportSelection, exportMidi,
                               audioSettings, pluginManager, addInstrumentTrack, addAudioTrack,
-                              toggleBrowser, toggleSession;
+                              toggleBrowser, toggleSession, collectAll, saveTemplate;
         std::function<bool()> isBrowserShown, isSessionShown;
         std::function<String()> controllerStatus;
         std::function<void()> toggleLink;
@@ -105,6 +105,8 @@ public:
             add ("New Project...", {}, actions.newProject);
             add ("Open Project...", {}, actions.openProject);
             add ("Save", "Ctrl+S", actions.saveProject);
+            add ("Collect all and save", {}, actions.collectAll);
+            add ("Save as template...", {}, actions.saveTemplate);
             m.addSeparator();
             add ("Export audio / stems...", "Ctrl+Shift+R", actions.exportWav);
             add ("Export selection...", "Ctrl+Shift+E", actions.exportSelection);

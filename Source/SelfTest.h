@@ -21,6 +21,7 @@
 #include "CrashGuard.h"
 #include "Timeline.h"
 #include "Scales.h"
+#include "Sharing.h"
 
 /** "Pulse Studio.exe --selftest report.txt"
     Builds a scratch project in the temp folder, exercises the editing / routing / device
@@ -892,6 +893,65 @@ namespace SelfTest
             for (auto& [t, m] : eAll) if (m.isNoteOn()) onTimes.push_back (t);
             rep.check (onTimes.size() == 4 && std::abs (onTimes[1] - 0.25) < 0.011 && std::abs (onTimes[3] - 0.75) < 0.011,
                        "MIDI effect: Note Echo (3 repeats, 1/8)", String ((int) onTimes.size()) + " notes");
+        }
+
+        // --- sharing: collect all, templates -----------------------------------------------------------
+        {
+            auto outside = File::getSpecialLocation (File::tempDirectory).getChildFile ("PulseStudioSelfTestOutside");
+            outside.deleteRecursively();
+            outside.createDirectory();
+            auto extClip = writeTestWav (outside.getChildFile ("ext clip.wav"), 0.5, 200.0);
+            auto extSimpler = writeTestWav (outside.getChildFile ("ext simpler.wav"), 0.3, 300.0);
+            auto extPad = writeTestWav (outside.getChildFile ("ext pad.wav"), 0.2, 80.0, 44100.0, true);
+
+            auto shareTrack = ClipImport::createContentTrack (*edit, "Share", false);
+            te::Clip::Ptr extC = ClipImport::importFile (*shareTrack, *edit, extClip, te::TimePosition());
+            auto simp = edit->getPluginCache().createNewPlugin (pulse::Simpler::xmlTypeName, {});
+            shareTrack->pluginList.insertPlugin (simp, 0, nullptr);
+            if (auto sp = dynamic_cast<pulse::Simpler*> (simp.get())) sp->setSampleFile (extSimpler);
+            auto shareRack = DrumRack::create (*edit);
+            auto rackTrack = ClipImport::createContentTrack (*edit, "ShareDrums", false);
+            rackTrack->pluginList.insertPlugin (shareRack, 0, nullptr);
+            if (auto rt = DrumRack::rackOf (shareRack.get())) DrumRack::loadSample (*rt, 0, extPad);
+
+            auto result = Sharing::collectAll (*edit);
+            auto folder = Sharing::samplesFolder (*edit);
+            auto* w = dynamic_cast<te::WaveAudioClip*> (extC.get());
+            auto* sp = dynamic_cast<pulse::Simpler*> (simp.get());
+            te::SamplerPlugin* padSampler = nullptr;
+            if (auto rt = DrumRack::rackOf (shareRack.get()))
+                for (auto pl : rt->getPlugins()) if (auto smp = dynamic_cast<te::SamplerPlugin*> (pl)) { padSampler = smp; break; }
+            const bool clipInside = w != nullptr && w->getOriginalFile().isAChildOf (folder);
+            const bool simplerInside = sp != nullptr && File (sp->state[pulse::Simpler::sampleFileID].toString()).isAChildOf (folder);
+            const bool padInside = padSampler != nullptr && padSampler->getNumSounds() > 0 && padSampler->getSoundFile (0).getFile().isAChildOf (folder);
+            rep.check (clipInside && simplerInside && padInside && result.copied >= 3,
+                       "Collect all and save (clip, Simpler, Drum Rack pad)", String (result.copied) + " copied, " + String (result.missing.size()) + " missing; clip " + String ((int) clipInside) + " simpler " + String ((int) simplerInside) + " pad " + String ((int) padInside) + (padSampler != nullptr && padSampler->getNumSounds() > 0 ? " (" + padSampler->getSoundFile (0).getFile().getFullPathName() + ")" : String()));
+
+            const bool saved = Sharing::saveTemplate (*edit, "_selftest");
+            auto templateFile = Sharing::templatesFolder().getChildFile ("_selftest.tracktionedit");
+            bool reopened = false;
+            String detail;
+            if (saved)
+            {
+                auto elsewhere = outside.getChildFile ("From template.tracktionedit");
+                templateFile.copyFileTo (elsewhere);
+                auto copy = te::loadEditFromFile (engine, elsewhere);
+                int tracks = 0; bool sourceOk = false;
+                for (auto t : te::getAudioTracks (*copy))
+                {
+                    ++tracks;
+                    if (t->getName() == "Share")
+                        for (auto c : t->getClips())
+                            if (auto cw = dynamic_cast<te::WaveAudioClip*> (c)) sourceOk = cw->getOriginalFile().existsAsFile();
+                }
+                reopened = tracks == te::getAudioTracks (*edit).size() && sourceOk;
+                detail = String (tracks) + " tracks, sample " + (sourceOk ? "found" : "missing");
+                copy = nullptr;
+            }
+            rep.check (saved && reopened, "Save as template and open it elsewhere", detail);
+            templateFile.deleteFile();
+            extC = nullptr;
+            outside.deleteRecursively();
         }
 
         // --- undo -------------------------------------------------------------------------------
