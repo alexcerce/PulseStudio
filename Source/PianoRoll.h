@@ -28,6 +28,17 @@ public:
         };
         addAndMakeVisible (gridBox);
 
+        paintBtn.setClickingTogglesState (true);
+        paintBtn.setTooltip ("Draw tool (B): drag across the grid to paint a note on every step");
+        paintBtn.setColour (TextButton::buttonOnColourId, Colour (0xff2b5b8a));
+        addAndMakeVisible (paintBtn);
+        ghostBtn.setClickingTogglesState (true);
+        ghostBtn.setToggleState (true, dontSendNotification);
+        ghostBtn.setTooltip ("Show other clips' notes faintly (ghost notes) to write parts that fit together");
+        ghostBtn.setColour (TextButton::buttonOnColourId, Colour (0xff2b5b8a));
+        ghostBtn.onClick = [this] { repaint(); };
+        addAndMakeVisible (ghostBtn);
+
         quantizeBtn.onClick = [this] { quantize(); };
         addAndMakeVisible (quantizeBtn);
         toolsBtn.setTooltip ("MIDI tools for the selected notes (or all notes): humanize, legato, strum, fit to scale, velocity...");
@@ -76,6 +87,9 @@ public:
 
     /** Grid as in the grid box: 1 = 1/4, 2 = 1/8, 3 = 1/16, 4 = 1/32, 5 = 1/8T, 6 = 1/16T, 7 = off. */
     void setGrid (int id) { gridBox.setSelectedId (id, sendNotificationSync); }
+
+    void setDrawTool (bool on) { paintBtn.setToggleState (on, dontSendNotification); }
+    int numGhostNotes() const   { return (int) ghostNotes().size(); }
 
     /** Where a beat (from the clip start) and pitch are drawn: the middle of the note row. */
     juce::Point<float> positionOf (double beat, int pitch) const { return { beatToX (beat), pitchToY (pitch) + rowH * 0.5f }; }
@@ -135,6 +149,10 @@ public:
         quantizeBtn.setBounds (r.removeFromLeft (80));
         r.removeFromLeft (4);
         toolsBtn.setBounds (r.removeFromLeft (64));
+        r.removeFromLeft (4);
+        paintBtn.setBounds (r.removeFromLeft (54));
+        r.removeFromLeft (4);
+        ghostBtn.setBounds (r.removeFromLeft (60));
         r.removeFromLeft (6);
         laneBox.setBounds (r.removeFromLeft (140));
         r.removeFromLeft (10);
@@ -203,6 +221,20 @@ public:
             g.setColour (Theme::orange);
             g.drawVerticalLine ((int) ex, (float) top, (float) getHeight());
 
+            if (ghostBtn.getToggleState())
+                for (auto& gn : ghostNotes())
+                {
+                    auto x = beatToX (gn.start);
+                    auto w = jmax (3.0f, (float) ((gn.end - gn.start) * ppb) - 1.0f);
+                    auto y = pitchToY (gn.pitch);
+                    if (x > getWidth() || x + w < keyW || y > top + gh || y + rowH < top) continue;
+                    auto nr = Rectangle<float> (x, y + 1.0f, w, rowH - 2.0f);
+                    g.setColour (gn.colour.withAlpha (0.13f));
+                    g.fillRoundedRectangle (nr, 2.0f);
+                    g.setColour (gn.colour.withAlpha (0.35f));
+                    g.drawRoundedRectangle (nr, 2.0f, 0.8f);
+                }
+
             for (auto n : clip->getSequence().getNotes())
             {
                 auto x = beatToX (n->getStartBeat().inBeats() - contentStart());
@@ -219,6 +251,11 @@ public:
                 g.fillRect (nr.withHeight (jmin (2.0f, nr.getHeight() * 0.3f)).reduced (1.0f, 0.0f));
                 g.setColour (sel ? Colours::white : Colours::black.withAlpha (0.55f));
                 g.drawRoundedRectangle (nr, 2.0f, sel ? 1.5f : 1.0f);
+                if (w > 8.0f && rowH >= 8.0f)   // velocity: a bar along the bottom of the note
+                {
+                    g.setColour (Colour::fromHSV (0.33f - 0.33f * vel, 0.8f, 1.0f, 0.9f));
+                    g.fillRect (Rectangle<float> (nr.getX() + 1.5f, nr.getBottom() - 2.5f, (w - 3.0f) * vel, 1.5f));
+                }
                 if (w > 30.0f && rowH >= 11.0f)
                 {
                     g.setColour (TrackColours::textOn (body).withAlpha (0.85f));
@@ -389,6 +426,19 @@ public:
             }
             anchor = n;
             mode = edgeAt (*n, x);
+            if (mode == Mode::move && e.mods.isAltDown())   // Alt-drag: copies of the selection move, the originals stay
+            {
+                Array<te::MidiNote*> copies;
+                te::MidiNote* anchorCopy = nullptr;
+                for (auto* sn : selected)
+                {
+                    auto* c = seq.addNote (sn->getNoteNumber(), sn->getStartBeat(), sn->getLengthBeats(), sn->getVelocity(), sn->getColour(), &um());
+                    copies.add (c);
+                    if (sn == n) anchorCopy = c;
+                }
+                selected = copies;
+                anchor = anchorCopy != nullptr ? anchorCopy : copies.getFirst();
+            }
             captureOriginals();
             if (mode == Mode::move) preview (n->getNoteNumber(), n->getVelocity());
             repaint();
@@ -411,7 +461,8 @@ public:
         selected.clear();
         selected.add (note);
         anchor = note;
-        mode = Mode::draw;
+        mode = paintBtn.getToggleState() ? Mode::paint : Mode::draw;
+        paintPitch = pitch;
         captureOriginals();
         preview (pitch, velocity);
         repaint();
@@ -479,6 +530,22 @@ public:
 
                 if (anchor->getNoteNumber() != prevPitch)
                     preview (anchor->getNoteNumber(), anchor->getVelocity());
+                break;
+            }
+
+            case Mode::paint:   // draw tool: a note on every grid step the mouse crosses (at the mouse's pitch)
+            {
+                const double step = snap > 0 ? snap : 0.25;
+                const double beat = jmax (0.0, std::floor (xToBeat (x) / step + 1.0e-9) * step);
+                const int pitch = jlimit (0, 127, yToPitch (y));
+                bool exists = false;
+                for (auto n : seq.getNotes())
+                    if (n->getNoteNumber() == pitch && std::abs (n->getStartBeat().inBeats() - contentStart() - beat) < 1.0e-6) { exists = true; break; }
+                if (! exists && beat < clipLengthBeats())
+                {
+                    selected.add (seq.addNote (pitch, te::BeatPosition::fromBeats (beat + contentStart()), te::BeatDuration::fromBeats (step), velocity, 0, &um()));
+                    if (pitch != paintPitch) { preview (pitch, velocity); paintPitch = pitch; }
+                }
                 break;
             }
 
@@ -604,6 +671,10 @@ public:
         {
             quantize();
         }
+        else if (k == KeyPress ('b'))
+        {
+            paintBtn.setToggleState (! paintBtn.getToggleState(), dontSendNotification);
+        }
         else
         {
             return false;
@@ -614,7 +685,7 @@ public:
     }
 
 private:
-    enum class Mode { none, key, move, resize, rubber, erase, velocity, controller, draw, resizeStart };
+    enum class Mode { none, key, move, resize, rubber, erase, velocity, controller, draw, resizeStart, paint };
     struct Orig { double start, len; int pitch; };
 
     //==============================================================================
@@ -912,6 +983,34 @@ private:
         return nullptr;
     }
 
+    struct GhostNote { double start, end; int pitch; Colour colour; };
+
+    /** Notes of other MIDI clips that overlap this clip in time (in this clip's beats). */
+    std::vector<GhostNote> ghostNotes() const
+    {
+        std::vector<GhostNote> out;
+        if (clip == nullptr) return out;
+        const double s0 = clip->getStartBeat().inBeats(), cs = contentStart(), len = clipLengthBeats();
+        for (auto t : te::getAudioTracks (clip->edit))
+            for (auto c : t->getClips())
+                if (auto mc = dynamic_cast<te::MidiClip*> (c); mc != nullptr && mc != clip.get())
+                {
+                    const double o0 = mc->getStartBeat().inBeats(), o1 = mc->getEndBeat().inBeats();
+                    if (o1 <= s0 || o0 >= s0 + len) continue;
+                    const double ocs = mc->getContentBeatAtTime (mc->getPosition().getStart()).inBeats();
+                    for (auto n : mc->getSequence().getNotes())
+                    {
+                        const double eb = o0 + n->getStartBeat().inBeats() - ocs;   // edit beat
+                        const double ee = eb + n->getLengthBeats().inBeats();
+                        if (ee <= o0 || eb >= o1) continue;
+                        out.push_back ({ eb - s0, jmin (ee, o1) - s0, n->getNoteNumber(), t->getColour() });
+                    }
+                    if (out.size() > 4000) return out;
+                }
+        juce::ignoreUnused (cs);
+        return out;
+    }
+
     void captureOriginals()
     {
         originals.clear();
@@ -1041,6 +1140,7 @@ private:
     std::optional<Rectangle<float>> rubber;
     Mode mode = Mode::none;
     double ppb = 80.0, scrollX = 0.0, snap = 0.25, noteLen = 0.25;
+    int paintPitch = -1;
     float scrollY = 0.0f;
     int velocity = 100, pressedKey = -1;
 
@@ -1050,6 +1150,6 @@ private:
     mutable std::vector<int> rows;
     mutable std::array<int, 128> rowOf {};
     mutable String rowsKey;
-    TextButton quantizeBtn { "Quantize" }, toolsBtn { "Tools" };
+    TextButton quantizeBtn { "Quantize" }, toolsBtn { "Tools" }, paintBtn { "Draw" }, ghostBtn { "Ghosts" };
     Label title, hint;
 };

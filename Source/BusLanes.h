@@ -62,6 +62,22 @@ namespace BusLanes
                 soloBtn.onClick = [this] { track->setSolo (! track->isSolo (false)); };
             }
 
+            volume.setSliderStyle (Slider::LinearHorizontal);
+            volume.setTextBoxStyle (Slider::NoTextBox, false, 0, 0);
+            volume.setPopupDisplayEnabled (true, true, nullptr);
+            volume.setRange (-60.0, 6.0, 0.1);
+            volume.setSkewFactorFromMidPoint (-12.0);
+            volume.setDoubleClickReturnValue (true, 0.0);
+            volume.setTextValueSuffix (" dB");
+            volume.setColour (Slider::trackColourId, colour().withAlpha (0.45f));
+            volume.setColour (Slider::backgroundColourId, Colour (0xff101216));
+            volume.setColour (Slider::textBoxTextColourId, Theme::text);
+            volume.setTooltip ("Volume (double-click: 0 dB)");
+            volume.onDragStart = [this] { evs.edit.getUndoManager().beginNewTransaction ("Volume"); };
+            volume.onValueChange = [this] { if (auto vp = volumePlugin()) vp->setVolumeDb ((float) volume.getValue()); };
+            if (auto vp = volumePlugin()) volume.setValue (vp->getVolumeDb(), dontSendNotification);
+            addAndMakeVisible (volume);
+
             te::LevelMeterPlugin* lm = track != nullptr ? track->getLevelMeterPlugin()
                                                         : evs.edit.getMasterPluginList().findFirstPluginOfType<te::LevelMeterPlugin>();
             if (lm != nullptr)
@@ -109,7 +125,8 @@ namespace BusLanes
         void resized() override
         {
             auto r = getLocalBounds().withWidth (headerWidth).reduced (8, 3).withTrimmedLeft (2);
-            if (meter != nullptr) { meter->setBounds (r.removeFromRight (44).reduced (0, 6)); r.removeFromRight (4); }
+            if (meter != nullptr) { meter->setBounds (r.removeFromRight (30).reduced (0, 6)); r.removeFromRight (4); }
+            volume.setBounds (r.removeFromRight (56).reduced (0, 2)); r.removeFromRight (4);
             addBtn.setBounds (r.removeFromRight (22)); r.removeFromRight (3);
             if (track != nullptr)
             {
@@ -220,6 +237,11 @@ namespace BusLanes
 
         te::PluginList& pluginList() { return track != nullptr ? track->pluginList : evs.edit.getMasterPluginList(); }
 
+        te::VolumeAndPanPlugin* volumePlugin() const
+        {
+            return track != nullptr ? track->getVolumePlugin() : evs.edit.getMasterVolumePlugin().get();
+        }
+
         /** Master devices go before the master meter so it shows their result. */
         te::Plugin* masterEnd() { return evs.edit.getMasterPluginList().findFirstPluginOfType<te::LevelMeterPlugin>(); }
 
@@ -310,6 +332,8 @@ namespace BusLanes
                 soloBtn.setToggleState (track->isSolo (false), dontSendNotification);
             }
             if (signature() != lastSig) rebuildChips();
+            if (auto vp = volumePlugin(); vp != nullptr && ! volume.isMouseButtonDown())
+                volume.setValue (vp->getVolumeDb(), dontSendNotification);
             const bool sel = isSelected();
             if (sel != wasSelected) { wasSelected = sel; repaint(); }
         }
@@ -319,6 +343,7 @@ namespace BusLanes
         te::Track::Ptr holder { track };
         const int headerWidth;
         Label name;
+        Slider volume { Slider::LinearHorizontal, Slider::NoTextBox };
         TextButton muteBtn { "M" }, soloBtn { "S" }, addBtn { "+" };
         std::unique_ptr<LevelMeter> meter;
         OwnedArray<Chip> chips;

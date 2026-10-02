@@ -2978,6 +2978,66 @@ namespace SelfTest
                          + ", echo " + String ((int) echo.size()));
         }
 
+        // --- v0.39: draw tool, Alt-drag copies, ghost notes, lane heights -----------------------------------
+        {
+            rep.step ("piano roll tools / lane heights");
+            PulseLookAndFeel laf;
+            LookAndFeel::setDefaultLookAndFeel (&laf);
+            {
+                EditViewState evs (*edit, sm);
+                auto t = ClipImport::createContentTrack (*edit, "Tools", true);
+                auto t2 = ClipImport::createContentTrack (*edit, "Other", true);
+                auto mc = dynamic_cast<te::MidiClip*> (t->insertNewClip (te::TrackItem::Type::midi, "n", { te::TimePosition(), EngineHelpers::beatToTime (*edit, 8.0) }, nullptr));
+                auto other = dynamic_cast<te::MidiClip*> (t2->insertNewClip (te::TrackItem::Type::midi, "o", { te::TimePosition(), EngineHelpers::beatToTime (*edit, 8.0) }, nullptr));
+                for (int i = 0; i < 4; ++i) other->getSequence().addNote (60 + i, te::BeatPosition::fromBeats (i), te::BeatDuration::fromBeats (1.0), 100, 0, nullptr);
+                PianoRoll pr (evs);
+                pr.setSize (1200, 700);
+                pr.setClip (mc);
+                auto src = Desktop::getInstance().getMainMouseSource();
+                auto send = [&] (int kind, juce::Point<float> down, juce::Point<float> pos, ModifierKeys extra)
+                {
+                    const auto now = Time::getCurrentTime();
+                    MouseEvent e (src, pos, kind == 2 ? extra : extra.withFlags (ModifierKeys::leftButtonModifier), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                  &pr, &pr, now, down, now, 1, kind == 1 && pos != down);
+                    if (kind == 0) pr.mouseDown (e); else if (kind == 1) pr.mouseDrag (e); else pr.mouseUp (e);
+                };
+                auto& seq = mc->getSequence();
+                pr.setGrid (3);   // 1/16
+                pr.setDrawTool (true);
+                // paint across one bar at C4: 16 notes
+                const auto a = pr.positionOf (0.01, 64), b = pr.positionOf (3.99, 64);
+                send (0, a, a, {});
+                for (int i = 1; i <= 40; ++i) send (1, a, a + (b - a) * (i / 40.0f), {});
+                send (2, a, b, {});
+                const int painted = seq.getNumNotes();
+                pr.setDrawTool (false);
+                // Alt-drag the first note up an octave: a copy moves, the original stays
+                auto first = seq.getNote (0);
+                const auto fp = pr.positionOf (first->getStartBeat().inBeats() + 0.1, first->getNoteNumber());
+                const auto to = pr.positionOf (first->getStartBeat().inBeats() + 0.1, first->getNoteNumber() + 12);
+                send (0, fp, fp, ModifierKeys (ModifierKeys::altModifier));
+                send (1, fp, to, ModifierKeys (ModifierKeys::altModifier));
+                send (2, fp, to, ModifierKeys (ModifierKeys::altModifier));
+                int at64 = 0, at76 = 0;
+                for (auto n : seq.getNotes()) { if (n->getNoteNumber() == 64) ++at64; if (n->getNoteNumber() == 76) ++at76; }
+                const int ghosts = pr.numGhostNotes();
+                rep.check (painted == 16 && at64 == 16 && at76 == 16 && ghosts >= 4, "Piano roll draw tool, Alt-drag copy and ghost notes",
+                           String (painted) + " painted, copy " + String (at76) + ", ghosts " + String (ghosts));
+                pr.setClip (nullptr);
+
+                // lane heights: per track, clamped
+                evs.setBaseHeight (*t, 40);
+                const int h40 = evs.laneHeight (*t);
+                evs.setBaseHeight (*t, 5000);
+                const int hMax = evs.laneHeight (*t);
+                rep.check (h40 == 40 && hMax == EditViewState::maxLaneHeight && evs.laneHeight (*t2) == evs.trackHeight, "Per-track lane heights",
+                           String (h40) + " / " + String (hMax));
+                edit->deleteTrack (t);
+                edit->deleteTrack (t2);
+            }
+            LookAndFeel::setDefaultLookAndFeel (nullptr);
+        }
+
         // --- sharing: project zip, crash bundle, update check -----------------------------------------
         {
             rep.step ("sharing tools");

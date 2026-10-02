@@ -26,7 +26,7 @@ public:
         devicesBtn.setTooltip ("Show this channel's devices (double-click the strip does the same)");
         devicesBtn.onClick = [this] { if (evs.showDevices) evs.showDevices (track); };
         devicesBtn.setFlat (true);
-        if (track != nullptr) addAndMakeVisible (devicesBtn);
+        addAndMakeVisible (devicesBtn);   // the master's opens the master devices
         peakLbl.setJustificationType (Justification::centred);
         peakLbl.setFont (FontOptions (10.5f, Font::bold));
         peakLbl.setTooltip ("Highest peak (click to reset)");
@@ -222,7 +222,7 @@ public:
         fader.setBounds (area.withSizeKeepingCentre (26, area.getHeight()));
     }
 
-    void mouseDoubleClick (const MouseEvent&) override { if (track != nullptr && evs.showDevices) evs.showDevices (track); }
+    void mouseDoubleClick (const MouseEvent&) override { if (evs.showDevices) evs.showDevices (track); }
 
     void mouseDown (const MouseEvent& e) override
     {

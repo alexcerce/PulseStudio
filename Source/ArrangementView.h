@@ -81,8 +81,9 @@ public:
         g.setColour (col.withAlpha (0.28f));
         g.fillRect (header.withTop (header.getBottom()).withHeight (4.0f));
         g.setColour (col.getPerceivedBrightness() > 0.55f ? Colours::black.withAlpha (0.85f) : Colours::white.withAlpha (0.92f));
-        g.setFont (FontOptions (12.5f));
-        g.drawText (clip->getName(), header.reduced (5.0f, 0.0f), Justification::centredLeft, true);
+        g.setFont (FontOptions (12.0f, Font::bold));
+        g.drawText (clip->getName(), header.reduced (6.0f, 0.0f), Justification::centredLeft, true);
+
 
         auto body = getLocalBounds().withTrimmedTop (17).reduced (0, 2);
 
@@ -251,8 +252,41 @@ public:
         updateFades();
     }
 
+    /** Edits the clip's name in place (double-click the name bar). */
+    void startRename()
+    {
+        auto* ed = new TextEditor();
+        renameEditor.reset (ed);
+        ed->setFont (FontOptions (12.5f));
+        ed->setText (clip->getName(), false);
+        ed->selectAll();
+        ed->setColour (TextEditor::backgroundColourId, Colour (0xff101216));
+        ed->setColour (TextEditor::outlineColourId, Theme::accent);
+        ed->setBounds (0, 0, jmax (120, jmin (getWidth(), 260)), 17);
+        auto finish = [this] (bool commit)
+        {
+            if (renameEditor == nullptr) return;
+            const auto n = renameEditor->getText().trim();
+            if (commit && n.isNotEmpty() && n != clip->getName())
+            {
+                evs.edit.getUndoManager().beginNewTransaction ("Rename clip");
+                clip->setName (n);
+            }
+            MessageManager::callAsync ([sp = SafePointer<Component> (this)] { if (auto* c = dynamic_cast<ClipComponent*> (sp.getComponent())) c->renameEditor.reset(); });
+        };
+        ed->onReturnKey = [finish] { finish (true); };
+        ed->onEscapeKey = [finish] { finish (false); };
+        ed->onFocusLost = [finish] { finish (true); };
+        addAndMakeVisible (ed);
+        ed->grabKeyboardFocus();
+    }
+
+    std::unique_ptr<TextEditor> renameEditor;
+
     void mouseDoubleClick (const MouseEvent& e) override
     {
+        if (e.position.y < 15.0f) { startRename(); return; }
+
         if (auto ac = dynamic_cast<te::AudioClipBase*> (clip.get()))
             if (ac->getWarpTime() && e.position.y >= (float) getHeight() - markerStripHeight)
             {
@@ -1208,6 +1242,7 @@ public:
 
         type.setFont (FontOptions (11.5f));
         type.setColour (Label::textColourId, Theme::muted);
+        type.setInterceptsMouseClicks (false, false);   // the header handles clicks on it (opens the instrument)
         type.setInterceptsMouseClicks (false, false);
         addAndMakeVisible (type);
 
@@ -1296,11 +1331,26 @@ public:
 
     void resized() override
     {
-        auto r = getLocalBounds().withTrimmedLeft (10 + depth() * indentPerLevel).reduced (4, 6);
+        const bool compact = getHeight() < 58;
+        auto r = getLocalBounds().withTrimmedLeft (10 + depth() * indentPerLevel).reduced (4, compact ? 3 : 6);
         if (meter != nullptr)
         {
             meter->setBounds (r.removeFromRight (8));
             r.removeFromRight (6);
+        }
+        for (auto* c : { (Component*) &type, (Component*) &armBtn, (Component*) &inBtn, (Component*) &autoBtn, (Component*) &volume })
+            c->setVisible (! compact);
+        if (compact)
+        {
+            auto top = r.removeFromTop (jmin (22, r.getHeight()));
+            numberArea = top.removeFromLeft (20).reduced (0, 1);
+            top.removeFromLeft (5);
+            soloBtn.setBounds (top.removeFromRight (22).reduced (0, 1));
+            top.removeFromRight (3);
+            muteBtn.setBounds (top.removeFromRight (22).reduced (0, 1));
+            top.removeFromRight (4);
+            name.setBounds (top);
+            return;
         }
         auto top = r.removeFromTop (20);
         numberArea = top.removeFromLeft (20).reduced (0, 1);
@@ -1317,9 +1367,40 @@ public:
         volume.setBounds (row.reduced (2, 0));
     }
 
+    bool onResizeEdge (int y) const { return y >= getHeight() - 5; }
+
+    te::Plugin* instrument() const
+    {
+        for (auto p : track->pluginList)
+            if (p->isSynth() || dynamic_cast<te::RackInstance*> (p) != nullptr) return p;
+        return nullptr;
+    }
+
+    bool overInstrumentLabel (juce::Point<int> p) const { return type.isVisible() && type.getBounds().contains (p) && instrument() != nullptr; }
+
+    void mouseMove (const MouseEvent& e) override
+    {
+        setMouseCursor (onResizeEdge (e.y) ? MouseCursor::UpDownResizeCursor
+                                           : overInstrumentLabel (e.getPosition()) ? MouseCursor::PointingHandCursor : MouseCursor::NormalCursor);
+        type.setColour (Label::textColourId, overInstrumentLabel (e.getPosition()) ? Theme::accent : Theme::muted);
+    }
+    void mouseExit (const MouseEvent&) override { type.setColour (Label::textColourId, Theme::muted); }
+
     void mouseDown (const MouseEvent& e) override
     {
         auto& sm = evs.selectionManager;
+        resizing = ! e.mods.isPopupMenu() && onResizeEdge (e.y);
+        if (resizing) { resizeStart = evs.baseHeight (*track); return; }
+        if (! e.mods.isPopupMenu() && overInstrumentLabel (e.getPosition()))   // click the instrument name: open it
+        {
+            sm.selectOnly (track.get());
+            if (auto inst = instrument())
+            {
+                if (dynamic_cast<te::RackInstance*> (inst) != nullptr) { if (evs.showDevices) evs.showDevices (track.get()); }
+                else if (evs.openDeviceEditor) evs.openDeviceEditor (*inst);
+            }
+            return;
+        }
 
         // click the colour strip or the number: colour palette (for every selected track)
         if (! e.mods.isPopupMenu() && (e.x < 10 + depth() * indentPerLevel || numberArea.contains (e.getPosition())))
@@ -1427,16 +1508,26 @@ public:
         }
     }
 
-    void mouseDoubleClick (const MouseEvent&) override { name.showEditor(); }
+    void mouseDoubleClick (const MouseEvent& e) override   // double-click the bottom edge: back to the default height
+    {
+        if (onResizeEdge (e.y)) { track->state.removeProperty (EditViewState::laneHeightID, nullptr); evs.heightsChanged.sendChangeMessage(); return; }
+        name.showEditor();
+    }
 
     // drag the header to reorder tracks
     void mouseDrag (const MouseEvent& e) override
     {
+        if (resizing)
+        {
+            evs.setBaseHeight (*track, resizeStart + e.getDistanceFromDragStartY());
+            return;
+        }
         if (dragStarted || e.mods.isPopupMenu() || e.getDistanceFromDragStart() < 8) return;
         dragStarted = true;
         DragDrop::start (*this, DragDrop::trackPrefix + track->itemID.toString(), track->getName(), track->getColour());
     }
-    void mouseUp (const MouseEvent&) override { dragStarted = false; }
+    void mouseUp (const MouseEvent&) override { dragStarted = false; resizing = false; }
+
 
     // devices dropped on the header go to the end of this track's chain
     bool isInterestedInDragSource (const SourceDetails& d) override
@@ -1473,6 +1564,8 @@ public:
     }
 
     te::AudioTrack* getTrack() const { return track.get(); }
+    bool resizing = false;
+    int resizeStart = 0;
 
     /** The palette, applied to every selected track (and their clips follow the track colour). */
     void showColours()
@@ -2304,6 +2397,7 @@ public:
         evs.edit.state.addListener (this);
         evs.viewChanged.addChangeListener (this);
         evs.layoutChanged.addChangeListener (this);
+        evs.heightsChanged.addChangeListener (this);
         evs.selectionManager.addChangeListener (this);
         markAndUpdate (updateTracks);
     }
@@ -2311,6 +2405,7 @@ public:
     ~ArrangementView() override
     {
         evs.layoutChanged.removeChangeListener (this);
+        evs.heightsChanged.removeChangeListener (this);
         evs.selectionManager.removeChangeListener (this);
         evs.viewChanged.removeChangeListener (this);
         evs.edit.state.removeListener (this);
@@ -2704,6 +2799,14 @@ private:
     {
         if (source == &evs.layoutChanged)
             return markAndUpdate (updateTracks);
+        if (source == &evs.heightsChanged)   // a lane was resized: just lay the rows out again
+        {
+            for (auto& r : rows)
+                if (auto* h = dynamic_cast<TrackHeader*> (r.header))
+                    r.height = evs.heightFor (*h->getTrack());
+            layoutContent();
+            return;
+        }
 
         pencilBtn.setToggleState (evs.drawMode, dontSendNotification);
 

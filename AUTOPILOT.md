@@ -124,3 +124,5 @@ when you start, touch it after each step, and delete it when you stop.
   devices, raw names), auto-named tracks follow their instrument. 183 checks pass.
 - 2026-10-02: v0.38.0 183 factory presets (FactoryPresetsMore.h, >= 4 per device incl. MIDI fx), DeviceViews.h (MIDI fx
   phrase preview via an offline copy, vocoder bands, Utility stereo field). 185 checks pass.
+- 2026-10-02: v0.39.0 piano roll draw tool / Alt-drag copy / ghost notes / velocity bars, per-track lane heights,
+  clip rename, audit fixes (master devices button, bus row volume, clickable instrument label). 187 checks pass.

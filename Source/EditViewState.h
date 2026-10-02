@@ -100,11 +100,24 @@ public:
         return n;
     }
 
-    int laneHeight (te::Track& t) const  { return trackHeight + takeRows (t) * takeRowHeight; }
+    static inline const Identifier laneHeightID { "pulseLaneHeight" };
+    static constexpr int minLaneHeight = 34, maxLaneHeight = 320;
+    /** A track's own height (drag the bottom edge of its header), or the default. */
+    int baseHeight (te::Track& t) const
+    {
+        const int h = (int) t.state.getProperty (laneHeightID, 0);
+        return h > 0 ? jlimit (minLaneHeight, maxLaneHeight, h) : trackHeight;
+    }
+    void setBaseHeight (te::Track& t, int h)
+    {
+        t.state.setProperty (laneHeightID, jlimit (minLaneHeight, maxLaneHeight, h), nullptr);
+        heightsChanged.sendChangeMessage();
+    }
+    int laneHeight (te::Track& t) const  { return baseHeight (t) + takeRows (t) * takeRowHeight; }
     int heightFor (te::Track& t) const   { return laneHeight (t) + (isAutomationVisible (t) ? automationHeight : 0); }
 
     /** Track rows changed height (automation shown/hidden or parameter changed). */
-    ChangeBroadcaster layoutChanged;
+    ChangeBroadcaster layoutChanged, heightsChanged;
 
     /** Pencil mode: drag in automation lanes to draw (snapped to the grid). */
     bool drawMode = false;
