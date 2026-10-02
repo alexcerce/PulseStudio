@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EditViewState.h"
+#include "Scales.h"
 
 /** Piano roll editor for a te::MidiClip. X positions are in the clip's content beats. */
 class PianoRoll : public Component,
@@ -31,6 +32,22 @@ public:
         laneBox.onChange = [this] { repaint(); };
         addAndMakeVisible (laneBox);
 
+        scaleBox.addItem ("No scale", 1);
+        scaleBox.addItemList (Scales::names(), 2);
+        scaleBox.setSelectedId (1, dontSendNotification);
+        scaleBox.setTooltip ("Highlight a scale (out-of-key rows are shaded)");
+        scaleBox.onChange = [this] { rowsKey.clear(); centreOnNotes(); };
+        rootBox.addItemList (Scales::rootNames(), 1);
+        rootBox.setSelectedId (1, dontSendNotification);
+        rootBox.setTooltip ("Scale root");
+        rootBox.onChange = [this] { rowsKey.clear(); centreOnNotes(); };
+        foldBtn.setClickingTogglesState (true);
+        foldBtn.setTooltip ("Fold: show only rows in the scale (or, with no scale, only rows that have notes)");
+        foldBtn.setColour (TextButton::buttonOnColourId, Colour (0xff2b5b8a));
+        foldBtn.onClick = [this] { rowsKey.clear(); centreOnNotes(); };
+        for (auto* c : std::initializer_list<Component*> { &scaleBox, &rootBox, &foldBtn })
+            addAndMakeVisible (c);
+
         title.setFont (FontOptions (13.0f, Font::bold));
         addAndMakeVisible (title);
         hint.setText ("Click: add | drag: move | edge: resize | right-click: delete | Shift-drag: select | arrows: move | Q: quantize",
@@ -58,17 +75,7 @@ public:
             clip->state.addListener (this);
             title.setText (clip->getTrack()->getName() + "  >  " + clip->getName(), dontSendNotification);
 
-            auto& notes = clip->getSequence().getNotes();
-            if (! notes.isEmpty())
-            {
-                int lo = 127, hi = 0;
-                for (auto n : notes) { lo = jmin (lo, n->getNoteNumber()); hi = jmax (hi, n->getNoteNumber()); }
-                scrollY = jmax (0.0f, (127.0f - (lo + hi) * 0.5f) * rowH - (float) gridHeight() * 0.5f);
-            }
-            else
-            {
-                scrollY = (127.0f - 66.0f) * rowH - (float) gridHeight() * 0.5f;
-            }
+            centreOnNotes();
         }
         else
         {
@@ -80,10 +87,30 @@ public:
 
     te::MidiClip* getClip() const { return clip.get(); }
 
+    /** Scrolls so the clip's notes (or middle C) sit in the middle of the view. */
+    void centreOnNotes()
+    {
+        int centre = 66;
+        if (clip != nullptr && ! clip->getSequence().getNotes().isEmpty())
+        {
+            int lo = 127, hi = 0;
+            for (auto n : clip->getSequence().getNotes()) { lo = jmin (lo, n->getNoteNumber()); hi = jmax (hi, n->getNoteNumber()); }
+            centre = (lo + hi) / 2;
+        }
+        scrollY = jmax (0.0f, (float) rowIndexOf (centre) * rowH - (float) gridHeight() * 0.5f);
+        repaint();
+    }
+
     void resized() override
     {
         auto r = getLocalBounds().removeFromTop (toolbarH).reduced (6, 4);
-        title.setBounds (r.removeFromLeft (300));
+        title.setBounds (r.removeFromLeft (200));
+        scaleBox.setBounds (r.removeFromLeft (130));
+        r.removeFromLeft (4);
+        rootBox.setBounds (r.removeFromLeft (56));
+        r.removeFromLeft (4);
+        foldBtn.setBounds (r.removeFromLeft (44));
+        r.removeFromLeft (8);
         gridBox.setBounds (r.removeFromLeft (80));
         r.removeFromLeft (6);
         quantizeBtn.setBounds (r.removeFromLeft (80));
@@ -100,17 +127,24 @@ public:
         auto area = getLocalBounds().withTrimmedTop (toolbarH);
         const int gh = gridHeight();
         const int top = area.getY();
-        scrollY = jlimit (0.0f, jmax (0.0f, 128.0f * rowH - (float) gh), scrollY);
+        updateRows();
+        scrollY = jlimit (0.0f, jmax (0.0f, (float) rows.size() * rowH - (float) gh), scrollY);
+        const int scale = scaleBox.getSelectedId() - 2, root = rootBox.getSelectedId() - 1;
 
         g.saveState();
         g.reduceClipRegion (area);
 
-        // note rows
-        for (int p = 127; p >= 0; --p)
+        // note rows (shaded by scale when one is chosen)
+        for (int p : rows)
         {
             auto y = pitchToY (p);
             if (y > top + gh || y + rowH < top) continue;
-            g.setColour (isBlack (p) ? Colour (0xff191b20) : Colour (0xff1e2126));
+            if (scale >= 0)
+            {
+                const bool in = Scales::contains (scale, root, p), isRoot = ((p - root) % 12 + 12) % 12 == 0;
+                g.setColour (isRoot ? Colour (0xff23303f) : in ? Colour (0xff22252b) : Colour (0xff141518));
+            }
+            else g.setColour (isBlack (p) ? Colour (0xff191b20) : Colour (0xff1e2126));
             g.fillRect ((float) keyW, y, (float) getWidth(), rowH);
             if (p % 12 == 0 || p % 12 == 5)
             {
@@ -207,7 +241,7 @@ public:
         }
 
         // keyboard
-        for (int p = 127; p >= 0; --p)
+        for (int p : rows)
         {
             auto y = pitchToY (p);
             if (y > top + gh || y + rowH < top) continue;
@@ -215,7 +249,7 @@ public:
             g.fillRect (0.0f, y, (float) keyW, rowH);
             g.setColour (Colours::black.withAlpha (0.3f));
             g.fillRect (0.0f, y + rowH - 1.0f, (float) keyW, 1.0f);
-            if (p % 12 == 0)
+            if (p % 12 == 0 || foldBtn.getToggleState())
             {
                 g.setColour (Colour (0xff495057));
                 g.setFont (FontOptions (9.0f));
@@ -383,7 +417,7 @@ public:
                 for (auto& [n, v] : originals)
                 {
                     n->setStartAndLength (te::BeatPosition::fromBeats (v.start + db + contentStart()), te::BeatDuration::fromBeats (v.len), &um());
-                    n->setNoteNumber (jlimit (0, 127, v.pitch + dp), &um());
+                    n->setNoteNumber (pitchByRows (v.pitch, dp), &um());
                 }
 
                 if (anchor->getNoteNumber() != prevPitch)
@@ -629,8 +663,62 @@ private:
 
     float beatToX (double b) const  { return (float) (keyW + (b - scrollX) * ppb); }
     double xToBeat (float x) const  { return scrollX + (x - keyW) / ppb; }
-    float pitchToY (int p) const    { return (float) toolbarH + (127.0f - (float) p) * rowH - scrollY; }
-    int yToPitch (float y) const    { return 127 - (int) std::floor ((y - (float) toolbarH + scrollY) / rowH); }
+    // Visible rows, top to bottom: all 128 pitches, or folded to the scale / used pitches.
+    void updateRows() const
+    {
+        const int scale = scaleBox.getSelectedId() - 2, root = rootBox.getSelectedId() - 1;
+        const bool fold = foldBtn.getToggleState();
+        String key; key << (int) fold << ":" << scale << ":" << root;
+        if (fold && clip != nullptr)
+            for (auto n : clip->getSequence().getNotes()) key << "," << n->getNoteNumber();
+        if (key == rowsKey && ! rows.empty()) return;
+        rowsKey = key;
+
+        std::set<int> used;
+        if (clip != nullptr)
+            for (auto n : clip->getSequence().getNotes()) used.insert (n->getNoteNumber());
+
+        rows.clear();
+        for (int p = 127; p >= 0; --p)
+        {
+            const bool keep = ! fold || used.count (p) > 0
+                              || (scale >= 0 ? Scales::contains (scale, root, p) : used.empty());
+            if (keep) rows.push_back (p);
+        }
+        if (rows.empty()) for (int p = 127; p >= 0; --p) rows.push_back (p);
+        rowOf.fill (-1);
+        for (size_t i = 0; i < rows.size(); ++i) rowOf[(size_t) rows[i]] = (int) i;
+    }
+
+    int rowIndexOf (int p) const
+    {
+        updateRows();
+        p = jlimit (0, 127, p);
+        if (rowOf[(size_t) p] >= 0) return rowOf[(size_t) p];
+        for (size_t i = 0; i < rows.size(); ++i) if (rows[i] <= p) return (int) i;   // nearest row below
+        return (int) rows.size() - 1;
+    }
+
+    /** Moves a pitch up/down by visible rows (so a folded roll stays in key). */
+    int pitchByRows (int pitch, int rowsUp) const
+    {
+        const int idx = jlimit (0, (int) rows.size() - 1, rowIndexOf (pitch) - rowsUp);
+        return rows[(size_t) idx];
+    }
+
+    float pitchToY (int p) const
+    {
+        updateRows();
+        const int idx = rowOf[(size_t) jlimit (0, 127, p)];
+        return idx < 0 ? -100000.0f : (float) toolbarH + (float) idx * rowH - scrollY;
+    }
+
+    int yToPitch (float y) const
+    {
+        updateRows();
+        const int idx = (int) std::floor ((y - (float) toolbarH + scrollY) / rowH);
+        return rows[(size_t) jlimit (0, (int) rows.size() - 1, idx)];
+    }
     double snapFloor (double b) const { return snap > 0 ? std::floor (b / snap + 1.0e-9) * snap : b; }
 
     te::AudioTrack* audioTrack() const { return clip != nullptr ? dynamic_cast<te::AudioTrack*> (clip->getTrack()) : nullptr; }
@@ -726,7 +814,11 @@ private:
     float scrollY = 0.0f;
     int velocity = 100, pressedKey = -1;
 
-    ComboBox gridBox, laneBox;
+    ComboBox gridBox, laneBox, scaleBox, rootBox;
+    TextButton foldBtn { "Fold" };
+    mutable std::vector<int> rows;
+    mutable std::array<int, 128> rowOf {};
+    mutable String rowsKey;
     TextButton quantizeBtn { "Quantize" };
     Label title, hint;
 };

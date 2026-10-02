@@ -20,6 +20,7 @@
 #include "Stems.h"
 #include "CrashGuard.h"
 #include "Timeline.h"
+#include "Scales.h"
 
 /** "Pulse Studio.exe --selftest report.txt"
     Builds a scratch project in the temp folder, exercises the editing / routing / device
@@ -321,7 +322,7 @@ namespace SelfTest
 
             for (auto& b : ClipImport::builtIns())
             {
-                if (b.synth) continue;
+                if (b.synth || b.midiFx) continue;
                 rep.step (String ("auditing ") + b.name);
                 auto p = edit->getPluginCache().createNewPlugin (b.type, {});
                 PluginMenu::insertPlugin (auditTrack, auditTrack->pluginList, p, nullptr);
@@ -829,6 +830,68 @@ namespace SelfTest
             }
             else rep.check (false, "Comp takes", "import failed");
             cc = nullptr;
+        }
+
+        // --- MIDI effects, scales ------------------------------------------------------------------
+        {
+            // feeds MIDI through an effect block by block; returns (time, message) of everything it outputs
+            auto runFx = [&] (te::Plugin& fx, std::vector<std::pair<double, MidiMessage>> input, double seconds)
+            {
+                const double sr = 48000.0;
+                const int block = 480;
+                fx.initialise ({ te::TimePosition(), sr, block });
+                AudioBuffer<float> audio (2, block);
+                std::vector<std::pair<double, MidiMessage>> output;
+                const te::MPESourceID src = te::createUniqueMPESourceID();
+                for (int start = 0; start < (int) (seconds * sr); start += block)
+                {
+                    audio.clear();
+                    te::MidiMessageArray midi;
+                    const double t0 = start / sr, t1 = (start + block) / sr;
+                    for (auto& [t, m] : input)
+                        if (t >= t0 && t < t1) midi.addMidiMessage (m, t - t0, src);
+                    te::PluginRenderContext fc (&audio, 0, block, &midi, 0.0,
+                                                { te::TimePosition::fromSeconds (t0), te::TimePosition::fromSeconds (t1) },
+                                                false, false, true, false);
+                    fx.applyToBuffer (fc);
+                    for (auto& m : midi) output.push_back ({ t0 + m.getTimeStamp(), m });
+                }
+                fx.deinitialise();
+                return output;
+            };
+            auto noteOns = [] (const std::vector<std::pair<double, MidiMessage>>& v)
+            {
+                std::vector<int> p;
+                for (auto& [t, m] : v) if (m.isNoteOn()) p.push_back (m.getNoteNumber());
+                return p;
+            };
+            auto make = [&] (const char* type) { return edit->getPluginCache().createNewPlugin (type, {}); };
+
+            auto chord = make (pulse::ChordFx::xmlTypeName);
+            auto cOut = noteOns (runFx (*chord, { { 0.0, MidiMessage::noteOn (1, 60, (uint8) 100) }, { 0.5, MidiMessage::noteOff (1, 60) } }, 1.0));
+            std::sort (cOut.begin(), cOut.end());
+            rep.check (cOut == std::vector<int> { 60, 64, 67 }, "MIDI effect: Chord (+4, +7)");
+
+            auto scale = make (pulse::ScaleFx::xmlTypeName);
+            auto sOut = noteOns (runFx (*scale, { { 0.0, MidiMessage::noteOn (1, 61, (uint8) 100) }, { 0.1, MidiMessage::noteOn (1, 66, (uint8) 100) } }, 0.5));
+            rep.check (sOut == std::vector<int> { 60, 65 } && Scales::contains (1, 9, 72) && ! Scales::contains (0, 0, 61),
+                       "MIDI effect: Scale (C major snaps C# -> C, F# -> F)");
+
+            auto arp = make (pulse::Arpeggiator::xmlTypeName);   // 1/16 at 120 BPM = 0.125 s
+            auto aOut = noteOns (runFx (*arp, { { 0.0, MidiMessage::noteOn (1, 64, (uint8) 100) }, { 0.0, MidiMessage::noteOn (1, 60, (uint8) 100) },
+                                                { 0.0, MidiMessage::noteOn (1, 67, (uint8) 100) }, { 0.99, MidiMessage::noteOff (1, 60) },
+                                                { 0.99, MidiMessage::noteOff (1, 64) }, { 0.99, MidiMessage::noteOff (1, 67) } }, 1.5));
+            String arpText;
+            for (auto n : aOut) arpText << n << " ";
+            rep.check (aOut.size() == 8 && aOut[0] == 60 && aOut[1] == 64 && aOut[2] == 67 && aOut[3] == 60,
+                       "MIDI effect: Arpeggiator (up, 1/16)", arpText.trim());
+
+            auto echo = make (pulse::NoteEcho::xmlTypeName);   // 1/8 at 120 BPM = 0.25 s, 3 repeats
+            auto eAll = runFx (*echo, { { 0.0, MidiMessage::noteOn (1, 72, (uint8) 100) }, { 0.1, MidiMessage::noteOff (1, 72) } }, 1.5);
+            std::vector<double> onTimes;
+            for (auto& [t, m] : eAll) if (m.isNoteOn()) onTimes.push_back (t);
+            rep.check (onTimes.size() == 4 && std::abs (onTimes[1] - 0.25) < 0.011 && std::abs (onTimes[3] - 0.75) < 0.011,
+                       "MIDI effect: Note Echo (3 repeats, 1/8)", String ((int) onTimes.size()) + " notes");
         }
 
         // --- undo -------------------------------------------------------------------------------

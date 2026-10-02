@@ -4,7 +4,7 @@ A native Windows DAW built with C++, [JUCE](https://juce.com) and [Tracktion Eng
 
 ## Install
 
-Run `dist/PulseStudio-0.10.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
+Run `dist/PulseStudio-0.11.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
 
 ## Build
 
@@ -109,6 +109,13 @@ Plug it in and it connects automatically (hot-plug supported). The Push's area i
 - **MIDI Learn:** right-click any knob, fader or pan → *MIDI Learn...*, then move a control on your hardware (Esc cancels). Mappings are saved in the project; an orange dot marks mapped knobs.
 - The selected track automatically receives live input from every connected MIDI controller.
 - **Piano roll** controller lanes: velocity, pitch bend, mod wheel, volume, pan, expression and sustain.
+- **Scales in the piano roll:** pick a scale and root to shade out-of-key rows (the root rows are tinted). **Fold** shows only in-key rows, or only the rows with notes when no scale is chosen. Dragging notes up or down then stays in key.
+- **MIDI effects** (*+ Add device → MIDI Effects*, or the browser) sit in front of the instrument:
+  - **Arpeggiator:** up, down, up/down, as played, random or chord. Rate is 1/4-1/32 or triplets, over 1-4 octaves, with gate and velocity. It locks to the song grid while playing.
+  - **Chord:** up to four added intervals.
+  - **Scale:** snaps everything to a key, with transpose.
+  - **Note Echo:** tempo-synced MIDI echoes with velocity feedback and a pitch step.
+- **MPE:** the Wavetable synth responds per note to pitch bend (Bend Range up to 48 semitones), pressure (cutoff and level) and slide/CC74 (wavetable position). It also takes poly aftertouch from Push 2 pads.
 
 ### Instruments and effects
 Pulse's own devices have cards with labelled sections and a live display. Every knob can be automated, MIDI-learned and mapped to a macro. Knobs follow the parameter's natural scale (for example, 1 kHz sits at the middle of a frequency knob).
@@ -194,7 +201,7 @@ Pulse's own devices have cards with labelled sections and a live display. Every 
 ## Command line
 
 - `--render out.wav` renders the last project offline and exits.
-- `--selftest report.txt` builds a scratch project and runs 89 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--selftest report.txt` builds a scratch project and runs 93 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
 - `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
 
 ## Code layout
@@ -218,6 +225,7 @@ All app code is header-only in `Source/` and compiled through `Main.cpp`.
 | `PianoRoll.h` | MIDI editor and controller lanes |
 | `DeviceChain.h` | Device rack: device cards, macros, Drum Rack editor, presets |
 | `DrumRack.h`, `Presets.h`, `Macros.h`, `MidiLearn.h` | Sound design and controller features |
+| `MidiFx.h`, `Scales.h` | MIDI effects (Arpeggiator, Chord, Scale, Note Echo), shared scales |
 | `Timeline.h` | Markers, tempo / time signature maths, crossfades, comping |
 | `EditingOps.h` | Clipboard, split, time edits, bounce/flatten/freeze, grouping |
 | `Workflow.h` | Keyboard nudging, clip looping, warp markers, MIDI export, track presets, groove |

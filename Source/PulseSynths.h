@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PulseDevices.h"
+#include "MidiFx.h"
 
 /** Pulse's instruments: a wavetable synth and a Simpler-style sampler. */
 namespace pulse
@@ -249,7 +250,7 @@ namespace pulse
     public:
         enum { pSet1, pPos1, pSet2, pPos2, pSemi2, pFine2, pMix, pVoices, pDetune, pSub,
                pFilterType, pCutoff, pReso, pFilterEnv, pFA, pFD, pFS, pFR, pA, pD, pS, pR,
-               pLfoRate, pLfoPos, pLfoCut, pGlide, pLevel };
+               pLfoRate, pLfoPos, pLfoCut, pGlide, pLevel, pBendRange, pPressure, pSlide };
         static inline const char* xmlTypeName = "pulseWavetable";
         static const char* getPluginName() { return "Wavetable"; }
         static inline const StringArray filterNames { "Low pass 12", "Low pass 24", "Band pass", "High pass" };
@@ -284,6 +285,10 @@ namespace pulse
             add ("lfocut", "LFO > Cutoff", { 0.0f, 1.0f }, 0.0f, fmt::pct);
             add ("glide", "Glide", skewed (0.0f, 1000.0f, 100.0f), 0.0f, fmt::ms);
             add ("level", "Level", { -36.0f, 6.0f }, -6.0f, fmt::db);
+            // MPE / expression: per-note bend (each note on its own channel), pressure and slide (CC74)
+            add ("bendrange", "Bend Range", { 1.0f, 48.0f, 1.0f }, 2.0f, fmt::st);
+            add ("pressure", "Pressure", { 0.0f, 1.0f }, 0.5f, fmt::pct);
+            add ("slide", "Slide", { 0.0f, 1.0f }, 0.5f, fmt::pct);
 
             WavetableBank::get();   // build the tables now rather than on the audio thread
             for (int i = 0; i < 16; ++i)
@@ -302,7 +307,8 @@ namespace pulse
                      { "Unison / Sub", { pMix, pVoices, pDetune, pSub } },
                      { "Filter", { pFilterType, pCutoff, pReso, pFilterEnv } },
                      { "Filter env", { pFA, pFD, pFS, pFR } }, { "Amp env", { pA, pD, pS, pR } },
-                     { "LFO", { pLfoRate, pLfoPos, pLfoCut, pGlide } }, { "Out", { pLevel } } };
+                     { "LFO", { pLfoRate, pLfoPos, pLfoCut, pGlide } }, { "Expression (MPE)", { pBendRange, pPressure, pSlide } },
+                     { "Out", { pLevel } } };
         }
 
     private:
@@ -325,6 +331,8 @@ namespace pulse
                     for (auto& p : oscPhases) p = r.nextDouble() * WavetableBank::tableSize;
                 subPhase = 0.0;
                 lfoPhase = 0.0;
+                pressure = 0.0f;
+                slide = 0.5f;
                 filter[0].reset(); filter[1].reset();
                 amp.setSampleRate (getSampleRate());
                 fenv.setSampleRate (getSampleRate());
@@ -338,8 +346,10 @@ namespace pulse
                 else              { clearCurrentNote(); amp.reset(); }
             }
 
-            void pitchWheelMoved (int v) override   { bend = (float) (v - 8192) / 8192.0f * 2.0f; }
-            void controllerMoved (int, int) override {}
+            void pitchWheelMoved (int v) override         { bend = (float) (v - 8192) / 8192.0f * o.get (pBendRange); }
+            void controllerMoved (int cc, int v) override  { if (cc == 74) slide = (float) v / 127.0f; }
+            void channelPressureChanged (int v) override   { pressure = (float) v / 127.0f; }
+            void aftertouchChanged (int v) override        { pressure = (float) v / 127.0f; }
 
             void renderNextBlock (AudioBuffer<float>& out, int start, int num) override
             {
@@ -347,12 +357,14 @@ namespace pulse
                     return;
 
                 const double sr = getSampleRate();
+                const float pressureAmt = o.get (pPressure), slideAmt = o.get (pSlide);
                 auto& bank = WavetableBank::get();
                 amp.setParameters (adsrFrom (o.get (pA), o.get (pD), o.get (pS), o.get (pR)));
                 fenv.setParameters (adsrFrom (o.get (pFA), o.get (pFD), o.get (pFS), o.get (pFR)));
 
                 const int set[2] = { o.getInt (pSet1), o.getInt (pSet2) };
-                const float basePos[2] = { o.get (pPos1), o.get (pPos2) };
+                const float slideOffset = (slide - 0.5f) * 2.0f * slideAmt;
+                const float basePos[2] = { jlimit (0.0f, 1.0f, o.get (pPos1) + slideOffset), jlimit (0.0f, 1.0f, o.get (pPos2) + slideOffset) };
                 const float oscGain[2] = { 1.0f - o.get (pMix), o.get (pMix) };
                 const double osc2Ratio = std::pow (2.0, (o.get (pSemi2) + o.get (pFine2) / 100.0) / 12.0);
                 const int voices = jlimit (1, 7, o.getInt (pVoices));
@@ -360,7 +372,7 @@ namespace pulse
                 const int ftype = o.getInt (pFilterType);
                 const float cutoff = o.get (pCutoff), reso = o.get (pReso), fenvAmt = o.get (pFilterEnv);
                 const float lfoRate = o.get (pLfoRate), lfoPos = o.get (pLfoPos), lfoCut = o.get (pLfoCut);
-                const float level = Decibels::decibelsToGain (o.get (pLevel)) * (0.3f + 0.7f * velocity);
+                const float level = Decibels::decibelsToGain (o.get (pLevel)) * (0.3f + 0.7f * velocity) * (1.0f + pressure * pressureAmt * 0.6f);
                 const float glideMs = o.get (pGlide);
                 const float uniGain = 1.0f / std::sqrt ((float) voices);
                 const int mode = ftype == 2 ? 1 : ftype == 3 ? 2 : 0;
@@ -414,7 +426,7 @@ namespace pulse
 
                     const float envNow = fenv.getNextSample();
                     for (int i = 1; i < n; ++i) fenv.getNextSample();
-                    const float octaves = fenvAmt * envNow * 6.0f + lfo * lfoCut * 3.0f;
+                    const float octaves = fenvAmt * envNow * 6.0f + lfo * lfoCut * 3.0f + pressure * pressureAmt * 3.0f;
                     const float fc = jlimit (30.0f, 20000.0f, cutoff * std::pow (2.0f, octaves));
                     filter[0].set (fc, reso, sr);
                     filter[1].set (fc, reso * 0.5f, sr);
@@ -471,7 +483,7 @@ namespace pulse
             WavetableSynth& o;
             double phases[2][7] {};
             double subPhase = 0, lfoPhase = 0;
-            float freq = 440, targetFreq = 440, lastFreq = 0, velocity = 1, bend = 0;
+            float freq = 440, targetFreq = 440, lastFreq = 0, velocity = 1, bend = 0, pressure = 0, slide = 0.5f;
             ADSR amp, fenv;
             SVF filter[2];
         };
@@ -771,6 +783,10 @@ namespace pulse
         pm.createBuiltInType<PulseEQ>();
         pm.createBuiltInType<AutoFilter>();
         pm.createBuiltInType<Limiter>();
+        pm.createBuiltInType<Arpeggiator>();
+        pm.createBuiltInType<ChordFx>();
+        pm.createBuiltInType<ScaleFx>();
+        pm.createBuiltInType<NoteEcho>();
         engine.getGrooveTemplateManager().useParameterizedGrooves (true);
     }
 }

@@ -63,7 +63,7 @@ namespace ClipImport
 
     //==============================================================================
     // Plugin IDs used for drag & drop: "plugin:builtin:<xmlType>" or "plugin:ext:<identifier>"
-    struct BuiltIn { const char* name; const char* type; bool synth; };
+    struct BuiltIn { const char* name; const char* type; bool synth; bool midiFx = false; };
 
     inline const std::vector<BuiltIn>& builtIns()
     {
@@ -79,6 +79,10 @@ namespace ClipImport
             { "Saturator",    pulse::Saturator::xmlTypeName,       false },
             { "Auto Filter",  pulse::AutoFilter::xmlTypeName,      false },
             { "Limiter",      pulse::Limiter::xmlTypeName,         false },
+            { "Arpeggiator",  pulse::Arpeggiator::xmlTypeName,     false, true },
+            { "Chord",        pulse::ChordFx::xmlTypeName,         false, true },
+            { "Scale",        pulse::ScaleFx::xmlTypeName,         false, true },
+            { "Note Echo",    pulse::NoteEcho::xmlTypeName,        false, true },
             { "Equaliser",    te::EqualiserPlugin::xmlTypeName,    false },
             { "Compressor",   te::CompressorPlugin::xmlTypeName,   false },
             { "Reverb",       te::ReverbPlugin::xmlTypeName,       false },

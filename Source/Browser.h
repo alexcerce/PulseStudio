@@ -259,7 +259,9 @@ public:
         rows.push_back ({ "BUILT-IN INSTRUMENTS", {}, true });
         for (auto& b : ClipImport::builtIns()) if (b.synth)   rows.push_back ({ b.name, String ("plugin:builtin:") + b.type, false });
         rows.push_back ({ "BUILT-IN EFFECTS", {}, true });
-        for (auto& b : ClipImport::builtIns()) if (! b.synth) rows.push_back ({ b.name, String ("plugin:builtin:") + b.type, false });
+        for (auto& b : ClipImport::builtIns()) if (! b.synth && ! b.midiFx) rows.push_back ({ b.name, String ("plugin:builtin:") + b.type, false });
+        rows.push_back ({ "MIDI EFFECTS", {}, true });
+        for (auto& b : ClipImport::builtIns()) if (b.midiFx) rows.push_back ({ b.name, String ("plugin:builtin:") + b.type, false });
 
         auto types = evs.edit.engine.getPluginManager().knownPluginList.getTypes();
         std::sort (types.begin(), types.end(), [] (auto& a, auto& b) { return a.name.compareIgnoreCase (b.name) < 0; });

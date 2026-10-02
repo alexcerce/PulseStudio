@@ -52,7 +52,11 @@ namespace PluginMenu
         auto& list = edit.engine.getPluginManager().knownPluginList;
         auto tree = list.createTree (list.getTypes(), KnownPluginList::sortByManufacturer);
 
-        PopupMenu instruments, effects, vstInst, vstFx;
+        PopupMenu instruments, effects, midiFx, vstInst, vstFx;
+        addBuiltIn<pulse::Arpeggiator> (midiFx, edit, cb);
+        addBuiltIn<pulse::ChordFx> (midiFx, edit, cb);
+        addBuiltIn<pulse::ScaleFx> (midiFx, edit, cb);
+        addBuiltIn<pulse::NoteEcho> (midiFx, edit, cb);
 
         if (drumRackFactory)
             instruments.addItem ("Drum Rack", [&edit, cb] { if (auto p = drumRackFactory (edit)) cb (p); });
@@ -86,6 +90,7 @@ namespace PluginMenu
         PopupMenu m;
         m.addSectionHeader ("Built-in");
         m.addSubMenu ("Instruments", instruments);
+        m.addSubMenu ("MIDI Effects", midiFx);
         m.addSubMenu ("Audio Effects", effects);
         m.addSectionHeader ("VST3");
 
@@ -118,6 +123,15 @@ namespace PluginMenu
     {
         // On a return track slot 0 holds the Aux Return, so nothing may go in front of it.
         const bool isReturn = dynamic_cast<te::AuxReturnPlugin*> (list[0]) != nullptr;
+        if (dynamic_cast<pulse::PulseMidiEffect*> (p.get()) != nullptr)
+        {
+            int index = isReturn ? 1 : 0;
+            for (int i = 0; i < list.size(); ++i)
+                if (list[i]->isSynth()) { index = i; break; }   // just before the instrument
+                else if (dynamic_cast<pulse::PulseMidiEffect*> (list[i]) != nullptr) index = i + 1;
+            list.insertPlugin (p, index, sm);
+            return;
+        }
         list.insertPlugin (p, p->isSynth() ? (isReturn ? 1 : 0) : insertIndexFor (list, track), sm);
     }
 }
