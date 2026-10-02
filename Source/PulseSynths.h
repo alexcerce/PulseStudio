@@ -931,6 +931,7 @@ namespace pulse
 
 #include "DrumPads.h"
 #include "UtilityDevices.h"
+#include "Loudness.h"
 
 namespace pulse
 {
@@ -957,6 +958,7 @@ namespace pulse
         pm.createBuiltInType<Utility>();
         pm.createBuiltInType<Tuner>();
         pm.createBuiltInType<Spectrum>();
+        pm.createBuiltInType<LoudnessProbe>();
         engine.getGrooveTemplateManager().useParameterizedGrooves (true);
     }
 }

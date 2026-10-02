@@ -2029,6 +2029,103 @@ namespace SelfTest
             rep.check (takesMode && overdubMode, "MIDI record modes (overdub / takes / replace)", String (inputs) + " inputs");
         }
 
+        // --- mixing: loudness, sidechain ducking, mixer snapshots -------------------------------------
+        {
+            rep.step ("mixing");
+            // LUFS / true peak on a known signal: 1 kHz at -20 dBFS in both channels = -20 LUFS
+            {
+                pulse::LoudnessAnalyser a;
+                a.prepare (48000.0);
+                std::vector<float> l (48000), r (48000);
+                const float amp = Decibels::decibelsToGain (-20.0f);
+                for (int sec = 0; sec < 6; ++sec)
+                {
+                    for (int i = 0; i < 48000; ++i)
+                        l[(size_t) i] = r[(size_t) i] = sec < 4 ? amp * std::sin (MathConstants<float>::twoPi * 1000.0f * (float) (sec * 48000 + i) / 48000.0f) : 0.0f;
+                    a.process (l.data(), r.data(), 48000);
+                }
+                const double I = a.integrated();
+                const float tp = a.truePeakDb();
+                rep.check (std::abs (I + 20.0) < 0.3 && std::abs (tp + 20.0f) < 0.3f, "Loudness meter (LUFS integrated with gating, true peak)",
+                           String (I, 2) + " LUFS, " + String (tp, 2) + " dBTP");
+            }
+
+            // sidechain: a sustained tone ducks while the kick track plays
+            auto tone = writeTestWav (dir.getChildFile ("duck_tone.wav"), 2.0, 220.0);
+            auto padT = ClipImport::createContentTrack (*edit, "DuckPad", false);
+            auto kickT = ClipImport::createContentTrack (*edit, "DuckKick", false);
+            float ducked = 0, dry = 0;
+            if (padT != nullptr && kickT != nullptr)
+            {
+                ClipImport::importFile (*padT, *edit, tone, te::TimePosition());
+                AudioBuffer<float> k (2, 44100);
+                k.clear();
+                for (int i = 0; i < 4410; ++i) { const float v = 0.9f * std::sin ((float) i * 0.02f) * std::exp (-(float) i / 900.0f); k.setSample (0, 22050 + i, v); k.setSample (1, 22050 + i, v); }
+                auto kf = dir.getChildFile ("duck_kick.wav");
+                SampleEdit::writeWav (kf, k, 44100.0);
+                ClipImport::importFile (*kickT, *edit, kf, te::TimePosition());
+                auto glue = edit->getPluginCache().createNewPlugin (pulse::GlueCompressor::xmlTypeName, {});
+                PluginMenu::insertPlugin (padT, padT->pluginList, glue, nullptr);
+                auto* g = dynamic_cast<pulse::GlueCompressor*> (glue.get());
+                auto renderBoth = [&] (const String& n)
+                {
+                    EditingOps::waitForClipProxies (*edit);
+                    te::Renderer::Parameters rp (*edit);
+                    rp.tracksToDo = te::toBitSet (juce::Array<te::Track*> { padT, kickT });
+                    rp.destFile = dir.getChildFile (n + ".wav");
+                    rp.destFile.deleteFile();
+                    rp.audioFormat = engine.getAudioFileFormatManager().getWavFormat();
+                    rp.bitDepth = 24; rp.sampleRateForAudio = 44100.0;
+                    rp.time = { te::TimePosition(), te::TimePosition::fromSeconds (1.2) };
+                    rp.usePlugins = true;
+                    return te::Renderer::renderToFile ("duck", rp);
+                };
+                auto windowPeak = [&engine] (const File& f, double t0, double t1)
+                {
+                    std::unique_ptr<AudioFormatReader> r (engine.getAudioFileFormatManager().readFormatManager.createReaderFor (f));
+                    if (r == nullptr) return -200.0f;
+                    Range<float> rg[2];
+                    r->readMaxLevels ((int64) (t0 * r->sampleRate), (int64) ((t1 - t0) * r->sampleRate), rg, 2);
+                    return Decibels::gainToDecibels (jmax (std::abs (rg[0].getStart()), std::abs (rg[0].getEnd())), -200.0f);
+                };
+                if (g != nullptr)
+                {
+                    g->set (pulse::GlueCompressor::pThreshold, -30.0f);
+                    g->set (pulse::GlueCompressor::pRatio, 2.0f);
+                    g->set (pulse::GlueCompressor::pAttack, 1.0f);
+                    g->set (pulse::GlueCompressor::pRelease, 1.0f);
+                    g->setSidechainSourceID (kickT->itemID);
+                    g->guessSidechainRouting();
+                    auto f = renderBoth ("duck_on");
+                    dry = windowPeak (f, 0.2, 0.45);        // before the kick: the tone passes untouched
+                    ducked = windowPeak (f, 0.62, 0.70);    // just after the kick (0.5 - 0.6 s): ducked
+                }
+            }
+            rep.check (dry - ducked > 6.0f, "Sidechain ducking (Glue Compressor keyed from another track)",
+                       String (dry, 1) + " dB before the kick, " + String (ducked, 1) + " dB after it");
+            for (auto t : { padT, kickT }) if (t != nullptr) edit->deleteTrack (t);
+
+            // mixer snapshots
+            auto tracksNow = EngineHelpers::getUserTracks (*edit);
+            bool snapOk = false;
+            if (tracksNow.size() >= 2)
+            {
+                auto* t0 = tracksNow[0]; auto* t1 = tracksNow[1];
+                t0->getVolumePlugin()->setVolumeDb (-6.0f);
+                t1->getVolumePlugin()->setPan (-0.5f);
+                MixSnapshots::store (*edit, "A");
+                t0->getVolumePlugin()->setVolumeDb (-20.0f);
+                t1->getVolumePlugin()->setPan (0.7f);
+                t1->setMute (true);
+                const bool recalled = MixSnapshots::recall (*edit, MixSnapshots::names (*edit).indexOf ("A"));
+                snapOk = recalled && std::abs (t0->getVolumePlugin()->getVolumeDb() + 6.0f) < 0.1f && std::abs (t1->getVolumePlugin()->getPan() + 0.5f) < 0.01f
+                         && ! t1->isMuted (false);
+                t0->getVolumePlugin()->setVolumeDb (0.0f);
+                t1->getVolumePlugin()->setPan (0.0f);
+            }
+            rep.check (snapOk, "Mixer snapshots (store / recall)");
+        }
+
         // --- undo -------------------------------------------------------------------------------
         rep.check (um.canUndo(), "Undo history recorded");
 

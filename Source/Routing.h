@@ -141,3 +141,85 @@ namespace Routing
         return t.get();
     }
 }
+
+//==============================================================================
+/** Mixer snapshots stored in the project: volume, pan, mute, solo and send levels of every track. */
+namespace MixSnapshots
+{
+    inline const Identifier listID { "PULSEMIXSNAPSHOTS" }, snapID { "SNAP" }, trackID { "T" };
+
+    inline StringArray names (te::Edit& e)
+    {
+        StringArray n;
+        for (auto c : e.state.getChildWithName (listID)) n.add (c["name"].toString());
+        return n;
+    }
+
+    inline void store (te::Edit& e, const String& name)
+    {
+        auto* um = &e.getUndoManager();
+        um->beginNewTransaction ("Store mixer snapshot");
+        auto list = e.state.getOrCreateChildWithName (listID, um);
+        ValueTree snap (snapID);
+        snap.setProperty ("name", name.isNotEmpty() ? name : "Mix", nullptr);
+        auto returns = Routing::getReturnTracks (e);
+        for (auto t : te::getAudioTracks (e))
+        {
+            ValueTree v (trackID);
+            v.setProperty ("id", t->itemID.toString(), nullptr);
+            if (auto vp = t->getVolumePlugin())
+            {
+                v.setProperty ("vol", vp->getVolumeDb(), nullptr);
+                v.setProperty ("pan", vp->getPan(), nullptr);
+            }
+            v.setProperty ("mute", t->isMuted (false), nullptr);
+            v.setProperty ("solo", t->isSolo (false), nullptr);
+            if (! Routing::isReturnTrack (*t))
+                for (auto r : returns)
+                {
+                    const int bus = Routing::getReturnBus (*r);
+                    v.setProperty ("send" + String (bus), Routing::getSendDb (*t, bus), nullptr);
+                }
+            snap.appendChild (v, nullptr);
+        }
+        list.appendChild (snap, um);
+    }
+
+    inline bool recall (te::Edit& e, int index)
+    {
+        auto snap = e.state.getChildWithName (listID).getChild (index);
+        if (! snap.isValid()) return false;
+        e.getUndoManager().beginNewTransaction ("Recall mixer snapshot");
+        auto returns = Routing::getReturnTracks (e);
+        for (auto v : snap)
+            for (auto t : te::getAudioTracks (e))
+                if (t->itemID.toString() == v["id"].toString())
+                {
+                    if (auto vp = t->getVolumePlugin())
+                    {
+                        if (v.hasProperty ("vol")) vp->setVolumeDb ((float) v["vol"]);
+                        if (v.hasProperty ("pan")) vp->setPan ((float) v["pan"]);
+                    }
+                    t->setMute ((bool) v["mute"]);
+                    t->setSolo ((bool) v["solo"]);
+                    if (! Routing::isReturnTrack (*t))
+                        for (auto r : returns)
+                        {
+                            const int bus = Routing::getReturnBus (*r);
+                            if (v.hasProperty ("send" + String (bus)))
+                                Routing::setSendDb (*t, bus, (float) v["send" + String (bus)]);
+                        }
+                }
+        return true;
+    }
+
+    inline void remove (te::Edit& e, int index)
+    {
+        auto list = e.state.getChildWithName (listID);
+        if (list.isValid() && isPositiveAndBelow (index, list.getNumChildren()))
+        {
+            e.getUndoManager().beginNewTransaction ("Delete mixer snapshot");
+            list.removeChild (index, &e.getUndoManager());
+        }
+    }
+}

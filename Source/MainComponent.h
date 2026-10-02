@@ -519,6 +519,8 @@ private:
         // Master meter (the mixer reads the master level from it).
         if (edit->getMasterPluginList().findFirstPluginOfType<te::LevelMeterPlugin>() == nullptr)
             edit->getMasterPluginList().insertPlugin (edit->getPluginCache().createNewPlugin (te::LevelMeterPlugin::xmlTypeName, {}), -1, nullptr);
+        if (edit->getMasterPluginList().findFirstPluginOfType<pulse::LoudnessProbe>() == nullptr)   // LUFS readouts
+            edit->getMasterPluginList().insertPlugin (edit->getPluginCache().createNewPlugin (pulse::LoudnessProbe::xmlTypeName, {}), -1, nullptr);
 
         edit->getTransport().ensureContextAllocated();
         edit->getUndoManager().clearUndoHistory();

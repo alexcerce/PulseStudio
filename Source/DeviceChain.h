@@ -829,6 +829,7 @@ private:
             for (auto p : *list)
             {
                 if (dynamic_cast<te::LevelMeterPlugin*> (p) != nullptr
+                    || dynamic_cast<pulse::LoudnessProbe*> (p) != nullptr
                     || dynamic_cast<te::AuxSendPlugin*> (p) != nullptr     // sends live in the mixer
                     || dynamic_cast<te::AuxReturnPlugin*> (p) != nullptr
                     || (at != nullptr && p == at->getVolumePlugin()))

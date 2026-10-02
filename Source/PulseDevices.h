@@ -106,12 +106,36 @@ namespace pulse
             if (b.getNumChannels() < 2)
                 return;
 
+            // sidechain input arrives on channels 3 / 4 (when a source is chosen)
+            sidechain = nullptr;
+            if (wantsSidechain() && b.getNumChannels() > 2 && getSidechainSourceID().isValid())
+            {
+                scBuffer.setSize (2, fc.bufferNumSamples, false, false, true);
+                scBuffer.copyFrom (0, 0, b, 2, fc.bufferStartSample, fc.bufferNumSamples);
+                scBuffer.copyFrom (1, 0, b, b.getNumChannels() > 3 ? 3 : 2, fc.bufferStartSample, fc.bufferNumSamples);
+                sidechain = &scBuffer;
+            }
+
             te::clearChannels (b, 2, -1, fc.bufferStartSample, fc.bufferNumSamples);
             process (b.getWritePointer (0, fc.bufferStartSample), b.getWritePointer (1, fc.bufferStartSample), fc.bufferNumSamples, fc);
             te::sanitiseValues (b, fc.bufferStartSample, fc.bufferNumSamples, 4.0f);
         }
 
+        /** Effects that can be keyed from another track declare two extra inputs. */
+        virtual bool wantsSidechain() const { return false; }
+
+        void getChannelNames (StringArray* ins, StringArray* outs) override
+        {
+            te::Plugin::getChannelNames (ins, outs);
+            if (ins != nullptr && wantsSidechain())
+                ins->addArray ({ "Sidechain Left", "Sidechain Right" });
+        }
+
     protected:
+        /** The sidechain signal for this block (nullptr when none is routed in). */
+        const AudioBuffer<float>* sidechain = nullptr;
+        AudioBuffer<float> scBuffer;
+
         virtual void prepare() = 0;
         virtual void process (float* l, float* r, int n, const te::PluginRenderContext&) = 0;
     };
@@ -246,7 +270,7 @@ namespace pulse
     class GlueCompressor : public PulseEffect
     {
     public:
-        enum { pThreshold, pRatio, pAttack, pRelease, pMakeup, pMix, pSoftClip, pRange };
+        enum { pThreshold, pRatio, pAttack, pRelease, pMakeup, pMix, pSoftClip, pRange, pScFilter };
         static inline const char* xmlTypeName = "pulseGlue";
         static const char* getPluginName() { return "Glue Compressor"; }
 
@@ -264,7 +288,10 @@ namespace pulse
             add ("mix", "Dry/Wet", { 0.0f, 1.0f }, 1.0f, fmt::pct);
             add ("softclip", "Soft Clip", steps (2), 0.0f, fmt::choice ({ "Off", "On" }));
             add ("range", "Range", { 1.0f, 40.0f }, 40.0f, [] (float v) { return String (v, 1) + " dB"; });
+            add ("schpf", "SC Filter", skewed (20.0f, 500.0f, 100.0f), 20.0f, [] (float v) { return v <= 20.5f ? String ("Off") : fmt::hz (v); });
         }
+
+        bool wantsSidechain() const override { return true; }
 
         String getName() const override     { return "Glue Compressor"; }
         String getPluginType() override     { return xmlTypeName; }
@@ -272,7 +299,7 @@ namespace pulse
 
         std::vector<Section> getSections() const override
         {
-            return { { "Compressor", { pThreshold, pRatio, pAttack, pRelease } }, { "Output", { pMakeup, pRange, pMix, pSoftClip } } };
+            return { { "Compressor", { pThreshold, pRatio, pAttack, pRelease } }, { "Output", { pMakeup, pRange, pMix, pSoftClip } }, { "Sidechain", { pScFilter } } };
         }
 
         std::atomic<float> gainReductionDb { 0.0f };
@@ -291,13 +318,24 @@ namespace pulse
             const float knee = 6.0f;
 
             auto coeff = [this] (float seconds) { return std::exp (-1.0f / (float) (jmax (1.0e-5f, seconds) * sampleRate)); };
+            const float scF = get (pScFilter);
+            const bool scFilter = scF > 20.5f;
+            if (scFilter && std::abs (scF - lastScF) > 0.5f)
+            {
+                for (auto& bq : scHp) bq.set (Biquad::Type::lowCut, sampleRate, scF, 0.707, 0.0);
+                lastScF = scF;
+            }
+            const float* keyL = sidechain != nullptr ? sidechain->getReadPointer (0) : l;
+            const float* keyR = sidechain != nullptr ? sidechain->getReadPointer (1) : r;
             const float aA = coeff (atk), aR = coeff (autoRelease ? 0.15f : relSel), aSlow = coeff (1.2f);
             float maxGr = 0.0f;
 
             for (int i = 0; i < n; ++i)
             {
                 const float dryL = l[i], dryR = r[i];
-                const float level = jmax (std::abs (dryL), std::abs (dryR));
+                float kl = keyL[i], kr = keyR[i];
+                if (scFilter) { kl = scHp[0].process (kl, 0); kr = scHp[1].process (kr, 0); }   // the detector ignores the lows
+                const float level = jmax (std::abs (kl), std::abs (kr));
                 const float inDb = Decibels::gainToDecibels (level, -120.0f);
 
                 // soft-knee gain computer
@@ -326,7 +364,8 @@ namespace pulse
         }
 
     private:
-        float envDb = 0.0f, slowDb = 0.0f;
+        float envDb = 0.0f, slowDb = 0.0f, lastScF = -1.0f;
+        std::array<Biquad, 2> scHp;
     };
 
     //==============================================================================

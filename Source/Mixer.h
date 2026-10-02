@@ -42,7 +42,21 @@ public:
         fader.setRange (-60.0, 6.0, 0.1);
         fader.setSkewFactorFromMidPoint (-10.0);
         fader.setDoubleClickReturnValue (true, 0.0);
-        fader.onValueChange = [this] { if (volPlugin) volPlugin->setVolumeDb ((float) fader.getValue()); };
+        fader.onValueChange = [this]
+        {
+            if (volPlugin == nullptr) return;
+            const float before = volPlugin->getVolumeDb();
+            volPlugin->setVolumeDb ((float) fader.getValue());
+            // linked faders: the other selected tracks move by the same amount
+            if (track != nullptr && evs.selectionManager.isSelected (track) && fader.isMouseButtonDown())
+            {
+                const float delta = volPlugin->getVolumeDb() - before;
+                for (auto t : evs.selectionManager.getItemsOfType<te::AudioTrack>())
+                    if (t != track)
+                        if (auto vp = t->getVolumePlugin())
+                            vp->setVolumeDb (jlimit (-60.0f, 6.0f, vp->getVolumeDb() + delta));
+            }
+        };
         addAndMakeVisible (fader);
         fader.addMouseListener (this, false);
 
@@ -80,6 +94,15 @@ public:
                 addAndMakeVisible (s->knob);
                 addAndMakeVisible (s->label);
             }
+        }
+
+        if (track == nullptr)
+        {
+            loudLbl.setJustificationType (Justification::centred);
+            loudLbl.setFont (FontOptions (10.5f));
+            loudLbl.setTooltip ("Loudness while playing: S = short-term (3 s), I = integrated since reset, TP = true peak. Click to reset.");
+            loudLbl.addMouseListener (this, false);
+            addAndMakeVisible (loudLbl);
         }
 
         if (track != nullptr)
@@ -177,6 +200,7 @@ public:
         {
             limiterBtn.setBounds (bottom.reduced (2, 0));
         }
+        if (loudLbl.isVisible()) loudLbl.setBounds (r.removeFromBottom (26));
         latency.setBounds (r.removeFromBottom (13));
         auto readouts = r.removeFromBottom (18);
         db.setBounds (readouts.removeFromLeft (readouts.getWidth() / 2));
@@ -193,6 +217,11 @@ public:
     void mouseDown (const MouseEvent& e) override
     {
         if (e.eventComponent == &peakLbl && meter != nullptr) { meter->resetPeak(); return; }
+        if (e.eventComponent == &loudLbl)
+        {
+            if (auto pr = evs.edit.getMasterPluginList().findFirstPluginOfType<pulse::LoudnessProbe>()) pr->resetRequested = true;
+            return;
+        }
 
         // right-click a send: pre / post fader
         for (auto* snd : sends)
@@ -262,6 +291,13 @@ private:
         else
         {
             limiterBtn.setToggleState (findMasterLimiter() != nullptr, dontSendNotification);
+            if (auto pr = evs.edit.getMasterPluginList().findFirstPluginOfType<pulse::LoudnessProbe>())
+            {
+                auto fmtL = [] (float v) { return v <= -199.0f ? String ("--") : String (v, 1); };
+                loudLbl.setText ("S " + fmtL (pr->shortTermLufs.load()) + "  I " + fmtL (pr->integratedLufs.load()) + "\nTP " + fmtL (pr->truePeakDb.load()) + " LUFS",
+                                 dontSendNotification);
+                loudLbl.setColour (Label::textColourId, pr->truePeakDb.load() > -1.0f ? Theme::orange : Theme::muted);
+            }
         }
 
         // plugin latency (the engine compensates; shown so you know what's adding delay)
@@ -321,7 +357,7 @@ private:
     DbScale scale { [this] (float v) { return (float) (fader.getY() - scale.getY()) + (float) fader.getPositionOfValue (jlimit (-60.0, 6.0, (double) v)); } };
     std::unique_ptr<LevelMeter> meter;
     TextButton muteBtn { "M" }, soloBtn { "S" }, freezeBtn { "F" }, limiterBtn { "Limiter" };
-    Label latency;
+    Label latency, loudLbl;
 };
 
 //==============================================================================
@@ -346,6 +382,10 @@ public:
             m.showMenuAsync (PopupMenu::Options().withTargetComponent (&addReturnBtn));
         };
         content.addAndMakeVisible (addReturnBtn);
+
+        snapBtn.setTooltip ("Mixer snapshots: store and recall every track's volume, pan, mute, solo and sends");
+        snapBtn.onClick = [this] { showSnapshotMenu(); };
+        content.addAndMakeVisible (snapBtn);
 
         evs.edit.state.addListener (this);
         markAndUpdate (rebuildFlag);
@@ -411,6 +451,7 @@ private:
             if (i == strips.size() - 1)                    // + Return, then master
             {
                 addReturnBtn.setBounds (x, 6, 80, 28);
+                snapBtn.setBounds (x, 40, 80, 28);
                 x += 92;
             }
             strips[i]->setBounds (x, 6, 92, h - 12);
@@ -450,7 +491,35 @@ private:
     Viewport viewport;
     Content content;
     OwnedArray<ChannelStrip> strips;
-    TextButton addReturnBtn { "+ Return" };
+    TextButton addReturnBtn { "+ Return" }, snapBtn { "Snapshots" };
+
+    void showSnapshotMenu()
+    {
+        PopupMenu m;
+        m.addItem ("Store snapshot...", [this]
+        {
+            auto* w = new AlertWindow ("Store mixer snapshot", {}, MessageBoxIconType::NoIcon);
+            w->addTextEditor ("name", "Mix " + String (MixSnapshots::names (evs.edit).size() + 1));
+            w->addButton ("Store", 1, KeyPress (KeyPress::returnKey));
+            w->addButton ("Cancel", 0, KeyPress (KeyPress::escapeKey));
+            w->enterModalState (true, ModalCallbackFunction::create ([this, w] (int r)
+            {
+                if (r == 1) MixSnapshots::store (evs.edit, w->getTextEditorContents ("name").trim());
+            }), true);
+        });
+        auto names = MixSnapshots::names (evs.edit);
+        if (! names.isEmpty())
+        {
+            m.addSectionHeader ("Recall");
+            for (int i = 0; i < names.size(); ++i)
+                m.addItem (names[i], [this, i] { MixSnapshots::recall (evs.edit, i); });
+            PopupMenu del;
+            for (int i = 0; i < names.size(); ++i)
+                del.addItem (names[i], [this, i] { MixSnapshots::remove (evs.edit, i); });
+            m.addSubMenu ("Delete", del);
+        }
+        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&snapBtn));
+    }
     int numContentStrips = 0;
     bool rebuildFlag = false;
 };

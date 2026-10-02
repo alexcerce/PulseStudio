@@ -24,7 +24,7 @@ public:
         addRow (formatL, format, "Format", { "WAV", "AIFF", "FLAC", "OGG Vorbis" }, 1);
         addRow (depthL, depth, "Bit depth", { "16-bit", "24-bit", "32-bit float" }, 2);
         addRow (rateL, rate, "Sample rate", { "44.1 kHz", "48 kHz", "88.2 kHz", "96 kHz" }, 1);
-        addRow (normL, normalise, "Normalise", { "Off", "Peak to -0.3 dB", "Loudness -14 LUFS (streaming)", "Loudness -9 LUFS (loud)" }, 1);
+        addRow (normL, normalise, "Normalise", { "Off", "Peak to -0.3 dB", "Loudness -14 LUFS (streaming)", "Loudness -16 LUFS (Apple / podcasts)", "Loudness -9 LUFS (loud)" }, 1);
         addRow (rangeL, range, "Range", { "Whole song", "Loop range" }, 1);
         if (selection.has_value() && ! selection->isEmpty())
         {
@@ -128,7 +128,8 @@ private:
         {
             case 2: p.shouldNormalise = true; p.normaliseToLevelDb = -0.3f; break;
             case 3: p.shouldNormaliseByLUFS = true; p.normaliseToLevelDb = -14.0f; break;
-            case 4: p.shouldNormaliseByLUFS = true; p.normaliseToLevelDb = -9.0f; break;
+            case 4: p.shouldNormaliseByLUFS = true; p.normaliseToLevelDb = -16.0f; break;
+            case 5: p.shouldNormaliseByLUFS = true; p.normaliseToLevelDb = -9.0f; break;
             default: break;
         }
 
@@ -180,11 +181,17 @@ private:
         BackgroundRender::Job job;
         job.name = "Exporting " + f.getFileName();
         job.renders.push_back (p);
-        job.onDone = [f] (int ok, int, bool cancelled)
+        job.onDone = [f, &eng = edit.engine] (int ok, int, bool cancelled)
         {
             if (cancelled) return;
-            AlertWindow::showMessageBoxAsync (ok > 0 ? MessageBoxIconType::InfoIcon : MessageBoxIconType::WarningIcon, "Export",
-                                              ok > 0 ? "Exported " + f.getFileName() : String ("Export failed."));
+            String msg = ok > 0 ? "Exported " + f.getFileName() : String ("Export failed.");
+            if (ok > 0)
+            {
+                const auto m = pulse::LoudnessAnalyser::measureFile (eng, f);
+                msg << "\n\nLoudness " << String (m.integrated, 1) << " LUFS, true peak " << String (m.truePeakDb, 1) << " dBTP";
+                if (m.truePeakDb > -1.0f) msg << "\nThe true peak is above -1 dBTP: streaming services may add distortion when they encode it. Try the master limiter.";
+            }
+            AlertWindow::showMessageBoxAsync (ok > 0 ? MessageBoxIconType::InfoIcon : MessageBoxIconType::WarningIcon, "Export", msg);
             if (ok > 0) f.revealToUser();
         };
         startJob (std::move (job));

@@ -54,7 +54,7 @@ when you start, touch it after each step, and delete it when you stop.
      instrument displays polish; transport polish.
    - ~~v0.24 Editing~~ (done): audio quantize, MIDI tools (velocity editing, humanize, legato, strum, fit to scale),
      draggable clip fades, MIDI loop-record takes.
-   - v0.25 Mixing: sidechain picker, mixer groups / VCA, LUFS + true-peak master meter and export
+   - ~~v0.25 Mixing~~ (done): sidechain picker, mixer groups / VCA, LUFS + true-peak master meter and export
      normalisation, mixer snapshots.
    - v0.26 Instruments/FX: Pulse Reverb and Delay with displays, FM synth (Operator-like), granular mode in
      Simpler, vocoder, pitch correction.
@@ -89,3 +89,4 @@ when you start, touch it after each step, and delete it when you stop.
 - 2026-10-02: v0.22.0 drag and drop: tracks, devices (reorder / to other tracks, Ctrl copy), session clips, scene rename. 143 checks pass.
 - 2026-10-02: v0.23.0 browser sidebar (collections / categories / places, one search box), piano roll notes and drum pad names. 143 checks pass.
 - 2026-10-02: v0.24.0 MIDI tools, audio quantize (own onset detector; the engine transient detector returns none), MIDI record modes (overdub / takes / replace). 146 checks pass.
+- 2026-10-02: v0.25.0 mixing: BS.1770 loudness (probe on master, export report), Glue sidechain + duck menu (needs guessSidechainRouting), linked faders, mixer snapshots. 149 checks pass.

@@ -1328,6 +1328,28 @@ public:
         {
             PopupMenu m;
             m.addItem ("Rename", [this] { name.showEditor(); });
+            {
+                PopupMenu duck;
+                for (auto other : EngineHelpers::getUserTracks (evs.edit))
+                    if (other != track.get())
+                        duck.addItem (other->getName(), [t = track, src = te::Track::Ptr (other)]
+                        {
+                            t->edit.getUndoManager().beginNewTransaction ("Sidechain ducking");
+                            auto p = t->edit.getPluginCache().createNewPlugin (pulse::GlueCompressor::xmlTypeName, {});
+                            PluginMenu::insertPlugin (t.get(), t->pluginList, p, nullptr);
+                            if (auto g = dynamic_cast<pulse::GlueCompressor*> (p.get()))
+                            {
+                                g->set (pulse::GlueCompressor::pThreshold, -28.0f);
+                                g->set (pulse::GlueCompressor::pRatio, 2.0f);       // 10:1
+                                g->set (pulse::GlueCompressor::pAttack, 1.0f);      // 0.1 ms
+                                g->set (pulse::GlueCompressor::pRelease, 1.0f);     // 0.2 s
+                                g->set (pulse::GlueCompressor::pScFilter, 120.0f);
+                                g->setSidechainSourceID (src->itemID);
+                                g->guessSidechainRouting();   // wires the key track into the sidechain inputs
+                            }
+                        });
+                m.addSubMenu ("Duck this track from (sidechain)", duck);
+            }
             m.addItem ("Add plugin...", [this] { PluginMenu::show (evs.edit, this, [t = track, sm = &evs.selectionManager] (te::Plugin::Ptr p)
                                                   { PluginMenu::insertPlugin (t.get(), t->pluginList, p, sm); }); });
             m.addItem ("Colour...", [this] { showColours(); });

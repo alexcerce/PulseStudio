@@ -4,7 +4,7 @@ A native Windows DAW built with C++, [JUCE](https://juce.com) and [Tracktion Eng
 
 ## Install
 
-Run `dist/PulseStudio-0.24.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
+Run `dist/PulseStudio-0.25.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
 
 ## Build
 
@@ -174,6 +174,10 @@ Pulse's own devices have cards with labelled sections and a live display. Every 
   - **Favourites:** right-click a file → *Add to favourites*. The *★ Favourites* place lists them (the search box filters it too).
 
 ### Mixer and routing
+- **Loudness:** the master strip shows short-term and integrated loudness (LUFS, EBU R128) and the true peak while the song plays; click it to reset. After an export, Pulse reports the file's loudness and true peak and warns when the peak is above -1 dBTP. Export can normalise to -14, -16 or -9 LUFS.
+- **Sidechain:** the Glue Compressor takes a sidechain (*SC* button on its card) with a filter so the lows don't trigger it. Right-click a track header → *Duck this track from (sidechain)* → a track sets up classic pumping in one click.
+- **Linked faders:** select several tracks (Ctrl-click headers) and moving one of their faders moves them all by the same amount.
+- **Mixer snapshots:** *Snapshots* (under *+ Return*) stores every track's volume, pan, mute, solo and sends under a name, and recalls them later.
 - Faders, pan, meters and mute/solo, plus submix strips for groups.
 - **Return tracks** with **sends** on every track, and **sidechain** inputs (the **SC** button on devices that support it).
 - **Pre/post-fader sends:** right-click a send knob. Pre-fader sends get an orange label and keep sending when the fader is down, which is useful for headphone mixes and parallel effects.
@@ -252,7 +256,7 @@ All of these can be changed in *File → Keyboard shortcuts*. New: **Ctrl+P** co
 ## Command line
 
 - `--render out.wav` renders the last project offline and exits.
-- `--selftest report.txt` builds a scratch project and runs 146 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--selftest report.txt` builds a scratch project and runs 149 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
 - `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
 
 ## Code layout
