@@ -46,6 +46,9 @@ when you start, touch it after each step, and delete it when you stop.
    missing DAW features (e.g. sidechain UI improvements, audio quantize, tuner/spectrum devices, MIDI
    learn for Push encoders, better browser search/tags, recent projects, auto-update of README docs).
    Pick the most valuable next item, add it to this queue, implement it, test it, commit.
+   - ~~v0.19.0 Utility / Tuner / Spectrum devices~~ (done)
+   - Next ideas: audio quantize (warp markers to transients on the grid), recent-projects list on the start
+     screen, browser tags / favourites, sidechain source picker on compressor cards, MIDI learn for Push encoders.
 
 ## Log
 
@@ -57,3 +60,5 @@ when you start, touch it after each step, and delete it when you stop.
   layers, synth source, choke groups, receive-note remap, per-pad envelope / filter / reverse; Pad Mixer with mute /
   solo / sends to two rack returns; move / swap / copy / extract pads; rack macros; synth kit; randomise kit; old racks
   migrate on load), Drum Synth instrument, Simpler multisample zones. 128 checks pass. Next: queue item 3 (cycle).
+- 2026-10-02: v0.19.0 Utility (width / mono / bass mono / phase / channels), Tuner (YIN pitch, cents needle),
+  Spectrum analyser. 134 checks pass.

@@ -367,6 +367,9 @@ namespace SelfTest
                     param->setNormalisedParameter (old, sendNotificationSync);
                 }
 
+                // analysers only watch the signal: they must pass it through unchanged instead
+                const bool analyser = String (b.type) == pulse::Spectrum::xmlTypeName;
+                if (analyser) { responds = true; moved = "nothing (analyser, passes audio through)"; }
                 rep.check (sane && responds, String ("Device works: ") + b.name,
                            "out " + String (base.first, 1) + " dBFS, " + (responds ? "responds to " + moved : "no audible change from any control"));
                 p->deleteFromParent();
@@ -1645,6 +1648,106 @@ namespace SelfTest
                 LookAndFeel::setDefaultLookAndFeel (nullptr);
                 rep.check (ok, "Drum Rack editor pages build", String (pages) + " pages");
             }
+        }
+
+        // --- Utility / Tuner / Spectrum -----------------------------------------------------------
+        {
+            rep.step ("utility devices");
+            // stereo source: 220 Hz left, 330 Hz right
+            auto stereo = dir.getChildFile ("stereo_lr.wav");
+            {
+                AudioBuffer<float> b (2, 44100);
+                for (int i = 0; i < b.getNumSamples(); ++i)
+                {
+                    b.setSample (0, i, 0.5f * std::sin (MathConstants<float>::twoPi * 220.0f * (float) i / 44100.0f));
+                    b.setSample (1, i, 0.5f * std::sin (MathConstants<float>::twoPi * 330.0f * (float) i / 44100.0f));
+                }
+                SampleEdit::writeWav (stereo, b, 44100.0);
+            }
+            auto ut = ClipImport::createContentTrack (*edit, "Utility", false);
+            te::Clip::Ptr uc = ut != nullptr ? ClipImport::importFile (*ut, *edit, stereo, te::TimePosition()) : nullptr;
+            auto up = edit->getPluginCache().createNewPlugin (pulse::Utility::xmlTypeName, {});
+            if (ut != nullptr) ut->pluginList.insertPlugin (up, 0, nullptr);
+            auto* util = dynamic_cast<pulse::Utility*> (up.get());
+
+            // max |L - R| and peak of a render
+            auto analyse = [&engine] (const File& f, float& diff, float& peak)
+            {
+                diff = 0; peak = 0;
+                std::unique_ptr<AudioFormatReader> r (engine.getAudioFileFormatManager().readFormatManager.createReaderFor (f));
+                if (r == nullptr || r->numChannels < 2) { diff = -1; return; }
+                AudioBuffer<float> b (2, (int) r->lengthInSamples);
+                r->read (&b, 0, b.getNumSamples(), 0, true, true);
+                for (int i = (int) (0.1 * r->sampleRate); i < b.getNumSamples() - 100; ++i)
+                {
+                    diff = jmax (diff, std::abs (b.getSample (0, i) - b.getSample (1, i)));
+                    peak = jmax (peak, std::abs (b.getSample (0, i)), std::abs (b.getSample (1, i)));
+                }
+            };
+            float d0 = 0, p0 = 0, dMono = 0, pMono = 0, dLeft = 0, pGain = 0, dummy = 0;
+            if (util != nullptr && uc != nullptr)
+            {
+                const te::TimeRange one { te::TimePosition(), te::TimePosition::fromSeconds (0.8) };
+                analyse (EditingOps::renderTrack (*ut, one, "util-stereo"), d0, p0);
+                util->set (pulse::Utility::pWidth, 0.0f);
+                analyse (EditingOps::renderTrack (*ut, one, "util-mono"), dMono, pMono);
+                util->set (pulse::Utility::pWidth, 1.0f);
+                util->set (pulse::Utility::pChannels, 1.0f);
+                analyse (EditingOps::renderTrack (*ut, one, "util-left"), dLeft, dummy);
+                util->set (pulse::Utility::pChannels, 0.0f);
+                util->set (pulse::Utility::pGain, -12.0f);
+                analyse (EditingOps::renderTrack (*ut, one, "util-gain"), dummy, pGain);
+                util->set (pulse::Utility::pGain, 0.0f);
+            }
+            const float gainDrop = Decibels::gainToDecibels (p0) - Decibels::gainToDecibels (pGain);
+            rep.check (d0 > 0.3f && dMono < 0.001f && dLeft < 0.001f && std::abs (gainDrop - 12.0f) < 0.5f,
+                       "Utility: width (mono), channel mode, gain",
+                       "L-R " + String (d0, 3) + " -> " + String (dMono, 4) + " mono, " + String (dLeft, 4) + " left only; gain -" + String (gainDrop, 2) + " dB");
+
+            // tuner pitch detection on a sine and a bright saw
+            std::vector<float> sig (4096);
+            for (int i = 0; i < 4096; ++i) sig[(size_t) i] = 0.4f * std::sin (MathConstants<float>::twoPi * 440.0f * (float) i / 48000.0f);
+            const double a4 = pulse::Tuner::detectPitch (sig.data(), 4096, 48000.0);
+            for (int i = 0; i < 4096; ++i) { const float ph = std::fmod (110.0f * (float) i / 48000.0f, 1.0f); sig[(size_t) i] = 0.4f * (2.0f * ph - 1.0f); }
+            const double a2 = pulse::Tuner::detectPitch (sig.data(), 4096, 48000.0);
+            std::fill (sig.begin(), sig.end(), 0.0f);
+            const double none = pulse::Tuner::detectPitch (sig.data(), 4096, 48000.0);
+            // the cards with a signal in them (snapshots: tuner.png / spectrum.png in the test folder)
+            {
+                PulseLookAndFeel laf;
+                LookAndFeel::setDefaultLookAndFeel (&laf);
+                EditViewState evs (*edit, sm);
+                int shots = 0;
+                for (auto type : { pulse::Tuner::xmlTypeName, pulse::Spectrum::xmlTypeName })
+                {
+                    auto pl = edit->getPluginCache().createNewPlugin (type, {});
+                    if (ut != nullptr) ut->pluginList.insertPlugin (pl, -1, nullptr);
+                    std::vector<float> l (8192), r (8192);
+                    for (int i = 0; i < 8192; ++i)
+                    {
+                        const float t = (float) i / 44100.0f;
+                        l[(size_t) i] = r[(size_t) i] = 0.3f * std::sin (MathConstants<float>::twoPi * 442.0f * t) + 0.1f * std::sin (MathConstants<float>::twoPi * 884.0f * t)
+                                                        + 0.05f * std::sin (MathConstants<float>::twoPi * 3094.0f * t);
+                    }
+                    if (auto tu = dynamic_cast<pulse::Tuner*> (pl.get()))    tu->fifo.push (l.data(), r.data(), 8192);
+                    if (auto sp = dynamic_cast<pulse::Spectrum*> (pl.get())) sp->fifo.push (l.data(), r.data(), 8192);
+                    {
+                        PluginCard card (evs, pl.get(), [] (te::Plugin&, int) {});
+                        card.setSize (card.getWidth(), 220);
+                        for (int k = 0; k < 3; ++k) card.createComponentSnapshot (card.getLocalBounds());   // let averaging settle
+                        auto img = card.createComponentSnapshot (card.getLocalBounds());
+                        auto f = dir.getChildFile (String (type) + ".png");
+                        f.deleteFile();
+                        if (auto os = f.createOutputStream()) { PNGImageFormat png; if (png.writeImageToStream (img, *os)) ++shots; }
+                    }
+                    pl->deleteFromParent();
+                }
+                LookAndFeel::setDefaultLookAndFeel (nullptr);
+                rep.check (shots == 2, "Tuner and Spectrum cards draw");
+            }
+            rep.check (std::abs (a4 - 440.0) < 1.0 && std::abs (a2 - 110.0) < 0.5 && none == 0.0
+                         && std::abs (pulse::Tuner::noteOf (a4) - 69.0) < 0.02,
+                       "Tuner pitch detection", String (a4, 2) + " Hz, " + String (a2, 2) + " Hz, silence " + String (none, 1));
         }
 
         // --- undo -------------------------------------------------------------------------------

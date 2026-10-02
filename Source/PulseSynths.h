@@ -930,6 +930,7 @@ namespace pulse
 }
 
 #include "DrumPads.h"
+#include "UtilityDevices.h"
 
 namespace pulse
 {
@@ -953,6 +954,9 @@ namespace pulse
         pm.createBuiltInType<DrumPad>();
         pm.createBuiltInType<PadOut>();
         pm.createBuiltInType<DrumSynth>();
+        pm.createBuiltInType<Utility>();
+        pm.createBuiltInType<Tuner>();
+        pm.createBuiltInType<Spectrum>();
         engine.getGrooveTemplateManager().useParameterizedGrooves (true);
     }
 }

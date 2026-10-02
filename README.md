@@ -4,7 +4,7 @@ A native Windows DAW built with C++, [JUCE](https://juce.com) and [Tracktion Eng
 
 ## Install
 
-Run `dist/PulseStudio-0.18.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
+Run `dist/PulseStudio-0.19.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
 
 ## Build
 
@@ -135,6 +135,9 @@ Pulse's own devices have cards with labelled sections and a live display. Every 
 | **Glue Compressor** | A bus compressor with stepped attack and release (including Auto), 2:1, 4:1 and 10:1 ratios, a range limit, makeup gain, dry/wet and soft clip. It has a gain-reduction meter. |
 | **Saturator** | Seven shapes (analog, tape, tube, hard clip, foldback, sine fold and bit crush) with 4× oversampling, bias, a tone tilt and dry/wet. It shows the transfer curve. |
 | **Auto Filter** | A low-pass, band-pass, high-pass, notch or 24 dB low-pass filter with drive. The LFO is free-running or tempo-synced (1/16 to 4 bars) with six shapes and a stereo phase offset. An envelope follower and a dry/wet control round it out. |
+| **Utility** | Gain, stereo width (0-400 %, mid/side), mono, **bass mono** below a set frequency, channel mode (stereo, left, right, swap), phase invert, balance, a DC filter and mute. |
+| **Tuner** | A chromatic tuner on any track: the note, its frequency and a cents needle (green when in tune), with a reference pitch (415-466 Hz) and an option to mute the output while tuning. |
+| **Spectrum** | A large analyser: log-frequency spectrum with block size (1024-8192), averaging, range and peak hold (double-click to reset). Hover to read the frequency and note. |
 
 **Groove / swing:** right-click a MIDI clip → *Groove* to pick a template (e.g. *Basic 8th Swing*, *Basic 16th Swing*) and an amount. The groove is applied as the clip plays. *Commit groove to notes* moves the notes for real.
 
@@ -238,7 +241,7 @@ All of these can be changed in *File → Keyboard shortcuts*. New: **Ctrl+P** co
 ## Command line
 
 - `--render out.wav` renders the last project offline and exits.
-- `--selftest report.txt` builds a scratch project and runs 128 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--selftest report.txt` builds a scratch project and runs 134 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
 - `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
 
 ## Code layout
@@ -261,6 +264,7 @@ All app code is header-only in `Source/` and compiled through `Main.cpp`.
 | `Browser.h` | File browser with synced preview, device list |
 | `PianoRoll.h` | MIDI editor and controller lanes |
 | `DeviceChain.h` | Device rack: device cards, macros, presets |
+| `UtilityDevices.h` | Utility, Tuner and Spectrum devices |
 | `DrumRack.h`, `DrumPads.h`, `DrumRackCard.h` | Drum Rack model (pads, routing, move / copy / extract, kits), the pad / pad mixer / Drum Synth devices, and the Drum Rack editor |
 | `Presets.h`, `Macros.h`, `MidiLearn.h` | Sound design and controller features |
 | `MidiFx.h`, `Scales.h` | MIDI effects (Arpeggiator, Chord, Scale, Note Echo), shared scales |

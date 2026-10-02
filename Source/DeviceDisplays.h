@@ -636,8 +636,170 @@ namespace DeviceDisplays
     };
 
     //==============================================================================
+    /** Tuner: note name, a cents needle and the frequency. */
+    class TunerDisplay : public Polled
+    {
+    public:
+        explicit TunerDisplay (pulse::Tuner& t) : Polled (t, 20), tuner (t) {}
+
+        void paint (Graphics& g) override
+        {
+            auto r = getLocalBounds().toFloat().reduced (2.0f);
+            paintPanel (g, r);
+            const double sr = tuner.getSampleRate() > 0 ? tuner.getSampleRate() : 48000.0;
+            std::vector<float> buf (4096);
+            tuner.fifo.read (buf.data(), (int) buf.size());
+            const double hz = pulse::Tuner::detectPitch (buf.data(), (int) buf.size(), sr);
+            if (hz > 0) { shownHz = shownHz > 0 ? shownHz * 0.6 + hz * 0.4 : hz; silentFrames = 0; }
+            else if (++silentFrames > 10) shownHz = 0;
+
+            auto meter = r.reduced (14.0f, 10.0f);
+            auto needleArea = meter.removeFromBottom (meter.getHeight() * 0.45f);
+            if (shownHz <= 0)
+            {
+                g.setColour (Theme::muted);
+                g.setFont (FontOptions (16.0f));
+                g.drawText ("Play a note", meter, Justification::centred);
+                drawScale (g, needleArea, 0.0f, false);
+                return;
+            }
+            const double note = pulse::Tuner::noteOf (shownHz, tuner.get (pulse::Tuner::pReference));
+            const int nearest = roundToInt (note);
+            const float cents = (float) ((note - nearest) * 100.0);
+            const bool inTune = std::abs (cents) < 3.0f;
+            g.setColour (inTune ? Theme::green : Theme::text);
+            g.setFont (FontOptions (34.0f, Font::bold));
+            g.drawText (MidiMessage::getMidiNoteName (nearest, true, true, 3), meter.removeFromTop (meter.getHeight() * 0.7f), Justification::centred);
+            g.setColour (Theme::muted);
+            g.setFont (FontOptions (12.0f));
+            g.drawText (String (shownHz, 1) + " Hz   " + (cents >= 0 ? "+" : "") + String (cents, 1) + " ct", meter, Justification::centred);
+            drawScale (g, needleArea, cents, inTune);
+        }
+
+    private:
+        static void drawScale (Graphics& g, Rectangle<float> a, float cents, bool inTune)
+        {
+            g.setColour (Theme::line);
+            for (int c = -50; c <= 50; c += 10)
+            {
+                const float x = a.getX() + a.getWidth() * (c + 50) / 100.0f;
+                const float h = c == 0 ? a.getHeight() : a.getHeight() * 0.45f;
+                g.fillRect (x - (c == 0 ? 1.0f : 0.5f), a.getBottom() - h, c == 0 ? 2.0f : 1.0f, h);
+            }
+            const float x = a.getX() + a.getWidth() * (jlimit (-50.0f, 50.0f, cents) + 50.0f) / 100.0f;
+            g.setColour (inTune ? Theme::green : Theme::orange);
+            g.fillRoundedRectangle (x - 2.5f, a.getY(), 5.0f, a.getHeight(), 2.0f);
+        }
+
+        bool alwaysRepaint() const override { return true; }
+        pulse::Tuner& tuner;
+        double shownHz = 0;
+        int silentFrames = 0;
+    };
+
+    //==============================================================================
+    /** Spectrum: log-frequency spectrum with averaging, peak hold and a hover readout. */
+    class SpectrumDisplay : public Polled
+    {
+    public:
+        explicit SpectrumDisplay (pulse::Spectrum& s) : Polled (s, 30), spec (s) {}
+
+        void paint (Graphics& g) override
+        {
+            auto r = getLocalBounds().toFloat().reduced (2.0f);
+            paintPanel (g, r);
+            FreqAxis axis { r.reduced (6.0f, 8.0f) };
+            axis.drawGrid (g);
+            update();
+
+            const float floorDb = spec.get (pulse::Spectrum::pFloor);
+            auto yFor = [&] (float db) { return axis.area.getBottom() - axis.area.getHeight() * jlimit (0.0f, 1.0f, (db - floorDb) / (0.0f - floorDb)); };
+            g.setColour (Colours::white.withAlpha (0.05f));
+            for (float db = -12.0f; db > floorDb; db -= 12.0f)
+                g.drawHorizontalLine ((int) yFor (db), axis.area.getX(), axis.area.getRight());
+
+            const int bins = (int) smooth.size();
+            const double sr = spec.getSampleRate() > 0 ? spec.getSampleRate() : 48000.0;
+            auto pathFor = [&] (const std::vector<float>& mags, bool closed)
+            {
+                Path p;
+                bool started = false;
+                for (float x = axis.area.getX(); x <= axis.area.getRight(); x += 1.5f)
+                {
+                    const double f = axis.freqAt (x);
+                    const int bin = jlimit (1, bins - 1, (int) (f / sr * 2.0 * bins));
+                    const float y = yFor (mags[(size_t) bin]);
+                    if (! started) { p.startNewSubPath (x, closed ? axis.area.getBottom() : y); if (closed) p.lineTo (x, y); started = true; }
+                    else p.lineTo (x, y);
+                }
+                if (closed && started) { p.lineTo (axis.area.getRight(), axis.area.getBottom()); p.closeSubPath(); }
+                return p;
+            };
+            if (bins > 2)
+            {
+                g.setGradientFill (ColourGradient (Theme::accent.withAlpha (0.45f), 0.0f, axis.area.getY(), Theme::accent.withAlpha (0.05f), 0.0f, axis.area.getBottom(), false));
+                g.fillPath (pathFor (smooth, true));
+                g.setColour (Theme::accent);
+                g.strokePath (pathFor (smooth, false), PathStrokeType (1.3f));
+                if (spec.getInt (pulse::Spectrum::pHold) > 0)
+                {
+                    g.setColour (Theme::orange.withAlpha (0.7f));
+                    g.strokePath (pathFor (peaks, false), PathStrokeType (1.0f));
+                }
+            }
+            if (hoverX >= axis.area.getX())
+            {
+                const double f = axis.freqAt (hoverX);
+                const double note = pulse::Tuner::noteOf (f);
+                g.setColour (Colours::white.withAlpha (0.4f));
+                g.drawVerticalLine ((int) hoverX, axis.area.getY(), axis.area.getBottom());
+                g.setColour (Theme::text);
+                g.setFont (FontOptions (11.0f));
+                g.drawText ((f >= 1000 ? String (f / 1000.0, 2) + " kHz" : String (roundToInt (f)) + " Hz") + "  " + MidiMessage::getMidiNoteName (roundToInt (note), true, true, 3),
+                            axis.area.withHeight (14.0f), Justification::topRight);
+            }
+        }
+
+        void mouseMove (const MouseEvent& e) override { hoverX = e.position.x; }
+        void mouseExit (const MouseEvent&) override   { hoverX = -1.0f; }
+        void mouseDoubleClick (const MouseEvent&) override { std::fill (peaks.begin(), peaks.end(), -200.0f); }
+
+    private:
+        void update()
+        {
+            const int order = spec.fftOrder(), size = 1 << order;
+            if (fft == nullptr || fft->getSize() != size)
+            {
+                fft = std::make_unique<dsp::FFT> (order);
+                smooth.assign ((size_t) size / 2, -200.0f);
+                peaks.assign ((size_t) size / 2, -200.0f);
+            }
+            std::vector<float> buf ((size_t) size * 2, 0.0f);
+            spec.fifo.read (buf.data(), size);
+            for (int i = 0; i < size; ++i)
+                buf[(size_t) i] *= 0.5f - 0.5f * std::cos (MathConstants<float>::twoPi * i / (size - 1));
+            fft->performFrequencyOnlyForwardTransform (buf.data());
+            const float avg = spec.get (pulse::Spectrum::pAverage);
+            for (int i = 0; i < size / 2; ++i)
+            {
+                const float db = Decibels::gainToDecibels (buf[(size_t) i] * 4.0f / (float) size, -200.0f);
+                smooth[(size_t) i] = db > smooth[(size_t) i] ? db : smooth[(size_t) i] * avg + db * (1.0f - avg);
+                peaks[(size_t) i] = jmax (peaks[(size_t) i] - 0.15f, smooth[(size_t) i]);
+            }
+        }
+
+        bool alwaysRepaint() const override { return true; }
+        pulse::Spectrum& spec;
+        std::unique_ptr<dsp::FFT> fft;
+        std::vector<float> smooth, peaks;
+        float hoverX = -1.0f;
+    };
+
+    //==============================================================================
     inline std::unique_ptr<Component> create (EditViewState& evs, te::Plugin& p)
     {
+        if (auto s = dynamic_cast<pulse::Tuner*> (&p))          return std::make_unique<TunerDisplay> (*s);
+        if (auto s = dynamic_cast<pulse::Spectrum*> (&p))       return std::make_unique<SpectrumDisplay> (*s);
         if (auto s = dynamic_cast<pulse::WavetableSynth*> (&p)) return std::make_unique<WavetableDisplay> (*s);
         if (auto s = dynamic_cast<pulse::Simpler*> (&p))        return std::make_unique<SimplerDisplay> (*s);
         if (auto s = dynamic_cast<pulse::GlueCompressor*> (&p)) return std::make_unique<GRMeter<pulse::GlueCompressor>> (*s);
