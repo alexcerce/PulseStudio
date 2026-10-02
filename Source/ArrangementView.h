@@ -163,7 +163,12 @@ public:
             dragFadeOut = ac->getFadeOut();
         }
 
-        const char* names[] = { "Move clip", "Resize clip", "Clip fade in", "Clip fade out", "Move warp marker", "" };
+        if (mode == Mode::move && e.mods.isAltDown() && dynamic_cast<te::AudioClipBase*> (clip.get()) != nullptr)
+        {
+            mode = Mode::slip;   // Alt-drag: move the audio inside the clip
+            dragOffset = clip->getPosition().getOffset();
+        }
+        const char* names[] = { "Move clip", "Resize clip", "Clip fade in", "Clip fade out", "Move warp marker", "", "Slip clip content" };
         evs.edit.getUndoManager().beginNewTransaction (names[(int) mode]);
     }
 
@@ -184,6 +189,10 @@ public:
                 clip->setEnd (EngineHelpers::beatToTime (evs.edit, newEnd), true);
                 break;
             }
+            case Mode::slip:
+                clip->setOffset (te::TimeDuration::fromSeconds (jmax (0.0, dragOffset.inSeconds() - e.getDistanceFromDragStartX() * secondsPerPixel())));
+                repaint();
+                break;
             case Mode::fadeIn:
                 if (auto ac = dynamic_cast<te::AudioClipBase*> (clip.get()))
                     ac->setFadeIn (te::TimeDuration::fromSeconds (jmax (0.0, dragFadeIn.inSeconds() + e.getDistanceFromDragStartX() * secondsPerPixel())));
@@ -266,7 +275,7 @@ public:
     }
 
 private:
-    enum class Mode { move, resize, fadeIn, fadeOut, warp, none };
+    enum class Mode { move, resize, fadeIn, fadeOut, warp, none, slip };
     std::vector<std::pair<te::Clip::Ptr, double>> groupStarts;
     static constexpr float markerStripHeight = 12.0f;
     int warpIndex = -1;
@@ -801,6 +810,13 @@ private:
             m.addItem ("Open in Piano Roll", [this, mc] { if (evs.openPianoRoll) evs.openPianoRoll (mc); });
             Groove::addToMenu (m, *mc);
         }
+        m.addItem ("Extract groove (to the groove list)", [c = clip]
+        {
+            const auto name = Groove::extractGroove (*c);
+            AlertWindow::showMessageBoxAsync (MessageBoxIconType::InfoIcon, "Extract groove",
+                                              name.isNotEmpty() ? "Added the groove \"" + name + "\". Apply it to a MIDI clip from its Groove menu."
+                                                                : String ("Not enough hits in this clip to find a groove."));
+        });
 
         addLoopItems (m);
 
@@ -823,7 +839,7 @@ private:
     std::function<te::AudioTrack* (int)> findTrackAt;
     std::unique_ptr<te::SmartThumbnail> thumbnail;
     double dragStartBeat = 0, dragEndBeat = 0;
-    te::TimeDuration dragFadeIn, dragFadeOut;
+    te::TimeDuration dragFadeIn, dragFadeOut, dragOffset;
     Mode mode = Mode::move;
 };
 

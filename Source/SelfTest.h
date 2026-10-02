@@ -8,6 +8,7 @@
 #include "Presets.h"
 #include "Macros.h"
 #include "Meters.h"
+#include "ClipGain.h"
 #include "PushMap.h"
 #include "AudioSettings.h"
 #include "MidiTools.h"
@@ -2533,6 +2534,79 @@ namespace SelfTest
                 edit->deleteTrack (t);
             }
             rep.check (ok, "Push encoder assignments (assign, replace, clear)");
+        }
+
+        // --- clip gain envelope, groove extraction ---------------------------------------------------------
+        {
+            rep.step ("clip gain / groove");
+            auto t = ClipImport::createContentTrack (*edit, "ClipGain", false);
+            bool gainOk = false;
+            String gainInfo;
+            if (t != nullptr)
+            {
+                auto src = writeTestWav (dir.getChildFile ("gain_src.wav"), 1.0, 220.0);   // -6 dBFS
+                te::Clip::Ptr c = ClipImport::importFile (*t, *edit, src, te::TimePosition());
+                if (auto w = dynamic_cast<te::WaveAudioClip*> (c.get()))
+                {
+                    ClipGain::setPoints (*w, { { 0.0, 0.0f }, { 0.5, -20.0f }, { 1.0, -20.0f } }, nullptr);
+                    ClipGain::apply (*w);
+                    auto rendered = w->getOriginalFile();
+                    auto peakIn = [&engine] (const File& f, double a, double b)
+                    {
+                        std::unique_ptr<AudioFormatReader> r (engine.getAudioFileFormatManager().readFormatManager.createReaderFor (f));
+                        if (r == nullptr) return -200.0f;
+                        Range<float> rg[2];
+                        r->readMaxLevels ((int64) (a * r->sampleRate), (int64) ((b - a) * r->sampleRate), rg, 1);
+                        return Decibels::gainToDecibels (jmax (std::abs (rg[0].getStart()), std::abs (rg[0].getEnd())), -200.0f);
+                    };
+                    const float start = peakIn (rendered, 0.0, 0.05), late = peakIn (rendered, 0.6, 0.95);
+                    const bool originalKept = std::abs (peakIn (src, 0.6, 0.95) + 6.0f) < 0.3f;
+                    {
+                        PulseLookAndFeel laf;
+                        LookAndFeel::setDefaultLookAndFeel (&laf);
+                        {
+                            AudioClipPanel panel (*w);
+                            auto img = panel.createComponentSnapshot (panel.getLocalBounds());
+                            auto f = dir.getChildFile ("clippanel.png");
+                            f.deleteFile();
+                            if (auto os = f.createOutputStream()) { PNGImageFormat png; png.writeImageToStream (img, *os); }
+                        }
+                        LookAndFeel::setDefaultLookAndFeel (nullptr);
+                    }
+                    ClipGain::setPoints (*w, {}, nullptr);
+                    ClipGain::apply (*w);
+                    const bool restored = w->getOriginalFile() == src;
+                    gainOk = rendered != src && std::abs (start + 6.0f) < 0.5f && std::abs (late + 26.0f) < 0.5f && originalKept && restored;
+                    gainInfo = String (start, 1) + " dB at the start, " + String (late, 1) + " dB after the ramp, restored " + String ((int) restored);
+                }
+                c = nullptr;
+                edit->deleteTrack (t);
+            }
+            rep.check (gainOk, "Clip gain envelope (rendered copy, original kept)", gainInfo);
+
+            // groove: a swung clip (every second 16th late by a third) gives a swing groove
+            auto gtTrack = ClipImport::createContentTrack (*edit, "Groove", true);
+            bool grooveOk = false;
+            String gInfo;
+            if (gtTrack != nullptr)
+            {
+                auto swung = gtTrack->insertMIDIClip ("Swung", { te::TimePosition(), EngineHelpers::beatToTime (*edit, 8.0) }, nullptr);
+                for (int i = 0; i < 32; ++i)
+                    swung->getSequence().addNote (42, te::BeatPosition::fromBeats (i * 0.25 + (i % 2 == 1 ? 0.25 / 3.0 : 0.0)), te::BeatDuration::fromBeats (0.1), 100, 0, nullptr);
+                auto late = Groove::latenessesOf (*swung);
+                const auto name = Groove::extractGroove (*swung);
+                auto straight = gtTrack->insertMIDIClip ("Straight", { EngineHelpers::beatToTime (*edit, 8.0), EngineHelpers::beatToTime (*edit, 12.0) }, nullptr);
+                straight->getSequence().addNote (42, te::BeatPosition::fromBeats (0.25), te::BeatDuration::fromBeats (0.1), 100, 0, nullptr);
+                Groove::set (*straight, name, 1.0f);
+                Groove::commit (*straight);
+                const double moved = straight->getSequence().getNotes()[0]->getStartBeat().inBeats();
+                grooveOk = late.size() == 16 && std::abs (late[1] - 1.0f / 3.0f) < 0.02f && std::abs (late[0]) < 0.02f && name.isNotEmpty() && moved > 0.27;
+                gInfo = "odd 16ths " + String (late.empty() ? 0.0f : late[1], 3) + ", note moved to " + String (moved, 3);
+                if (auto idx = edit->engine.getGrooveTemplateManager().getTemplateNames().indexOf (name); idx >= 0)
+                    edit->engine.getGrooveTemplateManager().deleteTemplate (idx);
+                edit->deleteTrack (gtTrack);
+            }
+            rep.check (grooveOk, "Extract a groove from a clip and apply it", gInfo);
         }
 
         // --- undo -------------------------------------------------------------------------------

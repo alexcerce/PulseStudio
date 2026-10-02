@@ -537,6 +537,69 @@ namespace Groove
         return true;
     }
 
+    /** Timing of hits in edit beats (relative to the clip start) for groove extraction. */
+    inline std::vector<double> hitBeats (te::Clip& c)
+    {
+        std::vector<double> beats;
+        if (auto mc = dynamic_cast<te::MidiClip*> (&c))
+        {
+            for (auto n : mc->getSequence().getNotes()) beats.push_back (n->getStartBeat().inBeats() - mc->getOffsetInBeats().inBeats());
+        }
+        else if (auto ac = dynamic_cast<te::AudioClipBase*> (&c))
+        {
+            const double startBeat = EngineHelpers::timeToBeat (c.edit, c.getPosition().getStart());
+            const double offset = c.getPosition().getOffset().inSeconds();
+            for (auto t : Workflow::sourceTransients (*ac))
+            {
+                const double editTime = c.getPosition().getStart().inSeconds() + (t.inSeconds() - offset) / jmax (0.01, ac->getSpeedRatio());
+                if (editTime >= c.getPosition().getStart().inSeconds() && editTime < c.getPosition().getEnd().inSeconds())
+                    beats.push_back (EngineHelpers::timeToBeat (c.edit, te::TimePosition::fromSeconds (editTime)) - startBeat);
+            }
+        }
+        std::sort (beats.begin(), beats.end());
+        return beats;
+    }
+
+    /** Builds a groove from a clip's timing: for each 16th of a bar, how late (or early) the hits
+        land on average. Returns the latenesses (fractions of a 16th; empty if too few hits). */
+    inline std::vector<float> latenessesOf (te::Clip& c)
+    {
+        const auto beats = hitBeats (c);
+        std::vector<double> sum (16, 0.0);
+        std::vector<int> count (16, 0);
+        for (auto b : beats)
+        {
+            const double sixteenths = b * 4.0;
+            const double nearest = std::round (sixteenths);
+            const int slot = ((int) nearest % 16 + 16) % 16;
+            sum[(size_t) slot] += sixteenths - nearest;
+            ++count[(size_t) slot];
+        }
+        int used = 0;
+        std::vector<float> late (16, 0.0f);
+        for (int i = 0; i < 16; ++i)
+            if (count[(size_t) i] > 0) { late[(size_t) i] = (float) (sum[(size_t) i] / count[(size_t) i]); ++used; }
+        if (used < 2) return {};
+        return late;
+    }
+
+    /** Adds the clip's groove to the groove list (shared with every project). Returns its name. */
+    inline String extractGroove (te::Clip& c)
+    {
+        auto late = latenessesOf (c);
+        if (late.empty()) return {};
+        te::GrooveTemplate gt;
+        gt.setName ("From " + c.getName());
+        gt.setNotesPerBeat (4);
+        gt.setNumberOfNotes (16);
+        for (int i = 0; i < 16; ++i) gt.setLatenessProportion (i, late[(size_t) i], 1.0f);
+        auto& gm = c.edit.engine.getGrooveTemplateManager();
+        const auto before = gm.getTemplateNames();
+        gm.updateTemplate (gm.getNumTemplates(), gt);
+        for (auto& n : gm.getTemplateNames()) if (! before.contains (n)) return n;
+        return gt.getName();
+    }
+
     inline void addToMenu (PopupMenu& m, te::MidiClip& mc)
     {
         te::Clip::Ptr holder (&mc);
