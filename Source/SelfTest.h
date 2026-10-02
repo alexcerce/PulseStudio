@@ -1010,6 +1010,13 @@ namespace SelfTest
 
                 if (loaded)
                 {
+                    {   // Pulse's frame for the sandboxed plugin: parameter groups and a plugin window button
+                        EditViewState evs (*edit, sm);
+                        DeviceEditors::Editor ed (evs, *sb);
+                        const int expectGroups = (jmin (256, sb->numParams()) + 15) / 16;
+                        rep.check (ed.hasPluginWindowButton() && ed.getNumGroups() == expectGroups, "Sandboxed plugin opens in Pulse's frame",
+                                   String (ed.getNumGroups()) + " parameter groups for " + String (sb->numParams()) + " parameters");
+                    }
                     sb->flushPluginStateToValueTree();
                     rep.check (sb->state[pulse::SandboxedPlugin::stateID].toString().length() > 10, "Sandboxed plugin state saved with the project");
 
@@ -3465,6 +3472,30 @@ namespace SelfTest
                            String (rows) + " rows: " + atFirst + " / " + atLast + " / " + atStart);
                 edit->deleteTrack (t);
             }
+        }
+
+        // --- v0.45: A/B in every device editor ----------------------------------------------------------------
+        {
+            rep.step ("device editor A/B");
+            auto t = ClipImport::createContentTrack (*edit, "ABTest", false);
+            auto pl = edit->getPluginCache().createNewPlugin (pulse::Reverb::xmlTypeName, {});
+            t->pluginList.insertPlugin (pl, 0, nullptr);
+            auto* rv = dynamic_cast<pulse::Reverb*> (pl.get());
+            bool ok = false;
+            {
+                EditViewState evs (*edit, sm);
+                DeviceEditors::Editor ed (evs, *rv);
+                rv->set (pulse::Reverb::pDecay, 2.0f);
+                ed.clickAB();                                   // A stored, now on B (still 2.0)
+                rv->set (pulse::Reverb::pDecay, 9.0f);
+                ed.clickAB();                                   // back to A
+                const float a = rv->get (pulse::Reverb::pDecay);
+                ed.clickAB();                                   // B again
+                const float b = rv->get (pulse::Reverb::pDecay);
+                ok = std::abs (a - 2.0f) < 0.01f && std::abs (b - 9.0f) < 0.01f;
+            }
+            rep.check (ok, "A/B compare in the device editor");
+            edit->deleteTrack (t);
         }
 
         // --- sharing: project zip, crash bundle, update check -----------------------------------------

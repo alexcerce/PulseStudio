@@ -141,3 +141,5 @@ when you start, touch it after each step, and delete it when you stop.
 - 2026-10-02: v0.44.0 mixer: MiniEQ per strip (click adds / opens Prism EQ), SendMatrix grid, narrow strips, folded groups;
   UndoHistory.h (menus on undo / redo, history window), Shortcuts tab in Settings. 199 checks pass.
   (The 0.43.0 installer in dist was rebuilt by mistake from the 0.44 code; the 0.44.0 one is current.)
+- 2026-10-02: v0.45.0 sandboxed plugins open in the Pulse device editor (parameter groups of 16, plugin window button),
+  A/B and your own presets in every device editor. The v0.42 "do all of these" list is done. 201 checks pass.

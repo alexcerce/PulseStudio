@@ -3,6 +3,7 @@
 #include "DeviceDisplays.h"
 #include "FactoryPresets.h"
 #include "DeviceViews.h"
+#include "Presets.h"
 
 /** Big device editor windows for Pulse devices: large, detailed graphs (all of a device's views at
     once) above every control, in sections you can fold. Resizable; scrolls when there's a lot. */
@@ -351,16 +352,22 @@ namespace DeviceEditors
             add ("Stereo field", std::make_unique<DeviceViews::StereoField> (*u));
         else if (auto c = DeviceDisplays::create (evs, p))
             add (p.getName(), std::move (c));
-        if (auto pp = dynamic_cast<pulse::PulsePlugin*> (&p); pp != nullptr && v.size() < 2 && pp->numParams() > 0)
+        if (auto pp = dynamic_cast<pulse::PulsePlugin*> (&p); pp != nullptr && v.size() < 2 && pp->numParams() > 0 && pp->numParams() <= 48)
             add ("All parameters", std::make_unique<ParamBars> (*pp));
         return v;
     }
+
+    struct Window;
+    Window* show (EditViewState&, pulse::PulsePlugin&);
 
     //==============================================================================
     class Editor : public Component
     {
     public:
         int getNumGraphs() const { return (int) graphs.size(); }
+        int getNumGroups() const { return groups.size(); }
+        bool hasPluginWindowButton() const { return windowBtn.isVisible(); }
+        void clickAB() { abBtn.onClick(); }
 
         Editor (EditViewState& e, pulse::PulsePlugin& p) : evs (e), holder (&p), plugin (&p)
         {
@@ -399,7 +406,24 @@ namespace DeviceEditors
             title.setText (p.getName(), dontSendNotification);
             title.setFont (FontOptions (16.0f, Font::bold));
             addAndMakeVisible (title);
-            for (auto* b : { &randomBtn, &resetBtn, &foldBtn }) addAndMakeVisible (b);
+            for (auto* b : { &randomBtn, &resetBtn, &foldBtn, &abBtn }) addAndMakeVisible (b);
+            abBtn.setTooltip ("Compare two versions of the settings (click to switch between A and B)");
+            abBtn.onClick = [this]
+            {
+                auto& mine = abIsB ? slotB : slotA;
+                mine = DeviceTools::capture (*plugin);
+                auto& other = abIsB ? slotA : slotB;
+                plugin->edit.getUndoManager().beginNewTransaction ("A/B");
+                if (! other.empty()) DeviceTools::apply (*plugin, other);
+                abIsB = ! abIsB;
+                abBtn.setButtonText (abIsB ? "B" : "A");
+            };
+            if (auto sb = dynamic_cast<pulse::SandboxedPlugin*> (plugin))
+            {
+                windowBtn.setTooltip ("Open the plugin's own window (it runs in its own process)");
+                windowBtn.onClick = [sb] { sb->showEditor(); };
+                addAndMakeVisible (windowBtn);
+            }
             randomBtn.onClick = [this] { plugin->edit.getUndoManager().beginNewTransaction ("Randomise"); Random r; DeviceTools::randomise (*plugin, r, 0.3f); };
             resetBtn.onClick = [this] { plugin->edit.getUndoManager().beginNewTransaction ("Reset device"); DeviceTools::resetToDefaults (*plugin); };
             foldBtn.onClick = [this]
@@ -418,7 +442,24 @@ namespace DeviceEditors
                         plugin->edit.getUndoManager().beginNewTransaction ("Factory preset");
                         FactoryPresets::apply (*plugin, name);
                     });
-                if (m.getNumItems() == 0) m.addItem ("No factory presets for this device", false, false, nullptr);
+                auto mine = Presets::devicePresets (*plugin);
+                if (! mine.isEmpty())
+                {
+                    m.addSectionHeader ("Your presets");
+                    for (auto& f : mine)
+                        m.addItem (f.getFileNameWithoutExtension(), [this, f, &evs = evs]
+                        {
+                            plugin->edit.getUndoManager().beginNewTransaction ("Load preset");
+                            auto np = Presets::loadDevice (*plugin, f);   // replaces the device: reopen the editor on the new one
+                            if (auto pp = dynamic_cast<pulse::PulsePlugin*> (np.get()))
+                                MessageManager::callAsync ([&evs, ref = te::Plugin::Ptr (np), pp] { juce::ignoreUnused (ref); show (evs, *pp); });
+                        });
+                }
+                m.addSeparator();
+                m.addItem ("Save preset...", [this]
+                {
+                    Presets::askForName ("Save preset", plugin->getName(), [p = te::Plugin::Ptr (plugin)] (const String& n) { Presets::saveDevice (*p, n); });
+                });
                 m.showMenuAsync (PopupMenu::Options().withTargetComponent (&presetBtn));
             };
             addAndMakeVisible (presetBtn);
@@ -439,6 +480,8 @@ namespace DeviceEditors
             auto r = getLocalBounds();
             auto top = r.removeFromTop (44).reduced (12, 8);
             for (auto* b : { &foldBtn, &resetBtn, &randomBtn, &presetBtn }) { b->setBounds (top.removeFromRight (110)); top.removeFromRight (6); }
+            abBtn.setBounds (top.removeFromRight (44)); top.removeFromRight (6);
+            if (windowBtn.isVisible()) { windowBtn.setBounds (top.removeFromRight (130)); top.removeFromRight (6); }
             title.setBounds (top);
             r.reduce (12, 8);
 
@@ -520,7 +563,9 @@ namespace DeviceEditors
         Component controls;
         OwnedArray<Group> groups;
         Label title;
-        TextButton presetBtn { "Presets" }, randomBtn { "Randomise" }, resetBtn { "Reset" }, foldBtn { "Fold all" };
+        TextButton presetBtn { "Presets" }, randomBtn { "Randomise" }, resetBtn { "Reset" }, foldBtn { "Fold all" }, abBtn { "A" }, windowBtn { "Plugin window" };
+        DeviceTools::Values slotA, slotB;
+        bool abIsB = false;
     };
 
     //==============================================================================

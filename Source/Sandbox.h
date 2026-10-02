@@ -296,11 +296,19 @@ namespace pulse
         double getLatencySeconds() override          { return latencySamples / jmax (1.0, sampleRate); }
         void deinitialise() override                 {}
 
+        /** The plugin's parameters in groups of 16 (up to 256). */
         std::vector<Section> getSections() const override
         {
-            Section s { "Parameters", {} };
-            for (int i = 0; i < jmin (16, numParams()); ++i) s.params.push_back (i);
-            return { s };
+            std::vector<Section> out;
+            const int n = jmin (256, numParams());
+            for (int start = 0; start < n; start += 16)
+            {
+                Section s { n > 16 ? "Parameters " + String (start + 1) + "-" + String (jmin (n, start + 16)) : String ("Parameters"), {} };
+                for (int i = start; i < jmin (n, start + 16); ++i) s.params.push_back (i);
+                out.push_back (s);
+            }
+            if (out.empty()) out.push_back ({ "Parameters", {} });
+            return out;
         }
 
         bool isLoaded() const      { return loaded.load(); }

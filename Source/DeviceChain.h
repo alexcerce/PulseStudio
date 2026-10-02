@@ -343,7 +343,13 @@ public:
         }
     }
 
-    void mouseDoubleClick (const MouseEvent&) override { openEditor(); }
+    // double-click: Pulse's editor (for a sandboxed plugin too: its parameters, presets, A/B;
+    // the Edit button opens the plugin's own window)
+    void mouseDoubleClick (const MouseEvent&) override
+    {
+        if (auto pp = dynamic_cast<pulse::PulsePlugin*> (plugin.get())) DeviceEditors::show (evs, *pp);
+        else openEditor();
+    }
 
 private:
     void openEditor()
