@@ -2,6 +2,7 @@
 
 #include "DeviceDisplays.h"
 #include "FactoryPresets.h"
+#include "DeviceViews.h"
 
 /** Big device editor windows for Pulse devices: large, detailed graphs (all of a device's views at
     once) above every control, in sections you can fold. Resizable; scrolls when there's a lot. */
@@ -337,6 +338,15 @@ namespace DeviceEditors
             add ("LFO", std::make_unique<DeviceDisplays::AutoFilterDisplay> (*s));
             add ("Envelope follower", env ({ { s->param (A::pAttack), nullptr, nullptr, s->param (A::pRelease), Theme::accent, "FOLLOWER" } }));
         }
+        else if (auto fx = dynamic_cast<pulse::PulseMidiEffect*> (&p))
+            add ("What it does to a phrase", std::make_unique<DeviceViews::MidiFxPreview> (*fx));
+        else if (auto vc = dynamic_cast<pulse::Vocoder*> (&p))
+        {
+            add ("Bands", std::make_unique<DeviceViews::VocoderBands> (*vc));
+            if (auto c = DeviceDisplays::create (evs, p)) add ("Vocoder", std::move (c));
+        }
+        else if (auto u = dynamic_cast<pulse::Utility*> (&p))
+            add ("Stereo field", std::make_unique<DeviceViews::StereoField> (*u));
         else if (auto c = DeviceDisplays::create (evs, p))
             add (p.getName(), std::move (c));
         if (auto pp = dynamic_cast<pulse::PulsePlugin*> (&p); pp != nullptr && v.size() < 2 && pp->numParams() > 0)

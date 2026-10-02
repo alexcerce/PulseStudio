@@ -2629,7 +2629,7 @@ namespace SelfTest
                     for (auto& [id, v] : pr.values)
                         if (p->getAutomatableParameterByID (id) == nullptr) { ++missing; problems.add (type + "." + id); }
                     FactoryPresets::apply (*p, pr.name);
-                    if (p->isSynth() && type != pulse::DrumSynth::xmlTypeName)
+                    if (p->isSynth() && type != pulse::DrumSynth::xmlTypeName && type != pulse::Simpler::xmlTypeName)   // Simpler needs a sample
                     {
                         // a held chord must make sound
                         const double sr = 48000.0;
@@ -2652,7 +2652,17 @@ namespace SelfTest
                         if (Decibels::gainToDecibels (peak) < -40.0f) { ++silent; problems.add (String (pr.name) + " silent"); }
                     }
                 }
-            rep.check (presets >= 50 && missing == 0 && silent == 0, "Factory presets (every id exists, every sound plays)",
+            StringArray thin;
+            for (auto& b : ClipImport::builtIns())
+            {
+                const String t (b.type);
+                if (t == pulse::Tuner::xmlTypeName || t == pulse::Spectrum::xmlTypeName) continue;
+                auto test = edit->getPluginCache().createNewPlugin (t, {});
+                if (dynamic_cast<pulse::PulsePlugin*> (test.get()) == nullptr) continue;
+                if (FactoryPresets::forType (t).size() < 4) thin.add (b.name);
+            }
+            rep.check (thin.isEmpty(), "Every Pulse device has at least 4 factory presets", thin.isEmpty() ? String ("ok") : thin.joinIntoString (", "));
+            rep.check (presets >= 150 && missing == 0 && silent == 0, "Factory presets (every id exists, every sound plays)",
                        String (presets) + " presets" + (problems.isEmpty() ? String() : ": " + problems.joinIntoString (", ")));
 
             auto rp = DrumRack::create (*edit, false);
@@ -2939,6 +2949,33 @@ namespace SelfTest
             }
             edit->deleteTrack (oldRev);
             edit->deleteTrack (oldDel);
+        }
+
+        // --- v0.38: MIDI effect previews, vocoder / utility views -----------------------------------------
+        {
+            rep.step ("device views");
+            ReferenceCountedArray<te::Plugin> keep;
+            auto make = [&] (const char* type, const char* preset) -> pulse::PulseMidiEffect*
+            {
+                auto p = edit->getPluginCache().createNewPlugin (type, {});
+                keep.add (p);
+                if (preset != nullptr) FactoryPresets::apply (*p, preset);
+                return dynamic_cast<pulse::PulseMidiEffect*> (p.get());
+            };
+            using DV = DeviceViews::MidiFxPreview;
+            auto arp = DV::run (*make (pulse::Arpeggiator::xmlTypeName, "Classic Up 1/16"), 120.0);
+            int arpInBar1 = 0;
+            for (auto& n : arp) if (n.start < 4.0) ++arpInBar1;
+            auto chord = DV::run (*make (pulse::ChordFx::xmlTypeName, "Major Triad"), 120.0);
+            auto scale = DV::run (*make (pulse::ScaleFx::xmlTypeName, "C Major"), 120.0);
+            bool outOfKey = false;
+            for (auto& n : scale) outOfKey = outOfKey || MidiMessage::isMidiNoteBlack (n.pitch);
+            auto echo = DV::run (*make (pulse::NoteEcho::xmlTypeName, "1/8 Echoes"), 120.0);
+            const int inCount = (int) DV::inputPhrase().size();
+            rep.check (arpInBar1 >= 12 && (int) chord.size() >= inCount * 3 && ! scale.empty() && ! outOfKey && (int) echo.size() > inCount,
+                       "MIDI effect previews show what each effect does",
+                       "arp " + String (arpInBar1) + " notes in bar 1, chord " + String ((int) chord.size()) + ", scale in key " + String (outOfKey ? "no" : "yes")
+                         + ", echo " + String ((int) echo.size()));
         }
 
         // --- sharing: project zip, crash bundle, update check -----------------------------------------

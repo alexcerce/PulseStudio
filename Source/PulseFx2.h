@@ -277,7 +277,9 @@ namespace pulse
     protected:
         void prepare() override { lastFormant = 999.0f; for (auto& e : env) e = 0.0f; sawPhase = 0.0; }
 
+    public:
         static float bandFreq (int b) { return 100.0f * std::pow (2.0f, (float) b * std::log2 (8000.0f / 100.0f) / (float) (bands - 1)); }
+    protected:
 
         void process (float* l, float* r, int n, const te::PluginRenderContext&) override
         {
@@ -325,7 +327,12 @@ namespace pulse
                 l[s] = l[s] * (1.0f - mix) + out * mix;
                 r[s] = r[s] * (1.0f - mix) + out * mix;
             }
+            for (int b = 0; b < bands; ++b) bandLevel[(size_t) b].store (env[(size_t) b], std::memory_order_relaxed);
         }
+
+    public:
+        /** Each band's envelope (the voice's spectrum), for the display. */
+        std::array<std::atomic<float>, bands> bandLevel {};
 
     private:
         std::array<Biquad, bands> modF, carF;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Common.h"
+#include "FactoryPresetsMore.h"
 
 /** Built-in presets for Pulse's own devices (sounds and effect settings). A preset resets the
     device to its defaults and then sets the listed parameters (by id, in real units). */
@@ -8,7 +9,7 @@ namespace FactoryPresets
 {
     struct Preset { const char* name; std::vector<std::pair<const char*, float>> values; };
 
-    inline const std::map<String, std::vector<Preset>>& all()
+    inline const std::map<String, std::vector<Preset>>& base()
     {
         static const std::map<String, std::vector<Preset>> presets {
             { "pulseWavetable", {
@@ -96,6 +97,20 @@ namespace FactoryPresets
                 { "Loud", { { "gain", 8 }, { "ceiling", -0.3f } } } } }
         };
         return presets;
+    }
+
+    /** Every factory preset: the originals, then the extra set (FactoryPresetsMore.h). */
+    inline const std::map<String, std::vector<Preset>>& all()
+    {
+        static const auto merged = []
+        {
+            auto m = base();
+            for (auto& [type, list] : FactoryPresetsMore::all())
+                for (auto& p : list)
+                    m[type].push_back ({ p.name, p.values });
+            return m;
+        }();
+        return merged;
     }
 
     inline const std::vector<Preset>& forType (const String& type)

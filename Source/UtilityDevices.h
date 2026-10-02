@@ -93,9 +93,23 @@ namespace pulse
                 const float t = (float) (i + 1) / (float) n;
                 l[i] = L * (lastGL + (gl - lastGL) * t);
                 r[i] = R * (lastGR + (gr - lastGR) * t);
+                if ((i & 1) == 0)   // the stereo scope keeps every other output sample
+                {
+                    const int w = scopeWrite.load (std::memory_order_relaxed);
+                    scope[(size_t) (w * 2)].store (l[i], std::memory_order_relaxed);
+                    scope[(size_t) (w * 2 + 1)].store (r[i], std::memory_order_relaxed);
+                    scopeWrite.store ((w + 1) % scopeSize, std::memory_order_relaxed);
+                }
             }
             lastGL = gl; lastGR = gr;
         }
+
+    public:
+        /** Recent output (L, R pairs) for the stereo scope. */
+        static constexpr int scopeSize = 1024;
+        std::array<std::atomic<float>, scopeSize * 2> scope {};
+        std::atomic<int> scopeWrite { 0 };
+    protected:
 
     private:
         std::array<Biquad, 2> sideHp, dc;

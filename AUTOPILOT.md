@@ -122,3 +122,5 @@ when you start, touch it after each step, and delete it when you stop.
   polish, startup speed).
 - 2026-10-02: v0.37.0 BusLanes.h (return / master rows with device chips, drop, +), Upgrade.h (old returns -> Pulse
   devices, raw names), auto-named tracks follow their instrument. 183 checks pass.
+- 2026-10-02: v0.38.0 183 factory presets (FactoryPresetsMore.h, >= 4 per device incl. MIDI fx), DeviceViews.h (MIDI fx
+  phrase preview via an offline copy, vocoder bands, Utility stereo field). 185 checks pass.
