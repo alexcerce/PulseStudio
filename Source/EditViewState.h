@@ -106,6 +106,9 @@ public:
     /** Track rows changed height (automation shown/hidden or parameter changed). */
     ChangeBroadcaster layoutChanged;
 
+    /** Pencil mode: drag in automation lanes to draw (snapped to the grid). */
+    bool drawMode = false;
+
     /** Groups (folder tracks) whose children are hidden in the arrangement. */
     std::set<te::EditItemID> collapsed;
 

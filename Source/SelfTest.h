@@ -25,6 +25,8 @@
 #include "Sandbox.h"
 #include "BackgroundRender.h"
 #include "Commands.h"
+#include "Modulators.h"
+#include "ClipEnvelopes.h"
 
 /** "Pulse Studio.exe --selftest report.txt"
     Builds a scratch project in the temp folder, exercises the editing / routing / device
@@ -1133,6 +1135,55 @@ namespace SelfTest
                 dm.deleteVirtualMidiDevice (*vmi);
             }
             rep.check (captured == 4, "Capture MIDI (recover what was just played)", String (captured) + " notes captured; " + captureInfo);
+        }
+
+        // --- automation: curves, modulators, clip envelopes ---------------------------------------------
+        {
+            auto autoTrack = ClipImport::createContentTrack (*edit, "Automation", false);
+            auto wtP = edit->getPluginCache().createNewPlugin (pulse::WavetableSynth::xmlTypeName, {});
+            autoTrack->pluginList.insertPlugin (wtP, 0, nullptr);
+            auto* wt = dynamic_cast<pulse::WavetableSynth*> (wtP.get());
+
+            // curved segment
+            auto& cv = wt->param (pulse::WavetableSynth::pCutoff)->getCurve();
+            cv.addPoint (te::TimePosition(), 0.0f, 0.0f, nullptr);
+            cv.addPoint (te::TimePosition::fromSeconds (2.0), 20000.0f, 0.0f, nullptr);
+            const float linearMid = cv.getValueAt (te::TimePosition::fromSeconds (1.0), 0.0f);
+            cv.setCurveValue (0, 0.8f, nullptr);
+            const float curvedMid = cv.getValueAt (te::TimePosition::fromSeconds (1.0), 0.0f);
+            rep.check (std::abs (curvedMid - linearMid) > 500.0f, "Curved automation segments",
+                       "midpoint " + String (linearMid, 0) + " -> " + String (curvedMid, 0));
+
+            // modulator
+            auto lfo = Modulators::add (*autoTrack, te::IDs::LFO);
+            auto* pos = wt->param (pulse::WavetableSynth::pPos1);
+            bool modOk = false;
+            if (lfo != nullptr)
+            {
+                Modulators::setAmount (*pos, *lfo, 0.5f);
+                modOk = Modulators::isModulated (*pos) && std::abs (Modulators::amountOf (*pos, *lfo) - 0.5f) < 1.0e-4f
+                          && Modulators::targetsOf (*autoTrack, *lfo).size() == 1 && Modulators::nameOf (*autoTrack, *lfo) == "LFO 1";
+                Modulators::setAmount (*pos, *lfo, 0.0f);
+                modOk = modOk && ! Modulators::isModulated (*pos);
+            }
+            rep.check (modOk, "LFO modulator assigned to a knob (amount, targets, remove)");
+
+            // clip envelope on the wavetable position
+            auto envClip = autoTrack->insertMIDIClip ("Env", { bars (2), bars (3) }, nullptr);
+            ClipEnvelopes::Target target { wt->itemID.toString(), pos->paramID, "Position" };
+            ClipEnvelopes::setPoint (*envClip, target, 0.0, 0.0f, 0.05, nullptr);
+            ClipEnvelopes::setPoint (*envClip, target, 4.0, 1.0f, 0.05, nullptr);
+            auto env = ClipEnvelopes::findEnv (*envClip, target);
+            auto mid = ClipEnvelopes::valueAt (env, 2.0);
+            auto beat = ClipEnvelopes::playingBeat (*envClip, bars (2) + te::TimeDuration::fromSeconds (0.5), false);   // 1 beat in at 120 BPM
+            auto resolved = ClipEnvelopes::resolve (*autoTrack, env);
+            if (resolved != nullptr && beat) resolved->setNormalisedParameter (*ClipEnvelopes::valueAt (env, *beat), dontSendNotification);
+            rep.check (mid && std::abs (*mid - 0.5f) < 1.0e-4f && beat && std::abs (*beat - 1.0) < 1.0e-3 && resolved == pos
+                         && std::abs (pos->getCurrentNormalisedValue() - 0.25f) < 0.01f,
+                       "Clip envelope drives a device parameter",
+                       beat ? "beat " + String (*beat, 3) + ", value " + String (pos->getCurrentNormalisedValue(), 3) : String ("not playing"));
+            envClip = nullptr;
+            lfo = nullptr;
         }
 
         // --- undo -------------------------------------------------------------------------------

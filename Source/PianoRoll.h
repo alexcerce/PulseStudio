@@ -2,6 +2,7 @@
 
 #include "EditViewState.h"
 #include "Scales.h"
+#include "ClipEnvelopes.h"
 
 /** Piano roll editor for a te::MidiClip. X positions are in the clip's content beats. */
 class PianoRoll : public Component,
@@ -26,10 +27,15 @@ public:
         quantizeBtn.onClick = [this] { quantize(); };
         addAndMakeVisible (quantizeBtn);
 
-        laneBox.addItemList ({ "Velocity", "Pitch Bend", "Mod Wheel (CC1)", "Volume (CC7)", "Pan (CC10)", "Expression (CC11)", "Sustain (CC64)" }, 1);
+        laneBox.addItemList ({ "Velocity", "Pitch Bend", "Mod Wheel (CC1)", "Volume (CC7)", "Pan (CC10)", "Expression (CC11)", "Sustain (CC64)",
+                               "Device envelope..." }, 1);
         laneBox.setSelectedId (1, dontSendNotification);
         laneBox.setTooltip ("What the lane under the notes edits");
-        laneBox.onChange = [this] { repaint(); };
+        laneBox.onChange = [this]
+        {
+            if (laneBox.getSelectedId() == envelopeItem) chooseEnvelopeTarget();
+            repaint();
+        };
         addAndMakeVisible (laneBox);
 
         scaleBox.addItem ("No scale", 1);
@@ -287,6 +293,17 @@ public:
 
         if (y >= toolbarH + gridHeight())
         {
+            if (laneType() == envelopeLane)
+            {
+                if (! envTarget.isValid()) { chooseEnvelopeTarget(); return; }
+                const double beat = jmax (0.0, snapFloor (xToBeat (x)));
+                const double tol = jmax (0.02, (snap > 0 ? snap : 0.25) * 0.5);
+                if (e.mods.isPopupMenu()) ClipEnvelopes::removeNear (*clip, envTarget, beat, tol, &um());
+                else                      { ClipEnvelopes::setPoint (*clip, envTarget, beat, envValueAt (y), tol, &um()); mode = Mode::controller; }
+                repaint();
+                return;
+            }
+
             if (laneType() != velocityLane)
             {
                 if (e.mods.isPopupMenu())
@@ -383,7 +400,13 @@ public:
         switch (mode)
         {
             case Mode::velocity: setVelocityAt (x, y); break;
-            case Mode::controller: drawControllerAt (x, y); break;
+            case Mode::controller:
+                if (laneType() == envelopeLane)
+                    ClipEnvelopes::setPoint (*clip, envTarget, jmax (0.0, snapFloor (xToBeat (x))), envValueAt (y),
+                                             jmax (0.02, (snap > 0 ? snap : 0.25) * 0.5), &um());
+                else
+                    drawControllerAt (x, y);
+                break;
 
             case Mode::erase:
                 if (auto* n = hitNote (x, y)) { selected.removeFirstMatchingValue (n); seq.removeNote (*n, &um()); }
@@ -537,7 +560,7 @@ private:
 
     //==============================================================================
     // Controller lane (pitch bend / CCs). Tracktion stores every controller value as 14-bit (0..16383).
-    static constexpr int velocityLane = -1;
+    static constexpr int velocityLane = -1, envelopeLane = -2, envelopeItem = 8;
 
     int laneType() const
     {
@@ -549,6 +572,7 @@ private:
             case 5: return 10;
             case 6: return 11;
             case 7: return 64;
+            case envelopeItem: return envelopeLane;
             default: return velocityLane;
         }
     }
@@ -563,6 +587,7 @@ private:
             case 5: return "CC10";
             case 6: return "CC11";
             case 7: return "CC64";
+            case envelopeItem: return envTarget.isValid() ? envTarget.name : String ("Envelope");
             default: return "Velocity";
         }
     }
@@ -606,8 +631,66 @@ private:
         clip->getSequence().addControllerEvent (te::BeatPosition::fromBeats (absBeat), laneType(), value, &um());
     }
 
+    float envValueAt (float y) const
+    {
+        return jlimit (0.0f, 1.0f, (laneTop() + (float) velH - 4.0f - y) / (float) (velH - 8));
+    }
+
+    float envToY (float v) const { return laneTop() + (float) velH - 4.0f - v * (float) (velH - 8); }
+
+    /** Pick the device parameter the envelope lane edits. */
+    void chooseEnvelopeTarget()
+    {
+        auto at = clip != nullptr ? dynamic_cast<te::AudioTrack*> (clip->getTrack()) : nullptr;
+        if (at == nullptr) return;
+        PopupMenu m;
+        for (auto pl : at->pluginList)
+        {
+            auto params = pl->getAutomatableParameters();
+            if (params.isEmpty() || dynamic_cast<te::LevelMeterPlugin*> (pl) != nullptr) continue;
+            PopupMenu sub;
+            for (auto p : params)
+            {
+                ClipEnvelopes::Target t { pl->itemID.toString(), p->paramID, pl->getName() + " > " + p->getParameterName() };
+                const bool has = ClipEnvelopes::findEnv (*clip, t).isValid();
+                sub.addItem (p->getParameterName() + (has ? "  *" : ""), true, envTarget.paramID == t.paramID && envTarget.pluginID == t.pluginID,
+                             [this, t] { envTarget = t; repaint(); });
+            }
+            m.addSubMenu (pl->getName(), sub);
+        }
+        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&laneBox));
+    }
+
+    void drawEnvelopeLane (Graphics& g, float laneY, Colour colour)
+    {
+        if (! envTarget.isValid())
+        {
+            g.setColour (Theme::muted);
+            g.setFont (FontOptions (12.0f));
+            g.drawText ("Choose a device parameter (lane menu), then click / drag to draw its envelope", keyW + 8, (int) laneY + 4, 600, 14, Justification::left);
+            return;
+        }
+        auto env = ClipEnvelopes::findEnv (*clip, envTarget);
+        auto pts = ClipEnvelopes::points (env);
+        g.setColour (Theme::muted);
+        g.setFont (FontOptions (11.0f));
+        g.drawText (envTarget.name + (pts.empty() ? "  - click to draw" : String()), keyW + 8, (int) laneY + 2, 500, 13, Justification::left);
+        if (pts.empty()) return;
+
+        Path p;
+        p.startNewSubPath ((float) keyW, envToY (pts.front().second));
+        for (auto& [b, v] : pts) p.lineTo (beatToX (b), envToY (v));
+        p.lineTo ((float) getWidth(), envToY (pts.back().second));
+        g.setColour (Colour (0xffb197fc));
+        g.strokePath (p, PathStrokeType (1.6f));
+        for (auto& [b, v] : pts) g.fillEllipse (beatToX (b) - 3.0f, envToY (v) - 3.0f, 6.0f, 6.0f);
+        ignoreUnused (colour);
+    }
+
     void drawControllerLane (Graphics& g, float laneY, Colour colour)
     {
+        if (laneType() == envelopeLane) { drawEnvelopeLane (g, laneY, colour); return; }
+
         // centre line for pitch bend
         if (laneType() == te::MidiControllerEvent::pitchWheelType)
         {
@@ -815,6 +898,7 @@ private:
     int velocity = 100, pressedKey = -1;
 
     ComboBox gridBox, laneBox, scaleBox, rootBox;
+    ClipEnvelopes::Target envTarget;
     TextButton foldBtn { "Fold" };
     mutable std::vector<int> rows;
     mutable std::array<int, 128> rowOf {};

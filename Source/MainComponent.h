@@ -24,6 +24,7 @@
 #include "Sharing.h"
 #include "BackgroundRender.h"
 #include "Commands.h"
+#include "ClipEnvelopes.h"
 
 //==============================================================================
 /** Owns the current Edit and lays out transport, browser, arrangement/session and the
@@ -237,6 +238,7 @@ public:
         c.add ("view.zoomIn", "Zoom in", "View", key ('='), [this] { evs->zoom (1.4, 0); });
         c.add ("view.zoomOut", "Zoom out", "View", key ('-'), [this] { evs->zoom (1.0 / 1.4, 0); });
         c.add ("view.palette", "Command palette", "View", key ('P', ctrl), [this] { openPalette(); });
+        c.add ("edit.pencil", "Pencil (draw automation)", "Edit", key ('D'), [this] { evs->drawMode = ! evs->drawMode; evs->viewChanged.sendChangeMessage(); });
 
         c.add ("track.addInstrument", "New instrument track", "Tracks", key ('T', ctrl), [this] { addTrack (true); });
         c.add ("track.addAudio", "New audio track", "Tracks", key ('T', ctrl | shiftM), [this] { addTrack (false); });
@@ -500,6 +502,7 @@ private:
         evs->openPianoRoll = [this] (te::MidiClip* mc) { pianoRoll->setClip (mc); showTab (Tab::pianoRoll); };
         midiLearn = std::make_unique<MidiLearn> (*edit);
         linkSync = std::make_unique<LinkSync> (*edit);
+        envelopePlayer = std::make_unique<ClipEnvelopes::Player> (*edit);
         if (settings().getBoolValue ("linkEnabled", false))
             linkSync->setEnabled (true);
         midiLearn->addChangeListener (this);
@@ -555,6 +558,7 @@ private:
         Launcher::slotRecordings().clear();
         midiLearn = nullptr;
         linkSync = nullptr;
+        envelopePlayer = nullptr;
         evs = nullptr;
         edit = nullptr;
     }
@@ -914,6 +918,7 @@ private:
     std::unique_ptr<EditViewState> evs;
     std::unique_ptr<MidiLearn> midiLearn;
     std::unique_ptr<LinkSync> linkSync;
+    std::unique_ptr<ClipEnvelopes::Player> envelopePlayer;
     std::unique_ptr<CommandRegistry> commands;
     std::unique_ptr<CommandPalette> palette;
     Label learnBanner;

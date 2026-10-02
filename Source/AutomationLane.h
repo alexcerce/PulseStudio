@@ -98,6 +98,7 @@ private:
 /** Draws and edits the automation curve of one parameter.
     Click: add point | drag: move | right-click or double-click a point: delete. */
 class AutomationLane : public Component,
+                       public SettableTooltipClient,
                        private Timer
 {
 public:
@@ -168,7 +169,10 @@ public:
     {
         auto idx = findPoint (e.position);
         if (idx != hoverIndex) { hoverIndex = idx; repaint(); }
-        setMouseCursor (idx >= 0 ? MouseCursor::DraggingHandCursor : MouseCursor::CrosshairCursor);
+        setMouseCursor (evs.drawMode ? MouseCursor::CrosshairCursor
+                        : idx >= 0 ? MouseCursor::DraggingHandCursor
+                        : e.mods.isAltDown() ? MouseCursor::UpDownResizeCursor : MouseCursor::CrosshairCursor);
+        setTooltip (evs.drawMode ? "Pencil: drag to draw automation" : "Click: add point | drag: move | Alt-drag a line: bend it | right-click: delete");
     }
 
     void mouseExit (const MouseEvent&) override { hoverIndex = -1; repaint(); }
@@ -181,6 +185,25 @@ public:
         auto& um = evs.edit.getUndoManager();
         um.beginNewTransaction ("Edit automation");
         auto idx = findPoint (e.position);
+        bendIndex = -1;
+        lastDrawBeat = -1.0;
+
+        // pencil: draw points as you drag
+        if (evs.drawMode && ! e.mods.isPopupMenu())
+        {
+            drawAt (*param, e);
+            dragIndex = -1;
+            return;
+        }
+
+        // Alt-drag on a line bends that segment
+        if (idx < 0 && e.mods.isAltDown() && ! e.mods.isPopupMenu())
+        {
+            bendIndex = segmentAt (*param, e.position.x);
+            if (bendIndex >= 0) bendStart = param->getCurve().getPointCurve (bendIndex);
+            dragIndex = -1;
+            return;
+        }
 
         if (e.mods.isPopupMenu())
         {
@@ -201,14 +224,26 @@ public:
     void mouseDrag (const MouseEvent& e) override
     {
         auto param = evs.getAutomationParam (*track);
-        if (param == nullptr || dragIndex < 0) return;
+        if (param == nullptr) return;
+
+        if (evs.drawMode) { drawAt (*param, e); return; }
+
+        if (bendIndex >= 0)
+        {
+            auto bend = jlimit (-1.0f, 1.0f, bendStart - (float) e.getDistanceFromDragStartY() / 80.0f);
+            param->getCurve().setCurveValue (bendIndex, bend, &evs.edit.getUndoManager());
+            repaint();
+            return;
+        }
+
+        if (dragIndex < 0) return;
 
         dragIndex = param->getCurve().movePoint (*param, dragIndex, timeAt (e.position.x, e.mods),
                                                  yToValue (*param, e.position.y), false, &evs.edit.getUndoManager());
         repaint();
     }
 
-    void mouseUp (const MouseEvent&) override { dragIndex = -1; repaint(); }
+    void mouseUp (const MouseEvent&) override { dragIndex = -1; bendIndex = -1; lastDrawBeat = -1.0; repaint(); }
 
     void mouseDoubleClick (const MouseEvent& e) override
     {
@@ -232,6 +267,45 @@ public:
 
 private:
     static constexpr float padY = 6.0f;
+
+    /** Index of the point that starts the segment under x (the segment bent by Alt-drag). */
+    int segmentAt (te::AutomatableParameter& p, float x) const
+    {
+        auto& c = p.getCurve();
+        auto t = evs.xToTime (x);
+        int idx = -1;
+        for (int i = 0; i < c.getNumPoints(); ++i)
+            if (c.getPointTime (i) <= t) idx = i;
+        return idx >= 0 && idx < c.getNumPoints() - 1 ? idx : -1;
+    }
+
+    /** Pencil: replaces the points under the stroke with steps at the grid size (free when snap is off). */
+    void drawAt (te::AutomatableParameter& p, const MouseEvent& e)
+    {
+        auto& c = p.getCurve();
+        auto* um = &evs.edit.getUndoManager();
+        const double step = evs.snapBeats > 0.0 ? evs.snapBeats : 1.0 / 16.0;
+        const double beat = jmax (0.0, std::floor (evs.xToBeat (e.position.x) / step) * step);
+        const float value = yToValue (p, e.position.y);
+
+        auto stepRange = [&] (double b)
+        {
+            return te::TimeRange (EngineHelpers::beatToTime (evs.edit, b),
+                                  EngineHelpers::beatToTime (evs.edit, b + step) - te::TimeDuration::fromSeconds (0.0001));
+        };
+
+        double from = lastDrawBeat < 0.0 ? beat : jmin (lastDrawBeat, beat);
+        double to = lastDrawBeat < 0.0 ? beat : jmax (lastDrawBeat, beat);
+        for (double b = from; b <= to + 1.0e-9; b += step)
+        {
+            auto r = stepRange (b);
+            c.removePointsInRegion (r.withEnd (r.getEnd() + te::TimeDuration::fromSeconds (0.0001)), um);
+            c.addPoint (r.getStart(), value, 0.0f, um);
+            c.addPoint (r.getEnd(), value, 0.0f, um);
+        }
+        lastDrawBeat = beat;
+        repaint();
+    }
 
     void timerCallback() override { repaint(); }
 
@@ -292,5 +366,7 @@ private:
 
     EditViewState& evs;
     te::AudioTrack::Ptr track;
-    int hoverIndex = -1, dragIndex = -1;
+    int hoverIndex = -1, dragIndex = -1, bendIndex = -1;
+    float bendStart = 0.0f;
+    double lastDrawBeat = -1.0;
 };

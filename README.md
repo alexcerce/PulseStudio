@@ -4,7 +4,7 @@ A native Windows DAW built with C++, [JUCE](https://juce.com) and [Tracktion Eng
 
 ## Install
 
-Run `dist/PulseStudio-0.15.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
+Run `dist/PulseStudio-0.16.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
 
 ## Build
 
@@ -43,6 +43,10 @@ Projects are saved as `.tracktionedit` files in `Documents/Pulse Studio/`. Prese
 - **Loop-range edits:** right-click the ruler to duplicate the region, insert silence, delete time (closing the gap), or bounce the region.
 - **Render:** right-click a track header to **freeze/unfreeze**, **flatten** (replace with audio), or **bounce to a new audio track**. Ctrl+J bounces the selected clips' range.
 - **Automation:** the **A** button opens a lane for any parameter. Click to add points and drag to move them; right-click removes one.
+  - **Alt-drag a line** to bend it into a curve.
+  - The **pencil** (toolbar, or **D**) draws automation by dragging. Points land on the grid, so you get steps at the snap size.
+- **Modulators:** *+ Modulator* in the device chain adds an LFO, step sequencer, envelope follower, random, MIDI tracker or breakpoint envelope to the track. Right-click any device knob → *Modulate with* to connect one, with an amount from -100% to +100%. Modulated knobs show a purple dot that moves with the modulation.
+- **Clip envelopes:** in the piano roll, set the lane menu to *Device envelope...* and pick any parameter of the track's devices, then draw. The envelope lives in the clip, so it plays wherever the clip plays, including looped and session clips.
 - **Audio clips:** drag the fade handles; double-click for gain, pitch, fades, reverse and **warp to tempo**.
 - **Markers:** the strip above the ruler holds song markers (verse, chorus...).
   - Double-click the strip or press **Ctrl+K** to add one at the playhead.
@@ -220,7 +224,7 @@ All of these can be changed in *File → Keyboard shortcuts*. New: **Ctrl+P** co
 ## Command line
 
 - `--render out.wav` renders the last project offline and exits.
-- `--selftest report.txt` builds a scratch project and runs 104 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--selftest report.txt` builds a scratch project and runs 107 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
 - `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
 
 ## Code layout
@@ -247,6 +251,7 @@ All app code is header-only in `Source/` and compiled through `Main.cpp`.
 | `MidiFx.h`, `Scales.h` | MIDI effects (Arpeggiator, Chord, Scale, Note Echo), shared scales |
 | `Sandbox.h`, `BackgroundRender.h` | Plugin sandbox (helper process), background exports |
 | `Commands.h` | Command registry, command palette, shortcut editor |
+| `Modulators.h`, `ClipEnvelopes.h` | Track modulators, clip envelopes |
 | `Sharing.h` | Collect All and Save, project templates |
 | `Timeline.h` | Markers, tempo / time signature maths, crossfades, comping |
 | `EditingOps.h` | Clipboard, split, time edits, bounce/flatten/freeze, grouping |

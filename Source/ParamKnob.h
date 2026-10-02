@@ -3,6 +3,7 @@
 #include "EditViewState.h"
 #include "Macros.h"
 #include "MidiLearn.h"
+#include "Modulators.h"
 
 //==============================================================================
 /** Rotary bound to an AutomatableParameter, with a right-click menu
@@ -67,8 +68,18 @@ public:
         }
         if (! param->getModifiers().isEmpty())
         {
-            g.setColour (Theme::accent);
+            g.setColour (Modulators::isModulated (*param) ? Colour (0xffb197fc) : Theme::accent);
             g.fillEllipse ((float) getWidth() - 7.0f, 2.0f, 5.0f, 5.0f);
+        }
+        if (Modulators::isModulated (*param))   // where the modulation has moved it right now
+        {
+            auto b = slider.getBounds().toFloat().reduced (3.0f);
+            const float r = jmin (b.getWidth(), b.getHeight()) * 0.5f + 1.5f;
+            auto params = slider.getRotaryParameters();
+            const float a = params.startAngleRadians + param->getCurrentNormalisedValue() * (params.endAngleRadians - params.startAngleRadians);
+            auto c = b.getCentre();
+            g.setColour (Colour (0xffb197fc));
+            g.fillEllipse (c.x + r * std::sin (a) - 2.5f, c.y - r * std::cos (a) - 2.5f, 5.0f, 5.0f);
         }
     }
 
@@ -80,20 +91,24 @@ public:
         m.addSectionHeader (MidiLearn::describe (*param));
         if (evs.midiLearn != nullptr) evs.midiLearn->addToMenu (m, *param);
         Macros::addToMenu (m, *param);
+        Modulators::addToMenu (m, *param);
         if (auto def = param->getDefaultValue())
             m.addItem ("Reset to default", [this, v = *def] { param->setParameter (v, sendNotificationSync); });
         m.showMenuAsync (PopupMenu::Options().withTargetComponent (this));
     }
 
     te::AutomatableParameter& getParam() { return *param; }
+
+    /** Optional value text (e.g. names for choice parameters). */
+    std::function<String (float)> formatter;
     Label name;
 
 private:
     void timerCallback() override
     {
         if (! slider.isMouseButtonDown())
-            slider.setValue (param->getCurrentValue(), dontSendNotification);
-        value.setText (param->getCurrentValueAsStringWithLabel(), dontSendNotification);
+            slider.setValue (Modulators::isModulated (*param) ? param->getCurrentBaseValue() : param->getCurrentValue(), dontSendNotification);
+        value.setText (formatter ? formatter (param->getCurrentBaseValue()) : param->getCurrentValueAsStringWithLabel(), dontSendNotification);
         repaint();
     }
 

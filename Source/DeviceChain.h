@@ -327,6 +327,86 @@ private:
 };
 
 //==============================================================================
+/** One modulator (LFO, step, envelope follower...) with its controls and a live output meter. */
+class ModulatorCard : public CardBase,
+                      private Timer
+{
+public:
+    ModulatorCard (EditViewState& e, te::Track& t, te::Modifier& m) : evs (e), track (&t), mod (&m)
+    {
+        title.setText (Modulators::nameOf (t, m), dontSendNotification);
+        title.setFont (FontOptions (13.5f, Font::bold));
+        title.setInterceptsMouseClicks (false, false);
+        addAndMakeVisible (title);
+        removeBtn.setFlat (true);
+        removeBtn.onClick = [this] { evs.edit.getUndoManager().beginNewTransaction ("Remove modulator"); mod->remove(); };
+        addAndMakeVisible (removeBtn);
+        for (auto p : m.getAutomatableParameters())
+        {
+            if (knobs.size() >= 8) break;
+            auto* k = knobs.add (new ParamKnob (evs, *p));
+            k->formatter = formatterFor (p->getParameterName());
+            addAndMakeVisible (k);
+        }
+        setSize (jmax (2, (knobs.size() + 1) / 2) * 64 + 16, 0);
+        startTimerHz (30);
+    }
+
+    void paint (Graphics& g) override
+    {
+        paintCard (g, Colour (0xffb197fc), true);
+        // live output
+        auto bar = Rectangle<float> (8.0f, (float) headerH - 8.0f, (float) getWidth() - 16.0f, 3.0f);
+        g.setColour (Colours::black.withAlpha (0.4f));
+        g.fillRoundedRectangle (bar, 1.5f);
+        g.setColour (Colour (0xffb197fc));
+        g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * jlimit (0.0f, 1.0f, mod->getCurrentValue())), 1.5f);
+    }
+
+    void resized() override
+    {
+        auto r = getLocalBounds().reduced (8, 0);
+        auto head = r.removeFromTop (headerH).reduced (0, 6);
+        removeBtn.setBounds (head.removeFromRight (24));
+        title.setBounds (head);
+        r.removeFromTop (6);
+        const int cols = jmax (1, (knobs.size() + 1) / 2);
+        for (int i = 0; i < knobs.size(); ++i)
+            knobs[i]->setBounds (r.getX() + (i % cols) * 64, r.getY() + (i / cols) * 78, 64, 78);
+    }
+
+private:
+    /** Readable values for the modifiers' choice and on/off controls. */
+    static std::function<String (float)> formatterFor (const String& name)
+    {
+        auto pick = [] (StringArray names) { return [names] (float v) { return names[jlimit (0, names.size() - 1, roundToInt (v))]; }; };
+        auto n = name.toLowerCase();
+        if (n == "wave")                         return pick (te::LFOModifier::getWaveNames());
+        if (n.contains ("rate type"))            return pick (te::ModifierCommon::getRateTypeChoices());
+        if (n.contains ("sync"))                 return pick ({ "Free", "Transport", "Note" });
+        if (n == "enabled" || n == "bipolar")    return pick ({ "Off", "On" });
+        if (n == "depth" || n == "phase" || n == "offset" || n == "smooth" || n == "speed")
+            return [] (float v) { return String (roundToInt (v * 100.0f)) + "%"; };
+        return {};
+    }
+
+    void timerCallback() override
+    {
+        repaint (0, 0, getWidth(), headerH);
+        auto targets = Modulators::targetsOf (*track, *mod);
+        title.setTooltip (targets.isEmpty() ? "Not connected yet: right-click any device knob > Modulate with"
+                                            : "Modulates: " + targets.joinIntoString (", "));
+    }
+
+    EditViewState& evs;
+    te::Track::Ptr track;
+    te::Modifier::Ptr mod;
+    Label title;
+    IconButton removeBtn { Icons::Type::close, "Remove modulator" };
+    OwnedArray<ParamKnob> knobs;
+};
+
+//==============================================================================
 /** The track's eight macro knobs. Right-click any device knob -> Map to Macro. */
 class MacrosCard : public CardBase,
                    private Timer
@@ -853,6 +933,21 @@ public:
         chainBtn.setTooltip ("Save or load a preset of the whole device chain");
         chainBtn.onClick = [this] { showChainMenu(); };
         addAndMakeVisible (chainBtn);
+        modBtn.setTooltip ("Add an LFO, step sequencer, envelope follower... then right-click any knob > Modulate with");
+        modBtn.onClick = [this]
+        {
+            auto* at = dynamic_cast<te::AudioTrack*> (currentTrack());
+            if (at == nullptr) return;
+            PopupMenu m;
+            for (auto& ty : Modulators::types())
+                m.addItem (ty.name, [this, id = ty.id, t = te::Track::Ptr (at)]
+                {
+                    evs.edit.getUndoManager().beginNewTransaction ("Add modulator");
+                    Modulators::add (*t, id);
+                });
+            m.showMenuAsync (PopupMenu::Options().withTargetComponent (&modBtn));
+        };
+        addAndMakeVisible (modBtn);
 
         heading.setFont (FontOptions (13.5f, Font::bold));
         addAndMakeVisible (heading);
@@ -899,6 +994,8 @@ public:
         masterBtn.setBounds (top.removeFromRight (110));
         top.removeFromRight (6);
         chainBtn.setBounds (top.removeFromRight (100));
+        top.removeFromRight (6);
+        modBtn.setBounds (top.removeFromRight (100));
         heading.setBounds (top);
         viewport.setBounds (r);
         layoutRack();
@@ -948,7 +1045,12 @@ private:
 
         auto* at = dynamic_cast<te::AudioTrack*> (currentTrack());
         if (at != nullptr && ! Routing::isReturnTrack (*at))
+        {
             rack.addAndMakeVisible (cards.add (new MacrosCard (evs, *at)));
+            for (auto m : Modulators::all (*at))
+                rack.addAndMakeVisible (cards.add (new ModulatorCard (evs, *at, *m)));
+        }
+        shownModifiers = at != nullptr ? Modulators::all (*at).size() : 0;
 
         for (auto p : shown)
         {
@@ -971,6 +1073,7 @@ private:
 
         addBtn.setEnabled (currentList() != nullptr);
         chainBtn.setEnabled (currentList() != nullptr);
+        modBtn.setEnabled (at != nullptr && ! Routing::isReturnTrack (*at));
         layoutRack();
     }
 
@@ -1048,7 +1151,8 @@ private:
     // Plugin lists have no public change broadcaster, so poll for add/remove/reorder.
     void timerCallback() override
     {
-        if (visiblePlugins() != shown)
+        auto* curAt = dynamic_cast<te::AudioTrack*> (currentTrack());
+        if (visiblePlugins() != shown || (curAt != nullptr && Modulators::all (*curAt).size() != shownModifiers))
             rebuild();
     }
 
@@ -1059,7 +1163,8 @@ private:
     Rack rack;
     OwnedArray<Component> cards;
     Array<te::Plugin*> shown;
-    TextButton addBtn { "+ Add device" }, masterBtn { "Master bus" }, chainBtn { "Chain presets" };
+    TextButton addBtn { "+ Add device" }, masterBtn { "Master bus" }, chainBtn { "Chain presets" }, modBtn { "+ Modulator" };
+    int shownModifiers = 0;
     Label heading;
     bool showMaster = false, dropHighlight = false;
 };

@@ -2092,6 +2092,10 @@ public:
         xfadeBtn.setToggleState (Timeline::autoCrossfadesEnabled (evs.edit), dontSendNotification);
         xfadeBtn.setTooltip ("Auto-crossfade overlapping audio clips");
         xfadeBtn.onClick = [this] { Timeline::setAutoCrossfades (evs.edit, xfadeBtn.getToggleState()); };
+        pencilBtn.setClickingTogglesState (true);
+        pencilBtn.setTooltip ("Pencil (D): drag in automation lanes to draw");
+        pencilBtn.onClick = [this] { evs.drawMode = pencilBtn.getToggleState(); };
+        addAndMakeVisible (pencilBtn);
         for (auto* b : { &tempoBtn, &xfadeBtn })
         {
             b->setColour (TextButton::buttonOnColourId, Colour (0xff2b5b8a));
@@ -2151,6 +2155,8 @@ public:
         markerStrip.setBounds (strip.withTrimmedLeft (headerWidth));
         auto stripTools = strip.removeFromLeft (headerWidth).reduced (4, 1);
         xfadeBtn.setBounds (stripTools.removeFromRight (52));
+        stripTools.removeFromRight (3);
+        pencilBtn.setBounds (stripTools.removeFromRight (26));
         stripTools.removeFromRight (3);
         tempoBtn.setBounds (stripTools.removeFromRight (52));
         auto top = r.removeFromTop (rulerHeight);
@@ -2472,6 +2478,8 @@ private:
         if (source == &evs.layoutChanged)
             return markAndUpdate (updateTracks);
 
+        pencilBtn.setToggleState (evs.drawMode, dontSendNotification);
+
         for (auto* l : lanes) { l->resized(); l->repaint(); }
         for (auto* h : headers) h->repaint();
         for (auto* a : autoLanes) a->repaint();
@@ -2482,6 +2490,7 @@ private:
     MarkerStrip markerStrip;
     TempoLane tempoLane;
     TextButton tempoBtn { "Tempo" }, xfadeBtn { "X-fade" };
+    IconButton pencilBtn { Icons::Type::pencil, "Pencil (D)" };
     Viewport viewport;
     Content content;
     PlayheadOverlay playhead;
