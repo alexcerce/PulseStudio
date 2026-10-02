@@ -4,3 +4,4 @@ dist/
 external/
 .vs/
 *.user
+.autopilot.lock
