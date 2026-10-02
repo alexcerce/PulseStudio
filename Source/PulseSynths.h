@@ -83,11 +83,13 @@ namespace pulse
 
             beforeBlock();
             synth.renderNextBlock (buffer, midi, fc.bufferStartSample, fc.bufferNumSamples);
+            afterBlock (buffer, fc.bufferStartSample, fc.bufferNumSamples);
             te::sanitiseValues (buffer, fc.bufferStartSample, fc.bufferNumSamples, 4.0f);
         }
 
     protected:
         virtual void beforeBlock() {}
+        virtual void afterBlock (AudioBuffer<float>&, int /*start*/, int /*num*/) {}
         PulseSynthesiser synth;
     };
 
@@ -322,15 +324,42 @@ namespace pulse
     };
 
     //==============================================================================
+    /** The flagship synth: two wavetable oscillators (warp modes, unison, sub), two filters with
+        routing, an amp, filter and modulation envelope, four LFOs (drawable), a modulation matrix
+        (any source to any knob - drag a source onto a knob), and built-in drive, chorus, delay
+        and reverb. Parameter ids of older versions are kept, so old projects load unchanged. */
     class WavetableSynth : public PulseSynth
     {
     public:
         enum { pSet1, pPos1, pSet2, pPos2, pSemi2, pFine2, pMix, pVoices, pDetune, pSub,
                pFilterType, pCutoff, pReso, pFilterEnv, pFA, pFD, pFS, pFR, pA, pD, pS, pR,
-               pLfoRate, pLfoPos, pLfoCut, pGlide, pLevel, pBendRange, pPressure, pSlide };
+               pLfoRate, pLfoPos, pLfoCut, pGlide, pLevel, pBendRange, pPressure, pSlide,
+               // v0.47
+               pWarp1, pWarpAmt1, pWarp2, pWarpAmt2,
+               pF2Type, pF2Cutoff, pF2Reso, pF2Env, pRouting,
+               pL1Sync, pL1Shape, pL1Retrig,
+               pL2Rate, pL2Sync, pL2Shape, pL2Retrig,
+               pL3Rate, pL3Sync, pL3Shape, pL3Retrig,
+               pL4Rate, pL4Sync, pL4Shape, pL4Retrig,
+               pMA, pMD, pMS, pMR,
+               pDrive, pChorusMix, pChorusRate, pChorusDepth, pDelayMix, pDelayTime, pDelayFb, pReverbMix, pReverbSize,
+               numParamsTotal };
         static inline const char* xmlTypeName = "pulseWavetable";
         static const char* getPluginName() { return "Wavetable"; }
         static inline const StringArray filterNames { "Low pass 12", "Low pass 24", "Band pass", "High pass" };
+        static inline const StringArray filter2Names { "Off", "Low pass 12", "Low pass 24", "Band pass", "High pass", "Notch" };
+        static inline const StringArray routingNames { "Serial (1 then 2)", "Parallel", "Split (osc 1 > F1, osc 2 > F2)" };
+        static inline const StringArray warpNames { "Off", "Bend +", "Bend -", "Sync", "Mirror", "Quantize", "FM from Osc 2" };
+        static inline const StringArray lfoShapes { "Sine", "Triangle", "Saw up", "Saw down", "Square", "Random", "Drawn" };
+        static inline const StringArray syncNames { "Free (Hz)", "1/16", "1/8", "1/4", "1/2", "1 bar", "2 bars", "4 bars" };
+        static inline const double syncBeats[] = { 0.0, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0 };
+        static inline const StringArray delayNotes { "1/16", "1/8", "1/8 dotted", "1/4", "1/4 dotted", "1/2" };
+        static inline const double delayBeats[] = { 0.25, 0.5, 0.75, 1.0, 1.5, 2.0 };
+        static constexpr int numLfos = 4, lfoPoints = 16, maxRoutes = 32;
+
+        /** Modulation sources (index 0 = none). */
+        static inline const StringArray sourceNames { "None", "LFO 1", "LFO 2", "LFO 3", "LFO 4", "Mod Env", "Filter Env", "Amp Env",
+                                                      "Velocity", "Mod Wheel", "Pressure", "Key", "Random", "Slide" };
 
         explicit WavetableSynth (te::PluginCreationInfo info) : PulseSynth (info)
         {
@@ -357,15 +386,50 @@ namespace pulse
             add ("d", "Decay", skewed (1.0f, 10000.0f, 400.0f), 400.0f, fmt::ms);
             add ("s", "Sustain", { 0.0f, 1.0f }, 0.75f, fmt::pct);
             add ("r", "Release", skewed (1.0f, 10000.0f, 400.0f), 250.0f, fmt::ms);
-            add ("lforate", "LFO Rate", skewed (0.05f, 20.0f, 2.0f), 0.5f, [] (float v) { return String (v, 2) + " Hz"; });
-            add ("lfopos", "LFO > Position", { 0.0f, 1.0f }, 0.2f, fmt::pct);
-            add ("lfocut", "LFO > Cutoff", { 0.0f, 1.0f }, 0.0f, fmt::pct);
+            add ("lforate", "LFO 1 Rate", skewed (0.05f, 20.0f, 2.0f), 0.5f, [] (float v) { return String (v, 2) + " Hz"; });
+            add ("lfopos", "LFO 1 > Position", { 0.0f, 1.0f }, 0.2f, fmt::pct);
+            add ("lfocut", "LFO 1 > Cutoff", { 0.0f, 1.0f }, 0.0f, fmt::pct);
             add ("glide", "Glide", skewed (0.0f, 1000.0f, 100.0f), 0.0f, fmt::ms);
             add ("level", "Level", { -36.0f, 6.0f }, -6.0f, fmt::db);
             // MPE / expression: per-note bend (each note on its own channel), pressure and slide (CC74)
             add ("bendrange", "Bend Range", { 1.0f, 48.0f, 1.0f }, 2.0f, fmt::st);
             add ("pressure", "Pressure", { 0.0f, 1.0f }, 0.5f, fmt::pct);
             add ("slide", "Slide", { 0.0f, 1.0f }, 0.5f, fmt::pct);
+            // v0.47: warp, second filter, LFOs 1-4, mod envelope, effects
+            add ("warp1", "Osc 1 Warp", steps (warpNames.size()), 0.0f, fmt::choice (warpNames));
+            add ("warpamt1", "Osc 1 Warp Amount", { 0.0f, 1.0f }, 0.0f, fmt::pct);
+            add ("warp2", "Osc 2 Warp", steps (warpNames.size() - 1), 0.0f, fmt::choice ([] { auto s = warpNames; s.remove (s.size() - 1); return s; }()));
+            add ("warpamt2", "Osc 2 Warp Amount", { 0.0f, 1.0f }, 0.0f, fmt::pct);
+            add ("f2type", "Filter 2 Type", steps (filter2Names.size()), 0.0f, fmt::choice (filter2Names));
+            add ("f2cutoff", "Filter 2 Cutoff", skewed (30.0f, 20000.0f, 1500.0f), 1500.0f, fmt::hz);
+            add ("f2reso", "Filter 2 Resonance", { 0.0f, 1.0f }, 0.2f, fmt::pct);
+            add ("f2env", "Filter 2 Env", { -1.0f, 1.0f }, 0.0f, fmt::pct);
+            add ("routing", "Filter Routing", steps (routingNames.size()), 0.0f, fmt::choice (routingNames));
+            add ("l1sync", "LFO 1 Sync", steps (syncNames.size()), 0.0f, fmt::choice (syncNames));
+            add ("l1shape", "LFO 1 Shape", steps (lfoShapes.size()), 0.0f, fmt::choice (lfoShapes));
+            add ("l1retrig", "LFO 1 Retrigger", steps (2), 0.0f, fmt::choice ({ "Free", "Per note" }));
+            for (int k = 2; k <= numLfos; ++k)
+            {
+                const auto n = String (k);
+                add ("l" + n + "rate", "LFO " + n + " Rate", skewed (0.05f, 20.0f, 2.0f), 1.0f, [] (float v) { return String (v, 2) + " Hz"; });
+                add ("l" + n + "sync", "LFO " + n + " Sync", steps (syncNames.size()), 0.0f, fmt::choice (syncNames));
+                add ("l" + n + "shape", "LFO " + n + " Shape", steps (lfoShapes.size()), 0.0f, fmt::choice (lfoShapes));
+                add ("l" + n + "retrig", "LFO " + n + " Retrigger", steps (2), 0.0f, fmt::choice ({ "Free", "Per note" }));
+            }
+            add ("ma", "Mod Env Attack", skewed (0.5f, 10000.0f, 200.0f), 5.0f, fmt::ms);
+            add ("md", "Mod Env Decay", skewed (1.0f, 10000.0f, 400.0f), 500.0f, fmt::ms);
+            add ("ms", "Mod Env Sustain", { 0.0f, 1.0f }, 0.0f, fmt::pct);
+            add ("mr", "Mod Env Release", skewed (1.0f, 10000.0f, 400.0f), 300.0f, fmt::ms);
+            add ("drive", "Drive", { 0.0f, 1.0f }, 0.0f, fmt::pct);
+            add ("chorusmix", "Chorus", { 0.0f, 1.0f }, 0.0f, fmt::pct);
+            add ("chorusrate", "Chorus Rate", skewed (0.05f, 5.0f, 0.8f), 0.6f, [] (float v) { return String (v, 2) + " Hz"; });
+            add ("chorusdepth", "Chorus Depth", { 0.0f, 1.0f }, 0.5f, fmt::pct);
+            add ("delaymix", "Delay", { 0.0f, 1.0f }, 0.0f, fmt::pct);
+            add ("delaytime", "Delay Time", steps (delayNotes.size()), 2.0f, fmt::choice (delayNotes));
+            add ("delayfb", "Delay Feedback", { 0.0f, 0.95f }, 0.35f, fmt::pct);
+            add ("reverbmix", "Reverb", { 0.0f, 1.0f }, 0.0f, fmt::pct);
+            add ("reverbsize", "Reverb Size", { 0.0f, 1.0f }, 0.6f, fmt::pct);
+            jassert (numParams() == numParamsTotal);
 
             WavetableBank::get();   // build the tables now rather than on the audio thread
             for (int i = 0; i < 16; ++i)
@@ -375,6 +439,8 @@ namespace pulse
             userWatcher.owner = this;
             state.addListener (&userWatcher);
             rebuildUserTable();
+            rebuildRoutes();
+            rebuildLfoShapes();
         }
 
         ~WavetableSynth() override { state.removeListener (&userWatcher); }
@@ -421,18 +487,171 @@ namespace pulse
             return WavetableBank::get().table (jmin (set, WavetableBank::userSet - 1), frame, level);
         }
 
+        //==============================================================================
+        // Modulation matrix: routes stored in the project ("MODMATRIX" / "ROUTE": src, dest, amount).
+        static inline const Identifier matrixID { "MODMATRIX" }, routeID { "ROUTE" }, rSrc { "src" }, rDest { "dest" }, rAmt { "amount" };
+        struct Route { int source = 0; int dest = -1; float amount = 0.0f; };
+
+        std::vector<Route> getRoutes() const
+        {
+            std::vector<Route> out;
+            for (auto r : state.getChildWithName (matrixID))
+            {
+                Route rt;
+                rt.source = (int) r[rSrc];
+                rt.dest = indexOfParam (r[rDest].toString());
+                rt.amount = (float) r[rAmt];
+                out.push_back (rt);
+            }
+            return out;
+        }
+
+        int indexOfParam (const String& id) const
+        {
+            for (int i = 0; i < numParams(); ++i) if (param (i)->paramID == id) return i;
+            return -1;
+        }
+
+        /** Adds (or updates) a route from a source to a parameter. */
+        void setRoute (int source, const String& destId, float amount)
+        {
+            auto* um = getUndoManager();
+            auto m = state.getOrCreateChildWithName (matrixID, um);
+            for (auto r : m)
+                if ((int) r[rSrc] == source && r[rDest].toString() == destId) { r.setProperty (rAmt, amount, um); return; }
+            if (m.getNumChildren() >= maxRoutes) return;
+            ValueTree r (routeID);
+            r.setProperty (rSrc, source, nullptr);
+            r.setProperty (rDest, destId, nullptr);
+            r.setProperty (rAmt, amount, nullptr);
+            m.appendChild (r, um);
+        }
+
+        void removeRoute (int index)
+        {
+            auto m = state.getChildWithName (matrixID);
+            if (isPositiveAndBelow (index, m.getNumChildren())) m.removeChild (index, getUndoManager());
+        }
+
+        void setRouteAt (int index, int source, const String& destId, float amount)
+        {
+            auto m = state.getChildWithName (matrixID);
+            if (! isPositiveAndBelow (index, m.getNumChildren())) return;
+            auto r = m.getChild (index);
+            auto* um = getUndoManager();
+            r.setProperty (rSrc, source, um);
+            r.setProperty (rDest, destId, um);
+            r.setProperty (rAmt, amount, um);
+        }
+
+        /** Total modulation depth on a parameter (for drawing rings on knobs). */
+        float modulationDepth (int paramIndex) const
+        {
+            float d = 0.0f;
+            for (auto& r : getRoutes()) if (r.dest == paramIndex && r.source > 0) d += r.amount;
+            return d;
+        }
+
+        /** Parameters that can be modulated (continuous ones). */
+        bool isModulatable (int i) const
+        {
+            if (i < 0 || i >= numParams()) return false;
+            switch (i)
+            {
+                case pSet1: case pSet2: case pVoices: case pFilterType: case pF2Type: case pRouting: case pWarp1: case pWarp2:
+                case pL1Sync: case pL1Shape: case pL1Retrig: case pL2Sync: case pL2Shape: case pL2Retrig:
+                case pL3Sync: case pL3Shape: case pL3Retrig: case pL4Sync: case pL4Shape: case pL4Retrig:
+                case pDelayTime: case pBendRange: case pGlide:
+                    return false;
+                default: return true;
+            }
+        }
+
+        //==============================================================================
+        // LFO shapes: the "Drawn" shape of each LFO is 16 points stored in the project.
+        static Identifier lfoPointsID (int lfo) { return Identifier ("lfo" + String (lfo + 1) + "Points"); }
+
+        std::vector<float> getLfoPoints (int lfo) const
+        {
+            std::vector<float> p;
+            for (auto& t : StringArray::fromTokens (state[lfoPointsID (lfo)].toString(), ",", {})) p.push_back (t.getFloatValue());
+            if ((int) p.size() != lfoPoints)
+            {
+                p.resize (lfoPoints);
+                for (int i = 0; i < lfoPoints; ++i) p[(size_t) i] = (i % 4 == 0) ? 1.0f : (i % 4 == 2 ? -0.5f : 0.0f);   // a little rhythm
+            }
+            return p;
+        }
+
+        void setLfoPoints (int lfo, const std::vector<float>& pts)
+        {
+            StringArray s;
+            for (auto v : pts) s.add (String (jlimit (-1.0f, 1.0f, v), 3));
+            state.setProperty (lfoPointsID (lfo), s.joinIntoString (","), getUndoManager());
+        }
+
+        int lfoParam (int lfo, int which) const   // which: 0 rate, 1 sync, 2 shape, 3 retrig
+        {
+            if (lfo == 0) { const int m[] = { pLfoRate, pL1Sync, pL1Shape, pL1Retrig }; return m[which]; }
+            return pL2Rate + (lfo - 1) * 4 + which;
+        }
+
+        /** An LFO's value (-1..1) at a phase (0..1); `random` is the held value for Random. */
+        float lfoShape (int lfo, double phase, float random = 0.0f) const
+        {
+            const double ph = phase - std::floor (phase);
+            switch (getInt (lfoParam (lfo, 2)))
+            {
+                case 1:  return (float) (1.0 - 4.0 * std::abs (ph - 0.5));
+                case 2:  return (float) (2.0 * ph - 1.0);
+                case 3:  return (float) (1.0 - 2.0 * ph);
+                case 4:  return ph < 0.5 ? 1.0f : -1.0f;
+                case 5:  return random;
+                case 6:
+                {
+                    const double x = ph * lfoPoints;
+                    const int i = (int) x % lfoPoints;
+                    const float f = (float) (x - std::floor (x));
+                    const auto& pts = drawnLfo[(size_t) lfo];
+                    return pts[(size_t) i].load() * (1.0f - f) + pts[(size_t) ((i + 1) % lfoPoints)].load() * f;
+                }
+                default: return (float) std::sin (ph * MathConstants<double>::twoPi);
+            }
+        }
+
+        /** An LFO's rate in Hz (synced ones follow the tempo). */
+        double lfoHz (int lfo) const
+        {
+            const int sync = getInt (lfoParam (lfo, 1));
+            return sync > 0 ? bpm.load() / 60.0 / syncBeats[jlimit (1, 7, sync)] : (double) get (lfoParam (lfo, 0));
+        }
+
+        /** The free-running phase of an LFO (shared by voices when not retriggered), for displays too. */
+        double lfoClockPhase (int lfo) const { return lfoClock[(size_t) lfo].load(); }
+
         String getName() const override      { return "Wavetable"; }
         String getPluginType() override      { return xmlTypeName; }
         int getDisplayWidth() const override  { return 190; }
 
         std::vector<Section> getSections() const override
         {
-            return { { "Osc 1", { pSet1, pPos1 } }, { "Osc 2", { pSet2, pPos2, pSemi2, pFine2 } },
+            return { { "Osc 1", { pSet1, pPos1, pWarp1, pWarpAmt1 } }, { "Osc 2", { pSet2, pPos2, pSemi2, pFine2, pWarp2, pWarpAmt2 } },
                      { "Unison / Sub", { pMix, pVoices, pDetune, pSub } },
                      { "Filter", { pFilterType, pCutoff, pReso, pFilterEnv } },
+                     { "Filter 2", { pF2Type, pF2Cutoff, pF2Reso, pF2Env, pRouting } },
                      { "Filter env", { pFA, pFD, pFS, pFR } }, { "Amp env", { pA, pD, pS, pR } },
-                     { "LFO", { pLfoRate, pLfoPos, pLfoCut, pGlide } }, { "Expression (MPE)", { pBendRange, pPressure, pSlide } },
-                     { "Out", { pLevel } } };
+                     { "Mod env", { pMA, pMD, pMS, pMR } },
+                     { "LFO 1", { pLfoRate, pL1Sync, pL1Shape, pL1Retrig, pLfoPos, pLfoCut } },
+                     { "LFO 2", { pL2Rate, pL2Sync, pL2Shape, pL2Retrig } }, { "LFO 3", { pL3Rate, pL3Sync, pL3Shape, pL3Retrig } },
+                     { "LFO 4", { pL4Rate, pL4Sync, pL4Shape, pL4Retrig } },
+                     { "Effects", { pDrive, pChorusMix, pChorusRate, pChorusDepth, pDelayMix, pDelayTime, pDelayFb, pReverbMix, pReverbSize } },
+                     { "Play", { pGlide, pBendRange, pPressure, pSlide, pLevel } } };
+        }
+
+        void initialise (const te::PluginInitialisationInfo& info) override
+        {
+            PulseSynth::initialise (info);
+            fx.prepare (info.sampleRate);
         }
 
     private:
@@ -442,7 +661,11 @@ namespace pulse
             void valueTreePropertyChanged (ValueTree& v, const Identifier& id) override
             {
                 if (v == owner->state && (id == userAID || id == userBID)) owner->rebuildUserTable();
+                if (v == owner->state && id.toString().startsWith ("lfo") && id.toString().endsWith ("Points")) owner->rebuildLfoShapes();
+                if (v.hasType (routeID)) owner->rebuildRoutes();
             }
+            void valueTreeChildAdded (ValueTree& p, ValueTree&) override        { if (p.hasType (matrixID) || p == owner->state) owner->rebuildRoutes(); }
+            void valueTreeChildRemoved (ValueTree& p, ValueTree&, int) override { if (p.hasType (matrixID) || p == owner->state) owner->rebuildRoutes(); }
         } userWatcher;
 
         void rebuildUserTable()
@@ -452,15 +675,161 @@ namespace pulse
             userTable = t;
         }
 
+        void rebuildRoutes()
+        {
+            auto r = std::make_shared<std::vector<Route>>();
+            for (auto& rt : getRoutes()) if (rt.dest >= 0 && rt.source > 0 && isModulatable (rt.dest)) r->push_back (rt);
+            const SpinLock::ScopedLockType sl (userLock);
+            routes = r;
+        }
+
+        void rebuildLfoShapes()
+        {
+            for (int l = 0; l < numLfos; ++l)
+            {
+                auto pts = getLfoPoints (l);
+                for (int i = 0; i < lfoPoints; ++i) drawnLfo[(size_t) l][(size_t) i].store (pts[(size_t) i]);
+            }
+        }
+
         void beforeBlock() override
         {
-            const SpinLock::ScopedTryLockType sl (userLock);
-            if (sl.isLocked()) audioUserTable = userTable;
+            {
+                const SpinLock::ScopedTryLockType sl (userLock);
+                if (sl.isLocked()) { audioUserTable = userTable; audioRoutes = routes; }
+            }
+            bpm.store (edit.tempoSequence.getInternalSequence().getBeatsPerSecondAt (te::TimePosition()).v * 60.0);
+            // free-running LFO clocks (one block ahead; voices read them)
+            for (int l = 0; l < numLfos; ++l)
+            {
+                double ph = lfoClock[(size_t) l].load() + lfoHz (l) * blockSize / jmax (1.0, sampleRate);
+                ph -= std::floor (ph);
+                lfoClock[(size_t) l].store (ph);
+            }
         }
+
+        void afterBlock (AudioBuffer<float>& b, int start, int n) override { fx.process (*this, b, start, n); }
 
         mutable SpinLock userLock;
         std::shared_ptr<const WavetableBank::UserTable> userTable, audioUserTable;
+        std::shared_ptr<const std::vector<Route>> routes, audioRoutes;
+        std::array<std::array<std::atomic<float>, lfoPoints>, numLfos> drawnLfo {};
+        std::array<std::atomic<double>, numLfos> lfoClock {};
+        std::atomic<double> bpm { 120.0 };
 
+        //==============================================================================
+        /** Drive, chorus, delay and reverb after the voices. */
+        struct Effects
+        {
+            double sr = 48000.0;
+            std::vector<float> chorusBuf[2], delayBuf[2];
+            std::array<std::vector<float>, 4> rev;
+            std::array<int, 4> revPos {}, revLen {};
+            float revLp[4] {}, delayLp[2] {};
+            int chorusPos = 0, delayPos = 0;
+            double chorusPhase = 0.0;
+
+            void prepare (double sampleRate)
+            {
+                sr = sampleRate;
+                for (auto& c : chorusBuf) c.assign ((size_t) (sr * 0.05) + 4, 0.0f);
+                for (auto& d : delayBuf) d.assign ((size_t) (sr * 4.0) + 4, 0.0f);
+                const int lens[] = { 1557, 1617, 1491, 1422 };
+                for (int k = 0; k < 4; ++k)
+                {
+                    revLen[(size_t) k] = (int) (lens[k] * sr / 44100.0);
+                    rev[(size_t) k].assign ((size_t) revLen[(size_t) k] * 3 + 4, 0.0f);
+                    revPos[(size_t) k] = 0;
+                    revLp[k] = 0.0f;
+                }
+                chorusPos = delayPos = 0;
+                delayLp[0] = delayLp[1] = 0.0f;
+            }
+
+            void process (const WavetableSynth& o, AudioBuffer<float>& b, int start, int n)
+            {
+                if (b.getNumChannels() < 2 || chorusBuf[0].empty()) return;
+                const float drive = o.get (pDrive), chMix = o.get (pChorusMix), dMix = o.get (pDelayMix), rMix = o.get (pReverbMix);
+                if (drive < 0.001f && chMix < 0.001f && dMix < 0.001f && rMix < 0.001f) return;
+                auto* L = b.getWritePointer (0, start);
+                auto* R = b.getWritePointer (1, start);
+                const float dg = 1.0f + drive * 12.0f, comp = 1.0f / std::tanh (dg);
+                const double chInc = o.get (pChorusRate) / sr;
+                const float chDepth = o.get (pChorusDepth) * (float) sr * 0.006f, chBase = (float) sr * 0.008f;
+                const int csize = (int) chorusBuf[0].size(), dsize = (int) delayBuf[0].size();
+                const int dTime = jlimit (1, dsize - 2, (int) (60.0 / jmax (20.0, o.bpm.load()) * delayBeats[jlimit (0, 5, o.getInt (pDelayTime))] * sr));
+                const float fb = o.get (pDelayFb);
+                const float size = o.get (pReverbSize);
+                const float revFb = 0.70f + size * 0.27f, damp = 0.25f + (1.0f - size) * 0.4f;
+                for (int k = 0; k < 4; ++k) revLen[(size_t) k] = jmin ((int) rev[(size_t) k].size() - 2, (int) ((1422 + 150 * k) * (0.5 + size) * sr / 44100.0));
+
+                for (int i = 0; i < n; ++i)
+                {
+                    float l = L[i], r = R[i];
+                    if (drive > 0.001f) { l = std::tanh (l * dg) * comp; r = std::tanh (r * dg) * comp; }
+                    if (chMix > 0.001f)
+                    {
+                        chorusBuf[0][(size_t) chorusPos] = l;
+                        chorusBuf[1][(size_t) chorusPos] = r;
+                        const float m = (float) std::sin (chorusPhase * MathConstants<double>::twoPi);
+                        float wet[2];
+                        for (int c = 0; c < 2; ++c)
+                        {
+                            const float d = chBase + chDepth * (c == 0 ? m : -m);
+                            const float rp = (float) chorusPos - d + (float) csize;
+                            const int i0 = (int) rp % csize, i1 = (i0 + 1) % csize;
+                            const float f = rp - std::floor (rp);
+                            wet[c] = chorusBuf[(size_t) c][(size_t) i0] * (1.0f - f) + chorusBuf[(size_t) c][(size_t) i1] * f;
+                        }
+                        chorusPhase += chInc;
+                        chorusPhase -= std::floor (chorusPhase);
+                        chorusPos = (chorusPos + 1) % csize;
+                        l = l * (1.0f - chMix * 0.5f) + wet[0] * chMix * 0.7f;
+                        r = r * (1.0f - chMix * 0.5f) + wet[1] * chMix * 0.7f;
+                    }
+                    if (dMix > 0.001f)
+                    {
+                        const int rp = (delayPos - dTime + dsize) % dsize;
+                        float dl = delayBuf[0][(size_t) rp], dr = delayBuf[1][(size_t) rp];
+                        delayLp[0] += 0.35f * (dl - delayLp[0]);
+                        delayLp[1] += 0.35f * (dr - delayLp[1]);
+                        delayBuf[0][(size_t) delayPos] = l + delayLp[1] * fb;   // ping-pong
+                        delayBuf[1][(size_t) delayPos] = r + delayLp[0] * fb;
+                        delayPos = (delayPos + 1) % dsize;
+                        l += dl * dMix;
+                        r += dr * dMix;
+                    }
+                    if (rMix > 0.001f)
+                    {
+                        // four comb lines with a Householder mix and damping
+                        float outs[4];
+                        for (int k = 0; k < 4; ++k)
+                        {
+                            auto& buf = rev[(size_t) k];
+                            const int len = revLen[(size_t) k], sz = (int) buf.size();
+                            const int rp = (revPos[(size_t) k] - len + sz) % sz;
+                            outs[k] = buf[(size_t) rp];
+                        }
+                        const float sum = (outs[0] + outs[1] + outs[2] + outs[3]) * 0.5f;
+                        const float in = (l + r) * 0.25f;
+                        for (int k = 0; k < 4; ++k)
+                        {
+                            auto& buf = rev[(size_t) k];
+                            float x = (outs[k] - sum) * revFb;
+                            revLp[k] += damp * (x - revLp[k]);
+                            buf[(size_t) revPos[(size_t) k]] = in + revLp[k];
+                            revPos[(size_t) k] = (revPos[(size_t) k] + 1) % (int) buf.size();
+                        }
+                        l += (outs[0] + outs[2]) * rMix * 0.6f;
+                        r += (outs[1] + outs[3]) * rMix * 0.6f;
+                    }
+                    L[i] = l;
+                    R[i] = r;
+                }
+            }
+        } fx;
+
+        //==============================================================================
         struct Voice : public SynthesiserVoice
         {
             explicit Voice (WavetableSynth& s) : o (s) {}
@@ -474,31 +843,57 @@ namespace pulse
                 freq = glide ? lastFreq : target;
                 targetFreq = target;
                 velocity = vel;
+                noteNumber = note;
                 pitchWheelMoved (pitchWheel);
                 Random r;
                 for (auto& oscPhases : phases)
                     for (auto& p : oscPhases) p = r.nextDouble() * WavetableBank::tableSize;
                 subPhase = 0.0;
-                lfoPhase = 0.0;
+                randomValue = r.nextFloat();
+                for (int l = 0; l < numLfos; ++l)
+                {
+                    lfoPhase[l] = o.getInt (o.lfoParam (l, 3)) > 0 ? 0.0 : o.lfoClockPhase (l);
+                    lfoRandom[l] = r.nextFloat() * 2.0f - 1.0f;
+                }
                 pressure = 0.0f;
                 slide = 0.5f;
-                filter[0].reset(); filter[1].reset();
-                amp.setSampleRate (getSampleRate());
-                fenv.setSampleRate (getSampleRate());
-                amp.reset(); fenv.reset();
-                amp.noteOn(); fenv.noteOn();
+                for (auto& f : filter) f.reset();
+                for (auto* e : { &amp, &fenv, &menv }) { e->setSampleRate (getSampleRate()); e->reset(); e->noteOn(); }
             }
 
             void stopNote (float, bool allowTailOff) override
             {
-                if (allowTailOff) { amp.noteOff(); fenv.noteOff(); }
+                if (allowTailOff) { amp.noteOff(); fenv.noteOff(); menv.noteOff(); }
                 else              { clearCurrentNote(); amp.reset(); }
             }
 
             void pitchWheelMoved (int v) override         { bend = (float) (v - 8192) / 8192.0f * o.get (pBendRange); }
-            void controllerMoved (int cc, int v) override  { if (cc == 74) slide = (float) v / 127.0f; }
+            void controllerMoved (int cc, int v) override  { if (cc == 74) slide = (float) v / 127.0f; if (cc == 1) modWheel = (float) v / 127.0f; }
             void channelPressureChanged (int v) override   { pressure = (float) v / 127.0f; }
             void aftertouchChanged (int v) override        { pressure = (float) v / 127.0f; }
+
+            /** A parameter with this voice's modulation added (in the parameter's 0..1 range). */
+            float mv (int p) const
+            {
+                const float base = o.get (p);
+                const float off = offsets[(size_t) p];
+                if (off == 0.0f) return base;
+                const auto& range = o.param (p)->valueRange;
+                return range.convertFrom0to1 (jlimit (0.0f, 1.0f, range.convertTo0to1 (base) + off));
+            }
+
+            static float warpPhase (int mode, float amt, float ph) noexcept   // ph in 0..1
+            {
+                switch (mode)
+                {
+                    case 1: return std::pow (ph, 1.0f + amt * 4.0f);
+                    case 2: return 1.0f - std::pow (1.0f - ph, 1.0f + amt * 4.0f);
+                    case 3: { const float s = ph * (1.0f + amt * 7.0f); return s - std::floor (s); }
+                    case 4: { const float m = ph < 0.5f ? ph * 2.0f : (1.0f - ph) * 2.0f; return ph + (m * 0.5f - ph) * amt; }
+                    case 5: { const float steps = 2.0f + (1.0f - amt) * 62.0f; return std::floor (ph * steps) / steps; }
+                    default: return ph;
+                }
+            }
 
             void renderNextBlock (AudioBuffer<float>& out, int start, int num) override
             {
@@ -506,36 +901,22 @@ namespace pulse
                     return;
 
                 const double sr = getSampleRate();
-                const float pressureAmt = o.get (pPressure), slideAmt = o.get (pSlide);
-                auto& bank = WavetableBank::get();
                 amp.setParameters (adsrFrom (o.get (pA), o.get (pD), o.get (pS), o.get (pR)));
                 fenv.setParameters (adsrFrom (o.get (pFA), o.get (pFD), o.get (pFS), o.get (pFR)));
+                menv.setParameters (adsrFrom (o.get (pMA), o.get (pMD), o.get (pMS), o.get (pMR)));
+                auto routes = o.audioRoutes;
 
                 const int set[2] = { o.getInt (pSet1), o.getInt (pSet2) };
-                const float slideOffset = (slide - 0.5f) * 2.0f * slideAmt;
-                const float basePos[2] = { jlimit (0.0f, 1.0f, o.get (pPos1) + slideOffset), jlimit (0.0f, 1.0f, o.get (pPos2) + slideOffset) };
-                const float oscGain[2] = { 1.0f - o.get (pMix), o.get (pMix) };
-                const double osc2Ratio = std::pow (2.0, (o.get (pSemi2) + o.get (pFine2) / 100.0) / 12.0);
+                const int warp[2] = { o.getInt (pWarp1), o.getInt (pWarp2) };
                 const int voices = jlimit (1, 7, o.getInt (pVoices));
-                const float detune = o.get (pDetune), sub = o.get (pSub);
-                const int ftype = o.getInt (pFilterType);
-                const float cutoff = o.get (pCutoff), reso = o.get (pReso), fenvAmt = o.get (pFilterEnv);
-                const float lfoRate = o.get (pLfoRate), lfoPos = o.get (pLfoPos), lfoCut = o.get (pLfoCut);
-                const float level = Decibels::decibelsToGain (o.get (pLevel)) * (0.3f + 0.7f * velocity) * (1.0f + pressure * pressureAmt * 0.6f);
+                const int ftype = o.getInt (pFilterType), f2type = o.getInt (pF2Type), routing = o.getInt (pRouting);
+                const float pressureAmt = o.get (pPressure), slideAmt = o.get (pSlide);
                 const float glideMs = o.get (pGlide);
                 const float uniGain = 1.0f / std::sqrt ((float) voices);
                 const int mode = ftype == 2 ? 1 : ftype == 3 ? 2 : 0;
-
-                // unison offsets (cents) and pans
-                float cents[7], panL[7], panR[7];
-                for (int u = 0; u < voices; ++u)
-                {
-                    const float spread = voices > 1 ? (float) u / (voices - 1) * 2.0f - 1.0f : 0.0f;
-                    cents[u] = spread * detune * 50.0f;
-                    const float p = spread * 0.8f;
-                    panL[u] = std::sqrt (0.5f * (1.0f - p));
-                    panR[u] = std::sqrt (0.5f * (1.0f + p));
-                }
+                const int mode2 = f2type == 3 ? 1 : f2type == 4 ? 2 : 0;
+                double lfoInc[numLfos];
+                for (int l = 0; l < numLfos; ++l) lfoInc[l] = o.lfoHz (l) / sr;
 
                 constexpr int chunk = 32;
                 for (int c = 0; c < num; c += chunk)
@@ -547,69 +928,141 @@ namespace pulse
                         const float k = 1.0f - std::exp (-(float) n / (float) (glideMs * 0.001 * sr));
                         freq += (targetFreq - freq) * k;
                     }
-                    else
-                    {
-                        freq = targetFreq;
-                    }
+                    else freq = targetFreq;
                     lastFreq = freq;
 
-                    const double f = freq * std::pow (2.0, bend / 12.0);
-                    const float lfo = (float) std::sin (lfoPhase * MathConstants<double>::twoPi);
-                    lfoPhase += lfoRate * n / sr;
-                    lfoPhase -= std::floor (lfoPhase);
+                    // modulation sources for this chunk
+                    float lfo[numLfos];
+                    for (int l = 0; l < numLfos; ++l)
+                    {
+                        const double before = lfoPhase[l];
+                        lfoPhase[l] += lfoInc[l] * n;
+                        if (std::floor (lfoPhase[l]) != std::floor (before)) lfoRandom[l] = rng.nextFloat() * 2.0f - 1.0f;
+                        lfoPhase[l] -= std::floor (lfoPhase[l]);
+                        lfo[l] = o.lfoShape (l, lfoPhase[l], lfoRandom[l]);
+                    }
+                    const float envNow = fenv.getNextSample();
+                    for (int i = 1; i < n; ++i) fenv.getNextSample();
+                    const float modEnv = menv.getNextSample();
+                    for (int i = 1; i < n; ++i) menv.getNextSample();
+                    const float src[] = { 0.0f, lfo[0], lfo[1], lfo[2], lfo[3], modEnv, envNow, lastAmp, velocity, modWheel, pressure,
+                                          (noteNumber - 60) / 60.0f, randomValue, (slide - 0.5f) * 2.0f };
+                    std::fill (offsets.begin(), offsets.end(), 0.0f);
+                    if (routes != nullptr)
+                        for (auto& r : *routes)
+                            if (isPositiveAndBelow (r.source, (int) std::size (src)) && isPositiveAndBelow (r.dest, (int) offsets.size()))
+                                offsets[(size_t) r.dest] += r.amount * src[r.source];
 
-                    // per-chunk table selection
+                    const float slideOffset = (slide - 0.5f) * 2.0f * slideAmt;
+                    const float basePos[2] = { jlimit (0.0f, 1.0f, mv (pPos1) + slideOffset), jlimit (0.0f, 1.0f, mv (pPos2) + slideOffset) };
+                    const float mixV = mv (pMix);
+                    const float oscGain[2] = { 1.0f - mixV, mixV };
+                    const double osc2Ratio = std::pow (2.0, (mv (pSemi2) + mv (pFine2) / 100.0) / 12.0);
+                    const float detune = mv (pDetune), sub = mv (pSub);
+                    const float warpAmt[2] = { mv (pWarpAmt1), mv (pWarpAmt2) };
+                    const float level = Decibels::decibelsToGain (mv (pLevel)) * (0.3f + 0.7f * velocity) * (1.0f + pressure * pressureAmt * 0.6f);
+                    const float lfoPos = o.get (pLfoPos), lfoCut = o.get (pLfoCut);
+
+                    float cents[7], panL[7], panR[7];
+                    for (int u = 0; u < voices; ++u)
+                    {
+                        const float spread = voices > 1 ? (float) u / (voices - 1) * 2.0f - 1.0f : 0.0f;
+                        cents[u] = spread * detune * 50.0f;
+                        const float p = spread * 0.8f;
+                        panL[u] = std::sqrt (0.5f * (1.0f - p));
+                        panR[u] = std::sqrt (0.5f * (1.0f + p));
+                    }
+
+                    const double f = freq * std::pow (2.0, bend / 12.0);
                     const float* t0[2]; const float* t1[2]; float frameFrac[2]; double inc[2][7];
                     for (int osc = 0; osc < 2; ++osc)
                     {
                         const double of = osc == 0 ? f : f * osc2Ratio;
-                        const float pos = jlimit (0.0f, 1.0f, basePos[osc] + lfo * lfoPos * 0.5f) * (WavetableBank::numFrames - 1);
+                        const float pos = jlimit (0.0f, 1.0f, basePos[osc] + lfo[0] * lfoPos * 0.5f) * (WavetableBank::numFrames - 1);
                         const int fr = jmin (WavetableBank::numFrames - 2, (int) pos);
                         frameFrac[osc] = pos - (float) fr;
-                        const int level = WavetableBank::levelFor (of * std::pow (2.0, detune * 50.0 / 1200.0), sr);
-                        t0[osc] = o.tableFor (set[osc], fr, level, o.audioUserTable.get());
-                        t1[osc] = o.tableFor (set[osc], fr + 1, level, o.audioUserTable.get());
+                        // sync / quantize add harmonics: take a darker table so they stay clean
+                        const double syncMul = (warp[osc] == 3) ? 1.0 + warpAmt[osc] * 7.0 : 1.0;
+                        const int lev = WavetableBank::levelFor (of * syncMul * std::pow (2.0, detune * 50.0 / 1200.0), sr);
+                        t0[osc] = o.tableFor (set[osc], fr, lev, o.audioUserTable.get());
+                        t1[osc] = o.tableFor (set[osc], fr + 1, lev, o.audioUserTable.get());
                         for (int u = 0; u < voices; ++u)
                             inc[osc][u] = of * std::pow (2.0, cents[u] / 1200.0) / sr * WavetableBank::tableSize;
                     }
 
-                    const float envNow = fenv.getNextSample();
-                    for (int i = 1; i < n; ++i) fenv.getNextSample();
-                    const float octaves = fenvAmt * envNow * 6.0f + lfo * lfoCut * 3.0f + pressure * pressureAmt * 3.0f;
-                    const float fc = jlimit (30.0f, 20000.0f, cutoff * std::pow (2.0f, octaves));
+                    // filters
+                    const float octaves = mv (pFilterEnv) * envNow * 6.0f + lfo[0] * lfoCut * 3.0f + pressure * pressureAmt * 3.0f;
+                    const float fc = jlimit (30.0f, 20000.0f, mv (pCutoff) * std::pow (2.0f, octaves));
+                    const float reso = mv (pReso);
                     filter[0].set (fc, reso, sr);
                     filter[1].set (fc, reso * 0.5f, sr);
+                    const float fc2 = jlimit (30.0f, 20000.0f, mv (pF2Cutoff) * std::pow (2.0f, mv (pF2Env) * envNow * 6.0f));
+                    const float reso2 = mv (pF2Reso);
+                    filter[2].set (fc2, reso2, sr);
+                    filter[3].set (fc2, reso2 * 0.5f, sr);
                     const double subInc = f * 0.5 / sr;
+                    const float fmAmt = warp[0] == 6 ? warpAmt[0] : 0.0f;
 
                     for (int i = 0; i < n; ++i)
                     {
-                        float l = 0.0f, r = 0.0f;
-                        for (int osc = 0; osc < 2; ++osc)
+                        float oL[2] = { 0, 0 }, oR[2] = { 0, 0 };
+                        float osc2Mono = 0.0f;
+                        for (int osc = 1; osc >= 0; --osc)   // osc 2 first (it can modulate osc 1)
                         {
-                            if (oscGain[osc] < 0.001f) { for (int u = 0; u < voices; ++u) advance (phases[osc][u], inc[osc][u]); continue; }
+                            const bool silent = oscGain[osc] < 0.001f && ! (osc == 1 && fmAmt > 0.0f);
                             for (int u = 0; u < voices; ++u)
                             {
                                 auto& ph = phases[osc][u];
-                                const float a = WavetableBank::read (t0[osc], ph), b = WavetableBank::read (t1[osc], ph);
-                                const float sOut = (a + frameFrac[osc] * (b - a)) * oscGain[osc] * uniGain;
-                                l += sOut * panL[u];
-                                r += sOut * panR[u];
+                                if (! silent)
+                                {
+                                    float rp = (float) ph;
+                                    if (warp[osc] > 0 && warp[osc] < 6)
+                                        rp = warpPhase (warp[osc], warpAmt[osc], rp / WavetableBank::tableSize) * WavetableBank::tableSize;
+                                    if (osc == 0 && fmAmt > 0.0f)
+                                    {
+                                        rp += osc2Mono * fmAmt * WavetableBank::tableSize * 0.5f;
+                                        rp -= std::floor (rp / WavetableBank::tableSize) * WavetableBank::tableSize;
+                                    }
+                                    rp = jlimit (0.0f, (float) WavetableBank::tableSize - 0.001f, rp);
+                                    const float a = WavetableBank::read (t0[osc], rp), b = WavetableBank::read (t1[osc], rp);
+                                    const float s = (a + frameFrac[osc] * (b - a));
+                                    if (osc == 1 && u == 0) osc2Mono = s;
+                                    const float sOut = s * oscGain[osc] * uniGain;
+                                    oL[osc] += sOut * panL[u];
+                                    oR[osc] += sOut * panR[u];
+                                }
                                 advance (ph, inc[osc][u]);
                             }
                         }
+                        float l = oL[0] + oL[1], r = oR[0] + oR[1];
                         if (sub > 0.001f)
                         {
                             const float sv = (float) std::sin (subPhase * MathConstants<double>::twoPi) * sub * 0.7f;
-                            l += sv; r += sv;
+                            l += sv; r += sv; oL[0] += sv; oR[0] += sv;
                             subPhase += subInc;
                             subPhase -= std::floor (subPhase);
                         }
 
-                        l = filter[0].process (l, 0, mode);
-                        r = filter[0].process (r, 1, mode);
-                        if (ftype == 1) { l = filter[1].process (l, 0, 0); r = filter[1].process (r, 1, 0); }
+                        auto f1 = [&] (float x, int ch)
+                        {
+                            x = filter[0].process (x, ch, mode);
+                            if (ftype == 1) x = filter[1].process (x, ch, 0);
+                            return x;
+                        };
+                        auto f2 = [&] (float x, int ch)
+                        {
+                            if (f2type == 0) return x;
+                            if (f2type == 5) return x - filter[2].process (x, ch, 1);   // notch: everything but the band
+                            x = filter[2].process (x, ch, mode2);
+                            if (f2type == 2) x = filter[3].process (x, ch, 0);
+                            return x;
+                        };
+                        if (f2type == 0 || routing == 0)      { l = f2 (f1 (l, 0), 0); r = f2 (f1 (r, 1), 1); }
+                        else if (routing == 1)                { l = 0.5f * (f1 (l, 0) + f2 (l, 0)) * 1.4f; r = 0.5f * (f1 (r, 1) + f2 (r, 1)) * 1.4f; }
+                        else                                  { l = f1 (oL[0], 0) + f2 (oL[1], 0); r = f1 (oR[0], 1) + f2 (oR[1], 1); }
 
-                        const float e = amp.getNextSample() * level;
+                        lastAmp = amp.getNextSample();
+                        const float e = lastAmp * level;
                         out.addSample (0, start + c + i, l * e);
                         if (out.getNumChannels() > 1)
                             out.addSample (1, start + c + i, r * e);
@@ -631,10 +1084,14 @@ namespace pulse
 
             WavetableSynth& o;
             double phases[2][7] {};
-            double subPhase = 0, lfoPhase = 0;
-            float freq = 440, targetFreq = 440, lastFreq = 0, velocity = 1, bend = 0, pressure = 0, slide = 0.5f;
-            ADSR amp, fenv;
-            SVF filter[2];
+            double subPhase = 0, lfoPhase[numLfos] {};
+            float lfoRandom[numLfos] {};
+            float freq = 440, targetFreq = 440, lastFreq = 0, velocity = 1, bend = 0, pressure = 0, slide = 0.5f, modWheel = 0, randomValue = 0, lastAmp = 0;
+            int noteNumber = 60;
+            ADSR amp, fenv, menv;
+            SVF filter[4];
+            std::array<float, numParamsTotal> offsets {};
+            Random rng;
         };
     };
 

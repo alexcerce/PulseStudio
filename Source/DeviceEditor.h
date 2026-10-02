@@ -4,6 +4,7 @@
 #include "FactoryPresets.h"
 #include "DeviceViews.h"
 #include "Presets.h"
+#include "WavetableModUI.h"
 
 /** Big device editor windows for Pulse devices: large, detailed graphs (all of a device's views at
     once) above every control, in sections you can fold. Resizable; scrolls when there's a lot. */
@@ -295,7 +296,12 @@ namespace DeviceEditors
             add ("Filter", std::make_unique<Graphs::FilterGraph> (s->param (W::pCutoff), s->param (W::pReso), s->param (W::pFilterType),
                                                                   [] (int t) { const int m[] = { 1, 5, 2, 3 }; return m[jlimit (0, 3, t)]; }, Theme::orange, s->param (W::pFilterEnv)));
             add ("Envelopes", env ({ { s->param (W::pA), s->param (W::pD), s->param (W::pS), s->param (W::pR), Theme::accent, "AMP" },
-                                     { s->param (W::pFA), s->param (W::pFD), s->param (W::pFS), s->param (W::pFR), Theme::orange, "FILTER" } }));
+                                     { s->param (W::pFA), s->param (W::pFD), s->param (W::pFS), s->param (W::pFR), Theme::orange, "FILTER" },
+                                     { s->param (W::pMA), s->param (W::pMD), s->param (W::pMS), s->param (W::pMR), Theme::purple, "MOD" } }));
+            add ("Filter 2", std::make_unique<Graphs::FilterGraph> (s->param (W::pF2Cutoff), s->param (W::pF2Reso), s->param (W::pF2Type),
+                                                                    [] (int t) { const int m[] = { 0, 1, 5, 2, 3, 4 }; return m[jlimit (0, 5, t)]; }, Theme::purple, s->param (W::pF2Env)));
+            add ("LFOs", std::make_unique<WavetableUI::LfoView> (*s));
+            add ("Modulation (drag a source onto any knob)", std::make_unique<WavetableUI::MatrixView> (*s));
         }
         else if (auto s = dynamic_cast<pulse::Simpler*> (&p))
         {
@@ -327,11 +333,11 @@ namespace DeviceEditors
             add ("Gain reduction", std::make_unique<HistoryGraph> ([s] { return s->gainReductionDb.load(); }, 24.0f, "dB", Theme::orange));
         }
         else if (auto s = dynamic_cast<pulse::Limiter*> (&p))
-            add ("Levels, gain reduction and loudness", std::make_unique<DynamicsUI::LimiterView> (*s));
+            add ("Limiter", std::make_unique<DynamicsUI::LimiterPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::ProCompressor*> (&p))
-            add ("Levels, gain reduction and transfer curve", std::make_unique<DynamicsUI::CompressorView> (*s));
+            add ("Compressor", std::make_unique<DynamicsUI::CompressorPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::MultibandDynamics*> (&p))
-            add ("Bands", std::make_unique<DynamicsUI::MultibandView> (*s));
+            add ("Multiband", std::make_unique<DynamicsUI::MultibandPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::AutoFilter*> (&p))
         {
             using A = pulse::AutoFilter;
@@ -361,8 +367,16 @@ namespace DeviceEditors
     struct Window;
     Window* show (EditViewState&, pulse::PulsePlugin&);
 
+    /** Devices whose editor is one complete panel (graph-first, few knobs). */
+    inline bool hasFullEditor (pulse::PulsePlugin& p)
+    {
+        return dynamic_cast<pulse::PrismEQ*> (&p) != nullptr || dynamic_cast<pulse::ProCompressor*> (&p) != nullptr
+            || dynamic_cast<pulse::MultibandDynamics*> (&p) != nullptr || dynamic_cast<pulse::Limiter*> (&p) != nullptr;
+    }
+
     //==============================================================================
-    class Editor : public Component
+    class Editor : public Component,
+                   public DragAndDropContainer   // modulation sources are dragged onto knobs
     {
     public:
         int getNumGraphs() const { return (int) graphs.size(); }
@@ -396,11 +410,37 @@ namespace DeviceEditors
                 controls.addAndMakeVisible (grp->header);
                 for (auto idx : sec.params)
                 {
-                    auto* k = grp->knobs.add (new ParamKnob (evs, *p.param (idx)));
-                    k->setCompact (accent);
-                    auto name = k->name.getText();
-                    if (name.startsWithIgnoreCase (sec.name + " ")) k->name.setText (name.substring (sec.name.length() + 1), dontSendNotification);
-                    controls.addAndMakeVisible (k);
+                    auto& prm = *p.param (idx);
+                    auto shortName = prm.getParameterName();
+                    if (shortName.startsWithIgnoreCase (sec.name + " ")) shortName = shortName.substring (sec.name.length() + 1);
+                    // choices are buttons, on / off parameters a toggle, everything else a knob
+                    Component* c = nullptr;
+                    int span = 1;
+                    if (ParamButtons::isToggle (prm))
+                        c = new ParamToggle (prm, shortName, accent);
+                    else if (ParamButtons::numOptions (prm) > 0 && ParamButtons::numOptions (prm) <= 4)
+                    {
+                        auto* ch = new ParamChoice (prm, accent);
+                        span = jlimit (2, 4, (ch->idealWidth() + 69) / 70);
+                        c = ch;
+                    }
+                    else if (ParamButtons::numOptions (prm) > 4)
+                    {
+                        auto* cb = new ParamCombo (prm);
+                        cb->setLabel (shortName);
+                        span = 2;
+                        c = cb;
+                    }
+                    else
+                    {
+                        auto* k = new ParamKnob (evs, prm);
+                        k->setCompact (accent);
+                        k->name.setText (shortName, dontSendNotification);
+                        c = k;
+                    }
+                    grp->knobs.add (c);
+                    grp->spans.add (span);
+                    controls.addAndMakeVisible (c);
                 }
             }
 
@@ -488,7 +528,7 @@ namespace DeviceEditors
 
             // graphs: a grid of up to 3 columns (2 x 2 for four), about half the window - more when
             // the controls need less room
-            if (dynamic_cast<pulse::PrismEQ*> (plugin) != nullptr && ! graphs.empty())   // its own full editor
+            if (hasFullEditor (*plugin) && ! graphs.empty())   // its own full editor
             {
                 for (auto* t : graphTitles) t->setVisible (false);
                 viewport.setVisible (false);
@@ -523,7 +563,8 @@ namespace DeviceEditors
         {
             TextButton header;
             String name;
-            OwnedArray<ParamKnob> knobs;
+            OwnedArray<Component> knobs;   // knobs, toggles and option buttons
+            Array<int> spans;              // cells each control takes
             bool collapsed = false;
         };
 
@@ -534,21 +575,31 @@ namespace DeviceEditors
             int x = 0, y = 0, rowH = 0;
             for (auto* g : groups)
             {
-                // a group is a block: header across its knobs; blocks flow left to right
-                const int cols = jlimit (1, 8, jmax (1, (int) g->knobs.size()));
+                // a group is a block: header across its controls; blocks flow left to right.
+                // Controls take cells (a knob or toggle one, option buttons two or more).
+                int cells = 0;
+                for (auto sp : g->spans) cells += sp;
+                const int cols = jlimit (1, 8, jmax (1, cells));
                 const int bw = g->collapsed ? 130 : jmax (130, jmin (cols, jmax (1, (w - 8) / kw)) * kw);
                 const int perRow = jmax (1, bw / kw);
-                const int bh = 26 + (g->collapsed ? 0 : (((int) g->knobs.size() + perRow - 1) / perRow) * kh) + 10;
                 if (x > 0 && x + bw > w) { x = 0; y += rowH; rowH = 0; }
+                int cx = 0, row = 0;
+                for (int i = 0; i < g->knobs.size(); ++i)
+                {
+                    const int sp = jmin (perRow, g->spans[i]);
+                    if (cx > 0 && cx + sp > perRow) { cx = 0; ++row; }
+                    auto* k = g->knobs[i];
+                    k->setVisible (! g->collapsed);
+                    auto cell = Rectangle<int> (x + cx * kw, y + 26 + row * kh, sp * kw, kh);
+                    if (dynamic_cast<ParamToggle*> (k) != nullptr) cell = cell.withSizeKeepingCentre (kw - 8, 28);
+                    else if (dynamic_cast<ParamChoice*> (k) != nullptr || dynamic_cast<ParamCombo*> (k) != nullptr) cell = cell.reduced (4, 14);
+                    k->setBounds (cell);
+                    cx += sp;
+                }
+                const int bh = 26 + (g->collapsed ? 0 : (row + 1) * kh) + 10;
                 g->header.setBounds (x, y, bw - 8, 22);
                 g->header.setButtonText (String (g->collapsed ? CharPointer_UTF8 ("\xe2\x96\xb8  ") : CharPointer_UTF8 ("\xe2\x96\xbe  "))
                                          + g->name);
-                for (int i = 0; i < g->knobs.size(); ++i)
-                {
-                    auto* k = g->knobs[i];
-                    k->setVisible (! g->collapsed);
-                    k->setBounds (x + (i % perRow) * kw, y + 26 + (i / perRow) * kh, kw, kh);
-                }
                 x += bw + 12;
                 rowH = jmax (rowH, bh);
             }

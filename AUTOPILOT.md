@@ -163,3 +163,9 @@ when you start, touch it after each step, and delete it when you stop.
 - 2026-10-02: v0.46.0 Dynamics.h: Pulse Compressor (5 characters, lookahead, SC filters / listen / external key), Multiband
   Dynamics (LR4 crossovers, flat sum, compress / expand / upward), Limiter moved here and upgraded (true peak, styles,
   link, LUFS + true peak readouts, level history); DynamicsDisplay.h views; 16 presets. 207 checks pass.
+- Owner feedback (2026-10-02): dynamics / Prism EQ must look and work like their FabFilter counterparts (graph-first, few
+  knobs, buttons not knobs for solo / mode etc.) and look very clean and pro. Done as a style (not a copy of their design).
+- 2026-10-02: v0.47.0 flagship Wavetable (warp, filter 2 + routing, mod env, 4 LFOs incl. drawn, mod matrix with drag-onto-
+  knob, drive / chorus / delay / reverb, 52 presets; old ids kept), graph-first full panels for Prism EQ / Compressor /
+  Multiband / Limiter (floating band panels, bottom bar), ParamToggle / ParamChoice / ParamCombo instead of knobs for
+  choices, --device-shots <dir> for quick UI pictures. 209 checks pass.

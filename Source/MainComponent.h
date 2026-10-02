@@ -67,6 +67,7 @@ public:
         addChildComponent (learnBanner);
 
         PluginMenu::drumRackFactory = [] (te::Edit& ed, bool kit) { return DrumRack::create (ed, kit); };
+        WavetableUI::installModDrop();
         PluginMenu::onInserted = [] (te::Plugin& p) { if (auto s = dynamic_cast<pulse::Simpler*> (&p)) FactorySounds::fillSimpler (*s); };
         drumLibraryFolders = [this]
         {

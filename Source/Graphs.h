@@ -29,6 +29,15 @@ namespace Graphs
         g.drawRoundedRectangle (r.reduced (0.5f), 4.0f, 1.0f);
     }
 
+    /** The deep display background of the full editors (Prism EQ, dynamics). */
+    inline void proDisplay (Graphics& g, Rectangle<float> r)
+    {
+        g.setGradientFill (ColourGradient (Colour (0xff121720), r.getX(), r.getY(), Colour (0xff07090d), r.getX(), r.getBottom(), false));
+        g.fillRect (r);
+        g.setGradientFill (ColourGradient (Colours::transparentBlack, r.getCentreX(), r.getCentreY(), Colours::black.withAlpha (0.35f), r.getX(), r.getY(), true));
+        g.fillRect (r);
+    }
+
     /** True when a graph has room for axis labels and a finer grid (in the big device editor). */
     inline bool isLarge (const Component& c) { return c.getWidth() >= 300 && c.getHeight() >= 150; }
 

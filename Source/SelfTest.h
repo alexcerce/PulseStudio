@@ -99,8 +99,99 @@ namespace SelfTest
         return Decibels::gainToDecibels (peak, -200.0f);
     }
 
+    /** --device-shots <dir>: renders the full editors of the graph-first devices (with some audio
+        through them so the displays move) to PNGs, for quick UI work. */
+    inline int deviceShots (te::Engine& engine, const File& dir)
+    {
+        dir.createDirectory();
+        auto edit = te::createEmptyEdit (engine, dir.getChildFile ("shots.tracktionedit"));
+        edit->ensureNumberOfAudioTracks (1);
+        auto* t = te::getAudioTracks (*edit).getFirst();
+        te::SelectionManager sm (engine);
+        EditViewState evs (*edit, sm);
+        PulseLookAndFeel laf;
+        LookAndFeel::setDefaultLookAndFeel (&laf);
+        WavetableUI::installModDrop();
+        const double sr = 48000.0;
+        auto feed = [&] (te::Plugin& p, double seconds)
+        {
+            const int block = 480;
+            p.initialise ({ te::TimePosition(), sr, block });
+            AudioBuffer<float> audio (2, block);
+            Random rng (7);
+            const int blocks = (int) (seconds * sr / block);
+            for (int k = 0; k < blocks; ++k)
+            {
+                for (int c = 0; c < 2; ++c)
+                    for (int i = 0; i < block; ++i)
+                    {
+                        const double tt = (k * block + i) / sr;
+                        const float env = (float) std::exp (-std::fmod (tt, 0.5) * 6.0);   // a kick-like pulse every half second
+                        const float x = 0.7f * env * (float) std::sin (MathConstants<double>::twoPi * (60.0 + 80.0 * env) * tt)
+                                        + 0.12f * (rng.nextFloat() * 2.0f - 1.0f) + 0.15f * (float) std::sin (MathConstants<double>::twoPi * 440.0 * tt);
+                        audio.setSample (c, i, x);
+                    }
+                te::MidiMessageArray midi;
+                te::PluginRenderContext fc (&audio, 0, block, &midi, 0.0, { te::TimePosition::fromSeconds (k * block / sr), te::TimePosition::fromSeconds ((k + 1) * block / sr) },
+                                            true, false, true, false);
+                p.applyToBuffer (fc);
+            }
+        };
+        int written = 0;
+        auto shoot = [&] (const char* type, std::function<void (pulse::PulsePlugin&)> setup, const String& file)
+        {
+            auto pl = edit->getPluginCache().createNewPlugin (type, {});
+            t->pluginList.insertPlugin (pl, 0, nullptr);
+            auto* pp = dynamic_cast<pulse::PulsePlugin*> (pl.get());
+            if (pp == nullptr) return;
+            if (setup) setup (*pp);
+            feed (*pl, 3.0);
+            {
+                DeviceEditors::Editor ed (evs, *pp);
+                ed.setSize (1100, 760);
+                MessageManager::getInstance()->runDispatchLoopUntil (120);
+                auto img = ed.createComponentSnapshot (ed.getLocalBounds());
+                auto f = dir.getChildFile (file);
+                f.deleteFile();
+                if (auto os = f.createOutputStream()) { PNGImageFormat png; if (png.writeImageToStream (img, *os)) ++written; }
+            }
+            pl->deleteFromParent();
+        };
+        using EQ = pulse::PrismEQ;
+        shoot (EQ::xmlTypeName, [] (pulse::PulsePlugin& p)
+        {
+            auto set = [&p] (int b, int w, float v) { p.set (EQ::idx (b, w), v); };
+            set (0, EQ::pOn, 1); set (0, EQ::pType, EQ::lowCut); set (0, EQ::pFreq, 35); set (0, EQ::pSlope, 6);
+            set (1, EQ::pOn, 1); set (1, EQ::pType, EQ::lowShelf); set (1, EQ::pFreq, 110); set (1, EQ::pGain, 3);
+            set (2, EQ::pOn, 1); set (2, EQ::pFreq, 380); set (2, EQ::pGain, -4); set (2, EQ::pQ, 1.4f);
+            set (3, EQ::pOn, 1); set (3, EQ::pFreq, 3200); set (3, EQ::pGain, 4); set (3, EQ::pDyn, 1); set (3, EQ::pRange, -6);
+            set (5, EQ::pOn, 1); set (5, EQ::pType, EQ::highShelf); set (5, EQ::pFreq, 11000); set (5, EQ::pGain, 2.5f);
+        }, "shot_prism.png");
+        shoot (pulse::ProCompressor::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::ProCompressor::pThreshold, -24); p.set (pulse::ProCompressor::pKnee, 8); },
+               "shot_compressor.png");
+        shoot (pulse::MultibandDynamics::xmlTypeName, [] (pulse::PulsePlugin& p)
+        {
+            using M = pulse::MultibandDynamics;
+            auto& m = dynamic_cast<M&> (p);
+            m.set (m.g (M::gBands), 2);
+            m.set (M::idx (0, M::bThreshold), -30); m.set (M::idx (0, M::bRatio), 4);
+            m.set (M::idx (2, M::bThreshold), -35); m.set (M::idx (2, M::bRatio), 3);
+        }, "shot_multiband.png");
+        shoot (pulse::Limiter::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Limiter::pGain, 8); p.set (pulse::Limiter::pCeiling, -1); }, "shot_limiter.png");
+        shoot (pulse::WavetableSynth::xmlTypeName, [] (pulse::PulsePlugin& p)
+        {
+            auto& w = dynamic_cast<pulse::WavetableSynth&> (p);
+            w.setRoute (2, "cutoff", 0.4f);
+            w.setRoute (5, "pos1", -0.3f);
+        }, "shot_wavetable.png");
+        LookAndFeel::setDefaultLookAndFeel (nullptr);
+        edit = nullptr;
+        return written == 5 ? 0 : 1;
+    }
+
     inline int run (te::Engine& engine, const File& reportFile)
     {
+        WavetableUI::installModDrop();
         Report rep;
         rep.progress = reportFile.withFileExtension (".progress.txt");
         rep.progress.deleteFile();
@@ -2717,7 +2808,7 @@ namespace SelfTest
                     if (p == nullptr) { problems.add (type); continue; }
                     ++presets;
                     for (auto& [id, v] : pr.values)
-                        if (p->getAutomatableParameterByID (id) == nullptr) { ++missing; problems.add (type + "." + id); }
+                        if (! String (id).startsWith ("mod:") && p->getAutomatableParameterByID (id) == nullptr) { ++missing; problems.add (type + "." + id); }
                     FactoryPresets::apply (*p, pr.name);
                     if (p->isSynth() && type != pulse::DrumSynth::xmlTypeName && type != pulse::Simpler::xmlTypeName)   // Simpler needs a sample
                     {
@@ -3616,6 +3707,92 @@ namespace SelfTest
             }
             cp = nullptr; mp = nullptr; lp = nullptr;
             edit->deleteTrack (t);
+        }
+
+        // --- v0.47: flagship Wavetable ---------------------------------------------------------------------
+        {
+            rep.step ("wavetable");
+            using W = pulse::WavetableSynth;
+            auto wp = edit->getPluginCache().createNewPlugin (W::xmlTypeName, {});
+            auto* w = dynamic_cast<W*> (wp.get());
+            auto note = [&] (int n, double hold) { return FactorySounds::renderNote (*w, n, hold); };
+            auto reset = [&] { for (auto* prm : w->getAutomatableParameters()) if (auto d = prm->getDefaultValue()) prm->setParameter (*d, sendNotificationSync);
+                               FactoryPresets::clearRoutes (*w); };
+            auto windowSpread = [] (const AudioBuffer<float>& b, double from, double to)
+            {
+                // spread (max / min) of the RMS in 20 ms windows: how much the level moves
+                float lo = 1e9f, hi = 0;
+                for (int s0 = (int) (from * 48000); s0 + 960 < (int) (to * 48000) && s0 + 960 < b.getNumSamples(); s0 += 960)
+                {
+                    const float r = b.getRMSLevel (0, s0, 960);
+                    lo = jmin (lo, r); hi = jmax (hi, r);
+                }
+                return Decibels::gainToDecibels (hi) - Decibels::gainToDecibels (jmax (1e-6f, lo));
+            };
+            // ids of older versions keep their places
+            const char* oldIds[] = { "set1", "pos1", "set2", "pos2", "semi2", "fine2", "mix", "voices", "detune", "sub", "ftype", "cutoff", "reso", "fenv",
+                                     "fa", "fd", "fs", "fr", "a", "d", "s", "r", "lforate", "lfopos", "lfocut", "glide", "level", "bendrange", "pressure", "slide" };
+            bool compat = true;
+            for (int i = 0; i < 30; ++i) compat = compat && w->param (i)->paramID == oldIds[i];
+
+            reset();
+            w->set (W::pLevel, -6);
+            const auto plain = note (48, 1.0);
+            const float plainSpread = windowSpread (plain, 0.3, 0.95);
+            // LFO 2 (4 Hz) on the level: the level wobbles
+            w->set (W::pL2Rate, 4.0f);
+            w->setRoute (2, "level", 1.0f);
+            const auto wob = note (48, 1.0);
+            const float wobSpread = windowSpread (wob, 0.3, 0.95);
+            const float depth = w->modulationDepth (W::pLevel);
+            reset();
+            // warp: sync changes the sound
+            const auto base = note (48, 0.4);
+            w->set (W::pWarp1, 3); w->set (W::pWarpAmt1, 0.8f);
+            const auto warped = note (48, 0.4);
+            float diff = 0;
+            for (int i = 0; i < jmin (base.getNumSamples(), warped.getNumSamples()); ++i) diff += std::abs (base.getSample (0, i) - warped.getSample (0, i));
+            reset();
+            // filter 2: a high pass at 8 kHz on a low note takes most of it away
+            const float before = note (36, 0.4).getRMSLevel (0, 0, 9600);
+            w->set (W::pF2Type, 4); w->set (W::pF2Cutoff, 8000);
+            const float after = note (36, 0.4).getRMSLevel (0, 0, 9600);
+            reset();
+            // reverb: more tail after the release
+            w->set (W::pR, 50);
+            const auto dry = note (60, 0.3);
+            w->set (W::pReverbMix, 0.8f);
+            const auto wet = note (60, 0.3);
+            const float dryTail = dry.getNumSamples() > 30000 ? dry.getRMSLevel (0, 24000, jmin (12000, dry.getNumSamples() - 24000)) : 0.0f;
+            const float wetTail = wet.getNumSamples() > 30000 ? wet.getRMSLevel (0, 24000, jmin (12000, wet.getNumSamples() - 24000)) : 0.0f;
+            reset();
+            // drawn LFO
+            std::vector<float> pts (W::lfoPoints, 0.0f); pts[4] = 1.0f;
+            w->setLfoPoints (1, pts);
+            w->set (W::pL2Shape, 6);
+            const float drawnAt = w->lfoShape (1, 4.0 / W::lfoPoints);
+            // presets with routes
+            FactoryPresets::apply (*w, "Neuro Reese");
+            const int routes = (int) w->getRoutes().size();
+            const int wtPresets = (int) FactoryPresets::forType (W::xmlTypeName).size();
+            rep.check (compat && wobSpread > plainSpread + 6.0f && depth > 0.99f && diff > 50.0f && after < before * 0.3f && wetTail > dryTail * 3.0f
+                         && std::abs (drawnAt - 1.0f) < 0.01f && routes == 2 && wtPresets >= 50,
+                       "Wavetable: modulation matrix, warp, filter 2, effects, drawn LFO, 50+ presets",
+                       "LFO on level " + String (plainSpread, 1) + " -> " + String (wobSpread, 1) + " dB, warp diff " + String (diff, 0) + ", F2 HP "
+                         + String (Decibels::gainToDecibels (after / jmax (1e-6f, before)), 1) + " dB, reverb tail x" + String (wetTail / jmax (1e-6f, dryTail), 1)
+                         + ", routes " + String (routes) + ", presets " + String (wtPresets));
+
+            // dropping a source on a knob adds a route
+            {
+                EditViewState evs (*edit, sm);
+                reset();
+                ParamKnob k (evs, *w->param (W::pCutoff));
+                const bool accepts = ModDrop::accepts && ModDrop::accepts (*w->param (W::pCutoff)) && ! ModDrop::accepts (*w->param (W::pSet1));
+                if (ModDrop::drop) ModDrop::drop (*w->param (W::pCutoff), 3);
+                const auto rs = w->getRoutes();
+                rep.check (accepts && rs.size() == 1 && rs[0].source == 3 && rs[0].dest == W::pCutoff, "Drag a modulation source onto a knob");
+            }
+            wp = nullptr;
         }
 
         // --- sharing: project zip, crash bundle, update check -----------------------------------------

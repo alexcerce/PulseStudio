@@ -60,6 +60,16 @@ public:
             *p = 42;
         }
 
+        // --device-shots <dir> : pictures of the graph-first device editors, then exit
+        if (auto i = args.indexOf ("--device-shots"); i >= 0 && i + 1 < args.size())
+        {
+            engine = std::make_unique<te::Engine> ("Pulse Studio Test", std::make_unique<PulseUIBehaviour>(), std::make_unique<PulseEngineBehaviour>());
+            pulse::registerDevices (*engine);
+            setApplicationReturnValue (SelfTest::deviceShots (*engine, File::getCurrentWorkingDirectory().getChildFile (args[i + 1].unquoted())));
+            quit();
+            return;
+        }
+
         // --selftest report.txt : exercise the features on a scratch project, then exit
         if (auto i = args.indexOf ("--selftest"); i >= 0)
         {

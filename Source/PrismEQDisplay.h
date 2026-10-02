@@ -93,10 +93,14 @@ namespace PrismUI
         void paint (Graphics& g) override
         {
             auto b = getLocalBounds().toFloat();
-            g.setGradientFill (ColourGradient (Theme::well.brighter (0.04f), 0.0f, b.getY(), Theme::well, 0.0f, b.getBottom(), false));
-            g.fillRoundedRectangle (b, 5.0f);
-            g.setColour (Theme::line);
-            g.drawRoundedRectangle (b.reduced (0.5f), 5.0f, 1.0f);
+            if (large) Graphs::proDisplay (g, b);
+            else
+            {
+                g.setGradientFill (ColourGradient (Theme::well.brighter (0.04f), 0.0f, b.getY(), Theme::well, 0.0f, b.getBottom(), false));
+                g.fillRoundedRectangle (b, 5.0f);
+                g.setColour (Theme::line);
+                g.drawRoundedRectangle (b.reduced (0.5f), 5.0f, 1.0f);
+            }
             plot = b.reduced (large ? 34.0f : 22.0f, large ? 14.0f : 8.0f).withTrimmedBottom (large ? 10.0f : 6.0f);
 
             drawGrid (g);
@@ -233,7 +237,8 @@ namespace PrismUI
             if (anyMoves)
             {
                 auto live = responsePath ([&] (double f) { return eq.responseDb (f, true); }, 2.0f);
-                Graphs::glowStroke (g, live, Theme::orange, 1.6f);
+                g.setColour (Theme::orange.withAlpha (0.75f));
+                g.strokePath (live, PathStrokeType (1.2f));
             }
         }
 
@@ -667,11 +672,26 @@ namespace PrismUI
             moveTitle.setText ("MOVEMENT  (LFO or envelope moves the band)", dontSendNotification);
             outTitle.setText ("OUTPUT", dontSendNotification);
             for (int k : { EQ::gOutput, EQ::gMix })
-                addAndMakeVisible (outKnobs.add (new ParamKnob (evs, *eq.param (eq.g (k)))));
+            {
+                auto* kn = outKnobs.add (new ParamKnob (evs, *eq.param (eq.g (k))));
+                kn->setLabel (k == EQ::gOutput ? "Output" : "Dry/Wet");
+                addAndMakeVisible (kn);
+            }
             autoGain = std::make_unique<Choice> (*eq.param (eq.g (EQ::gAutoGain)), StringArray { "Auto gain off", "On" }, Theme::accent);
-            addAndMakeVisible (*autoGain);
+            addChildComponent (*autoGain);
+            if (large)
+            {
+                analyser = std::make_unique<Choice> (*eq.param (eq.g (EQ::gAnalyser)), StringArray { "Analyser off", "Post", "Pre + post" }, Theme::accent);
+                rangeChoice = std::make_unique<Choice> (*eq.param (eq.g (EQ::gRange)), StringArray { "3 dB", "6 dB", "12 dB", "30 dB" }, Theme::accent);
+                autoToggle = std::make_unique<ParamToggle> (*eq.param (eq.g (EQ::gAutoGain)), "Auto gain");
+                for (auto* c : std::initializer_list<Component*> { analyser.get(), rangeChoice.get(), autoToggle.get() }) addAndMakeVisible (c);
+                addAndMakeVisible (panel);
+                panel.onClose = [this] { panel.setVisible (false); };
+                for (auto* l : { &dynTitle, &moveTitle, &bandTitle }) panel.addAndMakeVisible (l);
+                outTitle.setVisible (false);
+            }
             showBand (2);
-            startTimerHz (8);
+            startTimerHz (large ? 30 : 8);
         }
 
         void showBand (int b)
@@ -681,25 +701,26 @@ namespace PrismUI
             knobs.clear();
             dynKnobs.clear();
             modKnobs.clear();
+            Component& host = large ? (Component&) panel : (Component&) *this;
             typeButtons = std::make_unique<TypeButtons> (*eq.param (EQ::idx (b, EQ::pType)), bandColour (b));
-            addAndMakeVisible (*typeButtons);
+            host.addAndMakeVisible (*typeButtons);
             place = std::make_unique<Choice> (*eq.param (EQ::idx (b, EQ::pPlace)), StringArray { "St", "L", "R", "M", "S" }, bandColour (b));
-            addAndMakeVisible (*place);
+            host.addAndMakeVisible (*place);
             slope = std::make_unique<Choice> (*eq.param (EQ::idx (b, EQ::pSlope)), StringArray { "6", "12", "18", "24", "30", "36", "48", "72", "96" }, bandColour (b));
-            addAndMakeVisible (*slope);
+            host.addAndMakeVisible (*slope);
             onOff = std::make_unique<Choice> (*eq.param (EQ::idx (b, EQ::pOn)), StringArray { "Off", "On" }, Theme::green);
-            addAndMakeVisible (*onOff);
+            host.addAndMakeVisible (*onOff);
             solo = std::make_unique<Choice> (*eq.param (EQ::idx (b, EQ::pSolo)), StringArray { "Solo off", "Solo" }, Theme::yellow);
-            addAndMakeVisible (*solo);
-            dyn = std::make_unique<Choice> (*eq.param (EQ::idx (b, EQ::pDyn)), StringArray { "Off", "On" }, bandColour (b));
-            addAndMakeVisible (*dyn);
-            modSrc = std::make_unique<Choice> (*eq.param (EQ::idx (b, EQ::pModSrc)), EQ::modSources, bandColour (b));
-            addAndMakeVisible (*modSrc);
+            host.addAndMakeVisible (*solo);
+            dyn = std::make_unique<Choice> (*eq.param (EQ::idx (b, EQ::pDyn)), StringArray { "Dynamic off", "Dynamic" }, bandColour (b));
+            host.addAndMakeVisible (*dyn);
+            modSrc = std::make_unique<Choice> (*eq.param (EQ::idx (b, EQ::pModSrc)), StringArray { "No movement", "LFO", "Envelope" }, bandColour (b));
+            host.addAndMakeVisible (*modSrc);
             auto make = [&] (OwnedArray<ParamKnob>& list, int k, const char* label)
             {
                 auto* kn = list.add (new ParamKnob (evs, *eq.param (EQ::idx (b, k))));
                 kn->setLabel (label);
-                addAndMakeVisible (kn);
+                host.addAndMakeVisible (kn);
             };
             make (knobs, EQ::pFreq, "Freq");      make (knobs, EQ::pGain, "Gain");          make (knobs, EQ::pQ, "Q");
             make (dynKnobs, EQ::pRange, "Range"); make (dynKnobs, EQ::pThresh, "Threshold"); make (dynKnobs, EQ::pAttack, "Attack"); make (dynKnobs, EQ::pRelease, "Release");
@@ -707,6 +728,8 @@ namespace PrismUI
             make (modKnobs, EQ::pModFreq, "Freq move"); make (modKnobs, EQ::pModGain, "Gain move");
             bandTitle.setText ("BAND " + String (b + 1), dontSendNotification);
             bandTitle.setColour (Label::textColourId, bandColour (b));
+            panel.colour = bandColour (b);
+            panel.setVisible (large);
             for (auto* c : chips) c->repaint();
             resized();
             graph.repaint();
@@ -717,10 +740,14 @@ namespace PrismUI
 
         void paint (Graphics& g) override
         {
-            g.fillAll (Theme::panel);
+            g.fillAll (large ? Colour (0xff0b0d11) : Theme::panel);
             if (! large) return;
-            g.setColour (Theme::line);
-            for (auto r : sectionRects) g.drawRoundedRectangle (r.toFloat().reduced (0.5f), 5.0f, 1.0f);
+            // the global bar along the bottom
+            auto bar = getLocalBounds().removeFromBottom (barHeight).toFloat();
+            g.setGradientFill (ColourGradient (Colour (0xff181c23), 0.0f, bar.getY(), Colour (0xff111419), 0.0f, bar.getBottom(), false));
+            g.fillRect (bar);
+            g.setColour (Colours::white.withAlpha (0.06f));
+            g.drawHorizontalLine ((int) bar.getY(), 0.0f, (float) getWidth());
         }
 
         void resized() override
@@ -746,59 +773,25 @@ namespace PrismUI
                 return;
             }
 
-            auto panelArea = r.removeFromBottom (jmin (230, r.getHeight() / 2));
-            r.removeFromBottom (6);
-            auto chipRow = r.removeFromBottom (26);
-            r.removeFromBottom (4);
-            graph.setBounds (r);
-            layoutChips (chipRow);
+            // large: the display fills the window; the global bar at the bottom; the band's
+            // controls float next to its node
+            auto full = getLocalBounds();
+            auto bar = full.removeFromBottom (barHeight).reduced (10, 6);
+            graph.setBounds (full);
+            {
+                // right to left: output knobs, auto gain, range, analyser; the band chips get the rest
+                for (int i = outKnobs.size(); --i >= 0;) { outKnobs[i]->setBounds (bar.removeFromRight (58)); bar.removeFromRight (4); }
+                autoToggle->setBounds (bar.removeFromRight (86).withSizeKeepingCentre (86, 26));
+                bar.removeFromRight (10);
+                rangeChoice->setBounds (bar.removeFromRight (180).withSizeKeepingCentre (180, 26));
+                bar.removeFromRight (10);
+                analyser->setBounds (bar.removeFromRight (240).withSizeKeepingCentre (240, 26));
+                bar.removeFromRight (14);
+                layoutChips (bar.withSizeKeepingCentre (bar.getWidth(), 26));
+            }
+            layoutPanel();
+            return;
 
-            constexpr int kw = 66, kh = 78;
-            // band section: shape, slope, placement, on / solo, freq / gain / Q
-            auto bandArea = panelArea.removeFromLeft (jmax (380, panelArea.getWidth() * 4 / 10));
-            sectionRects.add (bandArea);
-            auto ba = bandArea.reduced (8);
-            auto tr = ba.removeFromTop (18);
-            bandTitle.setBounds (tr.removeFromLeft (80));
-            onOff->setBounds (tr.removeFromRight (90));
-            tr.removeFromRight (6);
-            solo->setBounds (tr.removeFromRight (100));
-            ba.removeFromTop (4);
-            typeButtons->setBounds (ba.removeFromTop (30));
-            ba.removeFromTop (4);
-            auto sl = ba.removeFromTop (22);
-            slope->setBounds (sl.removeFromLeft (sl.getWidth() * 62 / 100));
-            sl.removeFromLeft (6);
-            place->setBounds (sl);
-            ba.removeFromTop (4);
-            for (auto* k : knobs) k->setBounds (ba.removeFromLeft (kw).withHeight (kh));
-            panelArea.removeFromLeft (6);
-
-            // output section (right)
-            auto outArea = panelArea.removeFromRight (2 * kw + 20);
-            sectionRects.add (outArea);
-            auto oa = outArea.reduced (8);
-            outTitle.setBounds (oa.removeFromTop (18));
-            autoGain->setBounds (oa.removeFromTop (22));
-            oa.removeFromTop (4);
-            for (auto* k : outKnobs) k->setBounds (oa.removeFromLeft (kw).withHeight (kh));
-            panelArea.removeFromRight (6);
-
-            // dynamic (top) and movement (bottom)
-            auto dynArea = panelArea.removeFromTop (panelArea.getHeight() / 2 - 2);
-            panelArea.removeFromTop (4);
-            sectionRects.add (dynArea);
-            sectionRects.add (panelArea);
-            auto da = dynArea.reduced (8, 4);
-            auto dt = da.removeFromTop (18);
-            dyn->setBounds (dt.removeFromRight (80));
-            dynTitle.setBounds (dt);
-            for (auto* k : dynKnobs) k->setBounds (da.removeFromLeft (kw).withHeight (jmin (kh, da.getHeight())));
-            auto ma = panelArea.reduced (8, 4);
-            auto mt = ma.removeFromTop (18);
-            modSrc->setBounds (mt.removeFromRight (180));
-            moveTitle.setBounds (mt);
-            for (auto* k : modKnobs) k->setBounds (ma.removeFromLeft (kw).withHeight (jmin (kh, ma.getHeight())));
         }
 
     private:
@@ -840,13 +833,106 @@ namespace PrismUI
             int band;
         };
 
+        /** The floating band panel: under (or over) the selected node, inside the display. */
+        void layoutPanel()
+        {
+            if (! large || typeButtons == nullptr) return;
+            constexpr int kw = 60, kh = 70, w = 470;
+            const bool showDyn = eq.getInt (EQ::idx (band, EQ::pDyn)) > 0, showMod = eq.getInt (EQ::idx (band, EQ::pModSrc)) > 0;
+            const int h = 12 + 22 + 6 + 28 + 6 + 22 + 6 + kh + 6 + 24 + (showDyn ? kh + 4 : 0) + 6 + 24 + (showMod ? kh + 4 : 0) + 10;
+            auto node = graph.nodePos (band) + graph.getPosition().toFloat();
+            auto area = graph.getBounds().reduced (10);
+            int x = (int) node.x - w / 2, y = (int) node.y + 26;
+            if (y + h > area.getBottom()) y = (int) node.y - 26 - h;
+            x = jlimit (area.getX(), area.getRight() - w, x);
+            y = jlimit (area.getY(), jmax (area.getY(), area.getBottom() - h), y);
+            panel.setBounds (x, y, w, h);
+
+            auto r = panel.getLocalBounds().reduced (10, 8);
+            auto top = r.removeFromTop (22);
+            panel.closeBtn.setBounds (top.removeFromRight (22));
+            top.removeFromRight (6);
+            onOff->setBounds (top.removeFromRight (80));
+            top.removeFromRight (6);
+            solo->setBounds (top.removeFromRight (100));
+            bandTitle.setBounds (top);
+            r.removeFromTop (6);
+            auto shapeRow = r.removeFromTop (28);
+            place->setBounds (shapeRow.removeFromRight (130));
+            shapeRow.removeFromRight (8);
+            typeButtons->setBounds (shapeRow);
+            r.removeFromTop (6);
+            slope->setBounds (r.removeFromTop (22));
+            slope->setEnabled (EQ::typeUsesSlope (eq.bandType (band)));
+            r.removeFromTop (6);
+            auto kr = r.removeFromTop (kh);
+            for (auto* k : knobs) k->setBounds (kr.removeFromLeft (kw + 10));
+            r.removeFromTop (6);
+            auto dr = r.removeFromTop (24);
+            dyn->setBounds (dr.removeFromLeft (190));
+            dynTitle.setBounds (dr.reduced (8, 0));
+            dynTitle.setText (showDyn ? "gain moves with the level around the band" : "", dontSendNotification);
+            for (auto* k : dynKnobs) k->setVisible (showDyn);
+            if (showDyn) { r.removeFromTop (4); auto row = r.removeFromTop (kh); for (auto* k : dynKnobs) k->setBounds (row.removeFromLeft (kw + 10)); }
+            r.removeFromTop (6);
+            auto mr = r.removeFromTop (24);
+            modSrc->setBounds (mr.removeFromLeft (260));
+            moveTitle.setBounds (mr.reduced (8, 0));
+            moveTitle.setText (showMod ? "moves frequency / gain" : "", dontSendNotification);
+            for (auto* k : modKnobs) k->setVisible (showMod);
+            if (showMod) { r.removeFromTop (4); auto row = r.removeFromTop (kh); for (auto* k : modKnobs) k->setBounds (row.removeFromLeft (kw + 10)); }
+            panelSig = panelSignature();
+        }
+
+        String panelSignature() const
+        {
+            const auto n = graph.nodePos (band);
+            return String (roundToInt (n.x)) + "," + String (roundToInt (n.y)) + "," + String (eq.getInt (EQ::idx (band, EQ::pDyn)))
+                   + "," + String (eq.getInt (EQ::idx (band, EQ::pModSrc))) + "," + String (eq.bandType (band));
+        }
+
+        /** The floating card the band controls sit on. */
+        struct FloatingPanel : public Component
+        {
+            Colour colour { Theme::accent };
+            TextButton closeBtn { CharPointer_UTF8 ("\xc3\x97") };
+            std::function<void()> onClose;
+            FloatingPanel()
+            {
+                closeBtn.setTooltip ("Hide (click a band's node to show it again)");
+                closeBtn.onClick = [this] { if (onClose) onClose(); };
+                addAndMakeVisible (closeBtn);
+                setAlwaysOnTop (true);
+            }
+            void paint (Graphics& g) override
+            {
+                auto r = getLocalBounds().toFloat().reduced (1.0f);
+                DropShadow (Colours::black.withAlpha (0.6f), 18, { 0, 6 }).drawForRectangle (g, getLocalBounds().reduced (6));
+                g.setGradientFill (ColourGradient (Colour (0xf21d222b), 0.0f, r.getY(), Colour (0xf2151920), 0.0f, r.getBottom(), false));
+                g.fillRoundedRectangle (r, 8.0f);
+                g.setColour (colour.withAlpha (0.8f));
+                g.drawRoundedRectangle (r, 8.0f, 1.2f);
+                g.setColour (colour);
+                g.fillRoundedRectangle (r.withHeight (3.0f).reduced (8.0f, 0.0f), 1.5f);
+            }
+        };
+        FloatingPanel panel;
+        static constexpr int barHeight = 64;
+        String panelSig;
+        std::unique_ptr<Choice> analyser, rangeChoice;
+        std::unique_ptr<ParamToggle> autoToggle;
+
         void layoutChips (Rectangle<int> row)
         {
             const int w = row.getWidth() / EQ::numBands;
             for (auto* c : chips) c->setBounds (row.removeFromLeft (w));
         }
 
-        void timerCallback() override { for (auto* c : chips) c->repaint(); }
+        void timerCallback() override
+        {
+            for (auto* c : chips) c->repaint();
+            if (large && panel.isVisible() && panelSignature() != panelSig) layoutPanel();   // follow the node
+        }
 
         EditViewState& evs;
         EQ& eq;

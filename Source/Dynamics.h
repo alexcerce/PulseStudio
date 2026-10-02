@@ -233,7 +233,7 @@ namespace pulse
         enum Global { gBands, gX1, gX2, gX3, gOutput, gMix, numGlobals };
         static inline const char* xmlTypeName = "pulseMultiband";
         static const char* getPluginName() { return "Multiband Dynamics"; }
-        static inline const StringArray modeNames { "Compress", "Expand (down)", "Upward (lift quiet)" };
+        static inline const StringArray modeNames { "Compress", "Expand", "Upward" };
 
         explicit MultibandDynamics (te::PluginCreationInfo info) : PulseEffect (info)
         {
@@ -268,11 +268,15 @@ namespace pulse
         int numBands() const                 { return 2 + getInt (g (gBands)); }
 
         /** The crossovers in use, sorted (each at least a third of an octave above the last). */
+        /** The crossovers in use (the first bands - 1 of them), sorted, each at least a third of an
+            octave above the last; unused ones sit at the top. */
         std::array<double, 3> crossovers() const
         {
+            const int used = numBands() - 1;
             std::array<double, 3> x { get (g (gX1)), get (g (gX2)), get (g (gX3)) };
-            std::sort (x.begin(), x.end());
-            for (int i = 1; i < 3; ++i) x[(size_t) i] = jmax (x[(size_t) i], x[(size_t) i - 1] * 1.26);
+            std::sort (x.begin(), x.begin() + used);
+            for (int i = 1; i < used; ++i) x[(size_t) i] = jmax (x[(size_t) i], x[(size_t) i - 1] * 1.26);
+            for (int i = used; i < 3; ++i) x[(size_t) i] = 20000.0;
             return x;
         }
 

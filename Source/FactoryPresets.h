@@ -122,6 +122,11 @@ namespace FactoryPresets
     }
 
     /** Applies a preset by name: defaults first, then the preset's values. */
+    /** Device-internal modulation in presets: values named "mod:<source>:<parameter id>" are
+        routes (the amount is the value). Devices with a matrix set these hooks. */
+    inline std::function<void (te::Plugin&)> clearRoutes;
+    inline std::function<void (te::Plugin&, int source, const String& dest, float amount)> addRoute;
+
     inline bool apply (te::Plugin& p, const String& name)
     {
         for (auto& pr : forType (p.getPluginType()))
@@ -129,9 +134,19 @@ namespace FactoryPresets
             {
                 for (auto prm : p.getAutomatableParameters())
                     if (auto d = prm->getDefaultValue()) prm->setParameter (*d, sendNotificationSync);
+                if (clearRoutes) clearRoutes (p);
                 for (auto& [id, v] : pr.values)
+                {
+                    const String key (id);
+                    if (key.startsWith ("mod:"))
+                    {
+                        if (addRoute) addRoute (p, key.fromFirstOccurrenceOf ("mod:", false, false).upToFirstOccurrenceOf (":", false, false).getIntValue(),
+                                                key.fromLastOccurrenceOf (":", false, false), v);
+                        continue;
+                    }
                     if (auto prm = p.getAutomatableParameterByID (id))
                         prm->setParameter (prm->valueRange.snapToLegalValue (v), sendNotificationSync);
+                }
                 return true;
             }
         return false;
