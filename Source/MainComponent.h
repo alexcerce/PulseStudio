@@ -25,6 +25,7 @@
 #include "WelcomeScreen.h"
 #include "PluginScan.h"
 #include "FactoryContent.h"
+#include "ShareTools.h"
 #include "BackgroundRender.h"
 #include "Commands.h"
 #include "ClipEnvelopes.h"
@@ -358,6 +359,45 @@ private:
         a.openProject    = [this] { openProject(); };
         a.midiRecordMode = [this] { return midiRecordMode(); };
         a.welcome        = [this] { showWelcome(); };
+        a.exportZip      = [this]
+        {
+            if (edit == nullptr) return;
+            auto def = Sharing::editFileOf (*edit).withFileExtension (".zip");
+            chooser = std::make_shared<FileChooser> ("Export project as .zip", def, "*.zip");
+            chooser->launchAsync (FileBrowserComponent::saveMode | FileBrowserComponent::canSelectFiles | FileBrowserComponent::warnAboutOverwriting,
+                                  [this] (const FileChooser& fc)
+                                  {
+                                      auto f = fc.getResult();
+                                      if (f == File() || edit == nullptr) return;
+                                      f = f.withFileExtension (".zip");
+                                      const auto err = ShareTools::exportZip (*edit, f);
+                                      AlertWindow::showMessageBoxAsync (err.isEmpty() ? MessageBoxIconType::InfoIcon : MessageBoxIconType::WarningIcon, "Export project",
+                                                                        err.isEmpty() ? "Saved " + f.getFileName() + " (project, samples and edited audio)." : err);
+                                      if (err.isEmpty()) f.revealToUser();
+                                  });
+        };
+        a.importZip      = [this]
+        {
+            chooser = std::make_shared<FileChooser> ("Open project from .zip", File::getSpecialLocation (File::userHomeDirectory).getChildFile ("Downloads"), "*.zip");
+            chooser->launchAsync (FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles, [this] (const FileChooser& fc)
+            {
+                if (! fc.getResult().existsAsFile()) return;
+                auto project = ShareTools::importZip (fc.getResult(), projectsFolder());
+                if (project.existsAsFile()) { saveIfNeeded(); loadEdit (project, false); }
+                else AlertWindow::showMessageBoxAsync (MessageBoxIconType::WarningIcon, "Open project", "No Pulse project was found in that zip.");
+            });
+        };
+        a.crashReports   = [this]
+        {
+            const int n = ShareTools::numCrashReports();
+            if (n == 0) { AlertWindow::showMessageBoxAsync (MessageBoxIconType::InfoIcon, "Crash reports", "There are no crash reports. Good news!"); return; }
+            auto zip = ShareTools::bundleCrashReports (File::getSpecialLocation (File::userDesktopDirectory), JUCEApplication::getInstance()->getApplicationVersion());
+            if (zip.existsAsFile()) zip.revealToUser();
+            AlertWindow::showMessageBoxAsync (MessageBoxIconType::InfoIcon, "Crash reports",
+                                              zip.existsAsFile() ? String (n) + " report(s) zipped to " + zip.getFullPathName() + ".\nNothing was sent anywhere - attach the file yourself if you want to share it."
+                                                                 : String ("Couldn't create the zip."));
+        };
+        a.checkUpdates   = [this] { checkForUpdates (true); };
         a.setMidiRecordMode = [this] (int m)
         {
             settings().setValue ("midiRecordMode", m);
@@ -431,6 +471,41 @@ private:
         showBrowser = ! showBrowser;
         settings().setValue ("showBrowser", showBrowser);
         resized();
+    }
+
+    /** Update check against the address the user chose (Settings key "updateUrl"); off until set. */
+    void checkForUpdates (bool interactive)
+    {
+        const auto address = settings().getValue ("updateUrl");
+        if (address.isEmpty())
+        {
+            if (! interactive) return;
+            auto* w = new AlertWindow ("Check for updates",
+                                       "Pulse can check an address you choose for a newer version (a small JSON file: {\"version\": \"1.0.0\", \"url\": \"...\"}).\n"
+                                       "It never downloads anything by itself. Leave empty to keep checks off.", MessageBoxIconType::NoIcon);
+            w->addTextEditor ("url", {}, "Update address (https://...)");
+            w->addButton ("Save and check", 1, KeyPress (KeyPress::returnKey));
+            w->addButton ("Cancel", 0, KeyPress (KeyPress::escapeKey));
+            w->enterModalState (true, ModalCallbackFunction::create ([this, w] (int r)
+            {
+                const auto url = w->getTextEditorContents ("url").trim();
+                if (r == 1 && url.startsWithIgnoreCase ("http")) { settings().setValue ("updateUrl", url); checkForUpdates (true); }
+            }), true);
+            return;
+        }
+        const auto current = JUCEApplication::getInstance()->getApplicationVersion();
+        ShareTools::checkForUpdate (address, [sp = SafePointer<MainComponent> (this), interactive, current] (std::optional<ShareTools::UpdateInfo> info)
+        {
+            if (sp == nullptr) return;
+            if (info.has_value() && ShareTools::isNewer (info->version, current))
+                AlertWindow::showMessageBoxAsync (MessageBoxIconType::InfoIcon, "Update available",
+                                                  "Pulse Studio " + info->version + " is available (you have " + current + ")."
+                                                  + (info->notes.isNotEmpty() ? "\n\n" + info->notes : String())
+                                                  + (info->url.isNotEmpty() ? "\n\nGet it from: " + info->url : String()));
+            else if (interactive)
+                AlertWindow::showMessageBoxAsync (MessageBoxIconType::InfoIcon, "Check for updates",
+                                                  info.has_value() ? "You have the latest version (" + current + ")." : String ("Couldn't read the update address."));
+        });
     }
 
     int midiRecordMode()
@@ -547,6 +622,7 @@ private:
             loadEdit (projectsFolder().getNonexistentChildFile ("Demo Song", ".tracktionedit", false), true);
 
         FactoryContent::ensureTemplates (engine);
+        if (! JUCEApplication::getCommandLineParameters().contains ("--snapshots")) checkForUpdates (false);   // only if an address was set
         if (settings().getBoolValue ("autoScanPlugins", true) && ! JUCEApplication::getCommandLineParameters().contains ("--snapshots"))
             Timer::callAfterDelay (5000, [sp = SafePointer<MainComponent> (this)] { if (sp != nullptr) sp->pluginScan.start(); });
 

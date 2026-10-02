@@ -20,7 +20,7 @@ public:
         std::function<void()> clearRecent;
         std::function<StringArray()> backups;
         std::function<void (const File&)> restoreBackup;
-        std::function<void()> welcome;
+        std::function<void()> welcome, exportZip, importZip, crashReports, checkUpdates;
         std::function<int()> midiRecordMode;
         std::function<void (int)> setMidiRecordMode;
         std::function<String()> controllerStatus;
@@ -168,6 +168,11 @@ public:
             add ("Command palette...", "Ctrl+P", actions.openPalette);
             add ("Keyboard shortcuts...", {}, actions.editShortcuts);
             add ("Welcome screen...", {}, actions.welcome);
+            m.addSeparator();
+            add ("Export project as .zip...", {}, actions.exportZip);
+            add ("Open project from .zip...", {}, actions.importZip);
+            add ("Collect crash reports...", {}, actions.crashReports);
+            add ("Check for updates...", {}, actions.checkUpdates);
             m.showMenuAsync (PopupMenu::Options().withTargetComponent (&fileBtn));
         };
         addAndMakeVisible (fileBtn);

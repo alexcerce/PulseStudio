@@ -8,6 +8,7 @@
 #include "Presets.h"
 #include "Macros.h"
 #include "Meters.h"
+#include "ShareTools.h"
 #include "FactoryContent.h"
 #include "ClipGain.h"
 #include "PushMap.h"
@@ -2749,6 +2750,61 @@ namespace SelfTest
             }
             rep.check (err < 0.01f && ripple < 0.05f && sineB > 0.0f && squareB > sineB * 2.0f, "Drawn wavetable (band-limited, morphs start -> end)",
                        "sine error " + String (err, 4) + ", brightness " + String (sineB, 3) + " -> " + String (squareB, 3));
+        }
+
+        // --- sharing: project zip, crash bundle, update check -----------------------------------------
+        {
+            rep.step ("sharing tools");
+            // project zip round trip
+            auto zipFile = dir.getChildFile ("project.zip");
+            const auto err = ShareTools::exportZip (*edit, zipFile);
+            int entries = 0;
+            bool hasEdit = false, hasSamples = false;
+            {
+                ZipFile z (zipFile);
+                entries = z.getNumEntries();
+                for (int i = 0; i < entries; ++i)
+                {
+                    auto name = z.getEntry (i)->filename;
+                    hasEdit = hasEdit || name.endsWith (".tracktionedit");
+                    hasSamples = hasSamples || name.contains ("Samples/");
+                }
+            }
+            auto importDir = dir.getChildFile ("Imported");
+            importDir.deleteRecursively();
+            importDir.createDirectory();
+            auto imported = ShareTools::importZip (zipFile, importDir);
+            int importedTracks = -1;
+            if (imported.existsAsFile())
+                if (auto e2 = te::loadEditFromFile (engine, imported)) importedTracks = EngineHelpers::getUserTracks (*e2).size();
+            rep.check (err.isEmpty() && hasEdit && hasSamples && importedTracks == EngineHelpers::getUserTracks (*edit).size(),
+                       "Project as a single .zip (export, open)", String (entries) + " files, " + String (importedTracks) + " tracks after opening");
+
+            // crash bundle
+            auto fake = CrashGuard::crashFolder().getChildFile ("crash-selftest.txt");
+            fake.replaceWithText ("test crash");
+            auto bundle = ShareTools::bundleCrashReports (dir, "test");
+            bool bundled = false;
+            if (bundle.existsAsFile())
+            {
+                ZipFile z (bundle);
+                bundled = z.getIndexOfFileName ("system.txt") >= 0 && z.getIndexOfFileName ("crashes/crash-selftest.txt") >= 0;
+            }
+            fake.deleteFile();
+            bundle.deleteFile();
+            rep.check (bundled, "Crash report bundle (zip with system details)");
+
+            // update check (a local file stands in for the address; nothing is downloaded)
+            auto json = dir.getChildFile ("update.json");
+            json.replaceWithText ("{\"version\": \"9.9.0\", \"url\": \"https://example.invalid/setup.exe\", \"notes\": \"test\"}");
+            std::optional<ShareTools::UpdateInfo> got;
+            bool called = false;
+            ShareTools::checkForUpdate (URL (json).toString (false), [&] (std::optional<ShareTools::UpdateInfo> i) { got = i; called = true; });
+            for (int i = 0; i < 100 && ! called; ++i) MessageManager::getInstance()->runDispatchLoopUntil (20);
+            const bool versions = ShareTools::isNewer ("0.35.1", "0.35.0") && ShareTools::isNewer ("1.0", "0.99.9") && ! ShareTools::isNewer ("0.9.10", "0.10.0")
+                                  && ! ShareTools::isNewer ("0.35.0", "0.35.0") && ShareTools::isNewer ("0.10.0", "0.9.10");
+            rep.check (called && got.has_value() && got->version == "9.9.0" && versions, "Update check (opt-in address, version compare)",
+                       called ? (got.has_value() ? got->version : String ("no data")) : String ("no reply"));
         }
 
         // --- undo -------------------------------------------------------------------------------

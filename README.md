@@ -6,7 +6,7 @@ A native Windows DAW built with C++, [JUCE](https://juce.com) and [Tracktion Eng
 
 ## Install
 
-Run `dist/PulseStudio-0.34.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
+Run `dist/PulseStudio-0.35.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
 
 ## Build
 
@@ -225,6 +225,9 @@ Pulse's own devices have compact cards: knobs stack in as many rows as the devic
 
 ### Projects and sharing (File menu)
 - **Backups:** every save, and every 5 minutes of unsaved work, writes a timestamped copy to a `<project> Backups` folder next to the project (the newest 20 are kept). *File → Restore backup* opens one as a copy, so your project file is never overwritten.
+- **Project as one file:** *File → Export project as .zip...* collects every sample into the project and zips it (project, samples, edited audio); *Open project from .zip...* unpacks one into your projects folder and opens it.
+- **Crash reports:** *File → Collect crash reports...* zips them (with system details) onto your Desktop. Nothing is sent anywhere.
+- **Updates:** *File → Check for updates...* lets you set an address Pulse checks at startup for a newer version (a small JSON file). It only tells you; it never downloads anything itself. Off until you set it.
 - **Open recent:** the last 12 projects you opened (*Clear list* empties it).
 - **Collect all and save** copies every sample the project uses into a `<project> Samples` folder next to it, then points the project at the copies. That covers audio clips, audio takes, Simpler and Drum Rack samples. Zip the project folder and it opens on any machine. Missing files are listed.
 - **Templates:** *Save as template...* keeps your favourite setup (tracks, devices, routing, returns, even clips). *New Project...* then offers an empty project, the demo song or any of your templates. Templates live in `Documents/Pulse Studio/Templates`.
@@ -287,7 +290,7 @@ All of these can be changed in *File → Keyboard shortcuts*. New: **Ctrl+P** co
 ## Command line
 
 - `--render out.wav` renders the last project offline and exits.
-- `--selftest report.txt` builds a scratch project and runs 173 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--selftest report.txt` builds a scratch project and runs 176 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
 - `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
 
 ## Code layout

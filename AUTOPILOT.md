@@ -70,7 +70,7 @@ when you start, touch it after each step, and delete it when you stop.
    - ~~v0.32 background plugin scan; Push encoder MIDI learn~~ (done) - with progress; Push encoder MIDI learn
    - ~~v0.33 audio editing~~ (done): clip gain envelope, slip edit (Alt-drag content), crossfade editor; groove pool (extract groove)
    - ~~v0.34 content~~ (done): factory presets for Pulse devices, synth drum kits, project templates; wavetable draw editor
-   - v0.35 sharing: export project as a single zip, crash report bundle, update checker (URL configurable)
+   - ~~v0.35 sharing~~ (done): export project as a single zip, crash report bundle, update checker (URL configurable)
 5. Then **think of more improvements** and do them in a cycle: polish, reliability, performance, UI clarity,
    missing DAW features (e.g. sidechain UI improvements, audio quantize, tuner/spectrum devices, MIDI
    learn for Push encoders, better browser search/tags, recent projects, auto-update of README docs).
@@ -109,3 +109,7 @@ when you start, touch it after each step, and delete it when you stop.
 - 2026-10-02: v0.32.0 background plugin scan (out of process, new files only), Push encoder assignments. 167 checks pass.
 - 2026-10-02: v0.33.0 clip gain envelope (rendered copy), slip edit, fade shapes, groove extraction (MIDI / audio). 169 checks pass.
 - 2026-10-02: v0.34.0 53 factory presets, kit styles, 4 factory templates (per profile folder), drawn wavetables. 173 checks pass.
+- 2026-10-02: v0.35.0 project zip export / import, crash report bundle, opt-in update check. 176 checks pass.
+- Owner feedback (2026-10-02) -> v0.36: friendly track names from browser drops ("drumrackkit"), return track
+  devices must be editable, big resizable device editor windows with detailed graphs and collapsible sections,
+  better graph quality, piano roll note entry (grid-length notes, drag to size, easier resize).
