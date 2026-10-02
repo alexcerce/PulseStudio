@@ -40,7 +40,8 @@ namespace BusLanes
         Row (EditViewState& e, te::AudioTrack* t, int headerW) : evs (e), track (t), headerWidth (headerW)
         {
             name.setText (track != nullptr ? track->getName() : String ("Master"), dontSendNotification);
-            name.setFont (FontOptions (12.0f, Font::bold));
+            name.setFont (FontOptions (11.5f, Font::bold));
+            name.setMinimumHorizontalScale (0.7f);
             name.setInterceptsMouseClicks (false, false);
             addAndMakeVisible (name);
 
@@ -138,14 +139,14 @@ namespace BusLanes
         void resized() override
         {
             auto r = getLocalBounds().withWidth (headerWidth).reduced (8, 3).withTrimmedLeft (2);
-            if (meter != nullptr) { meter->setBounds (r.removeFromRight (30).reduced (0, 6)); r.removeFromRight (4); }
-            volume.setBounds (r.removeFromRight (56).reduced (0, 2)); r.removeFromRight (4);
-            addBtn.setBounds (r.removeFromRight (22)); r.removeFromRight (3);
-            autoBtn.setBounds (r.removeFromRight (20)); r.removeFromRight (3);
+            if (meter != nullptr) { meter->setBounds (r.removeFromRight (20).reduced (0, 6)); r.removeFromRight (3); }
+            volume.setBounds (r.removeFromRight (44).reduced (0, 2)); r.removeFromRight (3);
+            addBtn.setBounds (r.removeFromRight (18)); r.removeFromRight (2);
+            autoBtn.setBounds (r.removeFromRight (18)); r.removeFromRight (2);
             if (track != nullptr)
             {
-                soloBtn.setBounds (r.removeFromRight (20)); r.removeFromRight (2);
-                muteBtn.setBounds (r.removeFromRight (20)); r.removeFromRight (4);
+                soloBtn.setBounds (r.removeFromRight (18)); r.removeFromRight (2);
+                muteBtn.setBounds (r.removeFromRight (18)); r.removeFromRight (4);
             }
             name.setBounds (r);
 

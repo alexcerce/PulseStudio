@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Common.h"
+#include "Commands.h"
 #include "CrashGuard.h"
 
 /** Recording options: count-in, MIDI overdub and per-input latency compensation. */
@@ -296,7 +297,7 @@ private:
 
 /** Settings dialog: audio / MIDI devices, recording, safety and appearance (themes). */
 inline void showAudioSettingsDialog (te::Engine& engine, te::Edit& edit, PropertiesFile& settings,
-                                     std::function<void (int)> onTheme = {}, bool openAppearance = false)
+                                     std::function<void (int)> onTheme = {}, bool openAppearance = false, CommandRegistry* shortcuts = nullptr)
 {
     auto* tabs = new TabbedComponent (TabbedButtonBar::TabsAtTop);
     tabs->setColour (TabbedComponent::backgroundColourId, Theme::panel);
@@ -310,6 +311,8 @@ inline void showAudioSettingsDialog (te::Engine& engine, te::Edit& edit, Propert
     if (onTheme)
         tabs->addTab ("Appearance", Theme::panel2, new AppearanceSettings (onTheme), true);
     if (openAppearance && onTheme) tabs->setCurrentTabIndex (tabs->getNumTabs() - 1);
+    if (shortcuts != nullptr)
+        tabs->addTab ("Shortcuts", Theme::panel2, new ShortcutEditor (*shortcuts), true);
     tabs->setSize (720, 660);
 
     DialogWindow::LaunchOptions o;

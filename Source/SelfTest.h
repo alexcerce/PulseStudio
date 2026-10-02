@@ -43,6 +43,8 @@
 #include "BusLanes.h"
 #include "Upgrade.h"
 #include "PrismEQDisplay.h"
+#include "Mixer.h"
+#include "UndoHistory.h"
 
 /** "Pulse Studio.exe --selftest report.txt"
     Builds a scratch project in the temp folder, exercises the editing / routing / device
@@ -3377,6 +3379,91 @@ namespace SelfTest
                     eq->deleteFromParent();
                 }
                 rep.check (ok, "Automation lanes for returns and the master");
+            }
+        }
+
+        // --- v0.44: mixer EQ glance, send grid, narrow strips, folded groups, undo history ------------------
+        {
+            rep.step ("mixer / undo history");
+            PulseLookAndFeel laf;
+            LookAndFeel::setDefaultLookAndFeel (&laf);
+            {
+                EditViewState evs (*edit, sm);
+                auto t = ClipImport::createContentTrack (*edit, "MixerTest", false);
+                // EQ at a glance: click adds a Prism EQ, which the strip then shows
+                MiniEQ mini (evs, t);
+                mini.setSize (80, 26);
+                const bool emptyFirst = mini.findEQ() == nullptr;
+                auto src = Desktop::getInstance().getMainMouseSource();
+                const auto now = Time::getCurrentTime();
+                MouseEvent up (src, { 20.0f, 10.0f }, ModifierKeys(), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, &mini, &mini, now, { 20.0f, 10.0f }, now, 1, false);
+                mini.mouseUp (up);
+                auto* eqp = dynamic_cast<pulse::PrismEQ*> (mini.findEQ());
+                const bool added = eqp != nullptr && t->pluginList.indexOf (eqp) < t->pluginList.indexOf (t->getVolumePlugin());
+
+                // send grid: tracks x returns, and moving a cell sets the send
+                auto ret = Routing::createReturnTrack (*edit, "GridReturn");
+                SendMatrix grid (*edit);
+                int cellIndex = -1, i = 0;
+                for (auto at : te::getAudioTracks (*edit))
+                    if (! Routing::isReturnTrack (*at))
+                        for (auto r : Routing::getReturnTracks (*edit))
+                        {
+                            if (at == t && r == ret) cellIndex = i;
+                            ++i;
+                        }
+                bool sendOk = false;
+                if (cellIndex >= 0 && cellIndex < grid.numCells())
+                {
+                    grid.cell (cellIndex)->setValue (-9.0, sendNotificationSync);
+                    sendOk = std::abs (Routing::getSendDb (*t, Routing::getReturnBus (*ret)) + 9.0f) < 0.2f;
+                }
+
+                // narrow strips and folded groups
+                Mixer mixer (evs);
+                mixer.setSize (1400, 600);
+                MessageManager::getInstance()->runDispatchLoopUntil (50);
+                const int wide = mixer.stripWidth (0);
+                mixer.setNarrow (true);
+                const int slim = mixer.stripWidth (0);
+                mixer.setNarrow (false);
+                const int before = mixer.numStrips();
+                auto c1 = ClipImport::createContentTrack (*edit, "Child1", false);
+                auto c2 = ClipImport::createContentTrack (*edit, "Child2", false);
+                te::FolderTrack::Ptr folder = EditingOps::groupTracks (*edit, { c1, c2 }, "Group");
+                MessageManager::getInstance()->runDispatchLoopUntil (100);
+                const int open = mixer.numStrips();
+                if (folder != nullptr) { evs.collapsed.insert (folder->itemID); evs.layoutChanged.sendChangeMessage(); }
+                MessageManager::getInstance()->runDispatchLoopUntil (100);
+                const int folded = mixer.numStrips();
+                rep.check (emptyFirst && added && sendOk && wide == 92 && slim == 58 && open >= before + 2 && folded == open - 2,
+                           "Mixer: EQ glance adds Prism EQ, send grid, narrow strips, folded groups",
+                           "strip " + String (wide) + " -> " + String (slim) + " px, strips " + String (before) + " / " + String (open) + " / folded " + String (folded)
+                             + ", send " + (sendOk ? "ok" : "no"));
+                if (folder != nullptr) { evs.collapsed.erase (folder->itemID); edit->deleteTrack (c1); edit->deleteTrack (c2); edit->deleteTrack (folder.get()); }
+                edit->deleteTrack (ret);
+                edit->deleteTrack (t);
+            }
+            LookAndFeel::setDefaultLookAndFeel (nullptr);
+
+            // undo history: three renames, jump back to the first, then forward to the last
+            {
+                auto t = ClipImport::createContentTrack (*edit, "Undo0", false);
+                auto& um = edit->getUndoManager();
+                um.clearUndoHistory();
+                for (auto n : { "Undo1", "Undo2", "Undo3" }) { um.beginNewTransaction (String ("Rename to ") + n); t->setName (n); }
+                um.beginNewTransaction();
+                UndoHistory::View view (*edit);
+                const int rows = view.getNumRows();
+                view.goTo (1);
+                const auto atFirst = t->getName();
+                view.goTo (view.getNumRows() - 1);
+                const auto atLast = t->getName();
+                view.goTo (0);
+                const auto atStart = t->getName();
+                rep.check (rows == 4 && atFirst == "Undo1" && atLast == "Undo3" && atStart == "Undo0", "Undo history (jump back and forward)",
+                           String (rows) + " rows: " + atFirst + " / " + atLast + " / " + atStart);
+                edit->deleteTrack (t);
             }
         }
 

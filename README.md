@@ -218,6 +218,10 @@ Pulse's own devices have compact cards: knobs stack in as many rows as the devic
   - **Favourites:** right-click a file → *Add to favourites*. The *★ Favourites* place lists them (the search box filters it too).
 
 ### Mixer and routing
+- **EQ at a glance:** every strip (returns and master too) shows a small curve of its first EQ (Prism EQ or EQ Six). Click it to open that EQ, or to add a Prism EQ when there is none.
+- **Sends grid:** *Sends* (beside *+ Return*) shows every track's send to every return as one grid of sliders (double-click = off).
+- **Narrow strips:** *Narrow* fits more channels on screen (saved with the project).
+- **Folding groups:** the arrow on a group strip folds its tracks away, in the mixer and the arrangement.
 - **Loudness:** the master strip shows short-term and integrated loudness (LUFS, EBU R128) and the true peak while the song plays; click it to reset. After an export, Pulse reports the file's loudness and true peak and warns when the peak is above -1 dBTP. Export can normalise to -14, -16 or -9 LUFS.
 - **Sidechain:** the Glue Compressor takes a sidechain (*SC* button on its card) with a filter so the lows don't trigger it. Right-click a track header → *Duck this track from (sidechain)* → a track sets up classic pumping in one click.
 - **Linked faders:** select several tracks (Ctrl-click headers) and moving one of their faders moves them all by the same amount.
@@ -271,6 +275,10 @@ Pulse's own devices have compact cards: knobs stack in as many rows as the devic
 - **Groups:** right-click a group header.
   - *Freeze group* renders the submix to an audio track and mutes the group, to save CPU. *Unfreeze* undoes it.
   - *Flatten group* replaces the group with that audio track.
+
+## Undo history
+
+Right-click the undo or redo button for the last 25 steps (pick one to jump there), or open *Undo history* (Ctrl+Shift+H, or the command palette) for the whole list: click any step to go back or forward to it. Keyboard shortcuts can be changed in *Settings → Shortcuts*.
 
 ## Shortcuts
 

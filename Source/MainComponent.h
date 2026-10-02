@@ -273,11 +273,12 @@ public:
         c.add ("app.themes", "Colour theme...", "View", {}, [this]
         {
             if (edit != nullptr)
-                showAudioSettingsDialog (engine, *edit, settings(), [sp = SafePointer<MainComponent> (this)] (int i) { if (sp != nullptr) sp->setTheme (i); }, true);
+                showAudioSettingsDialog (engine, *edit, settings(), [sp = SafePointer<MainComponent> (this)] (int i) { if (sp != nullptr) sp->setTheme (i); }, true, commands.get());
         });
         c.add ("app.nextTheme", "Next colour theme", "View", {}, [this] { setTheme ((Theme::currentIndex() + 1) % (int) Theme::all().size()); });
         c.add ("app.plugins", "Plugin manager", "App", {}, [this] { showPluginManager(); });
         c.add ("app.shortcuts", "Keyboard shortcuts", "App", {}, [this] { showShortcutEditor(); });
+        c.add ("edit.undoHistory", "Undo history...", "Edit", key ('H', ctrl | shiftM), [this] { if (edit) UndoHistory::showWindow (*edit); });
         c.add ("app.welcome", "Welcome screen", "App", {}, [this] { showWelcome(); });
         c.add ("midi.humanize", "MIDI: humanize notes", "MIDI", key ('H', ctrl | altM), [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("humanize"); } });
         c.add ("midi.legato", "MIDI: legato", "MIDI", key ('L', ctrl | altM), [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("legato"); } });
@@ -820,6 +821,7 @@ private:
         edit->getTransport().stop (false, true);
         transport.setEdit (nullptr);
         DeviceEditors::closeAll();
+        UndoHistory::closeAll();
         pianoRoll = nullptr;
         mixer = nullptr;
         deviceChain = nullptr;
@@ -1305,7 +1307,7 @@ private:
 
     void showAudioSettings()
     {
-        showAudioSettingsDialog (engine, *edit, settings(), [sp = SafePointer<MainComponent> (this)] (int i) { if (sp != nullptr) sp->setTheme (i); });
+        showAudioSettingsDialog (engine, *edit, settings(), [sp = SafePointer<MainComponent> (this)] (int i) { if (sp != nullptr) sp->setTheme (i); }, false, commands.get());
     }
 
     void showPluginManager()

@@ -3,6 +3,7 @@
 #include "EditViewState.h"
 #include "Icons.h"
 #include "Meters.h"
+#include "UndoHistory.h"
 
 /** Top bar: transport, tempo, position display and app actions. */
 class TransportBar : public Component,
@@ -64,8 +65,10 @@ public:
 
         undoBtn.onClick = [this] { edit->undo(); };
         redoBtn.onClick = [this] { edit->redo(); };
-        undoBtn.setTooltip ("Undo (Ctrl+Z)");
-        redoBtn.setTooltip ("Redo (Ctrl+Y)");
+        undoBtn.setTooltip ("Undo (Ctrl+Z) - right-click for the history");
+        redoBtn.setTooltip ("Redo (Ctrl+Y) - right-click for the history");
+        undoBtn.addMouseListener (this, false);
+        redoBtn.addMouseListener (this, false);
 
         for (auto* l : { &barsLabel, &timeLabel, &bpmLabel, &sigLabel })
         {
@@ -311,6 +314,11 @@ public:
 
     void mouseDown (const MouseEvent& e) override
     {
+        if ((e.eventComponent == &undoBtn || e.eventComponent == &redoBtn) && e.mods.isPopupMenu() && edit != nullptr)
+        {
+            UndoHistory::showMenu (*edit, *e.eventComponent, e.eventComponent == &redoBtn);
+            return;
+        }
         if (e.eventComponent == &recBtn && e.mods.isPopupMenu() && actions.midiRecordMode)
         {
             PopupMenu m;
