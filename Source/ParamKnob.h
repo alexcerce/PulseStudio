@@ -1,5 +1,7 @@
 #pragma once
 
+#include "PushMap.h"
+
 #include "EditViewState.h"
 #include "Macros.h"
 #include "MidiLearn.h"
@@ -94,6 +96,7 @@ public:
         if (evs.midiLearn != nullptr) evs.midiLearn->addToMenu (m, *param);
         Macros::addToMenu (m, *param);
         Modulators::addToMenu (m, *param);
+        PushMap::addToMenu (m, *param);
         if (auto def = param->getDefaultValue())
             m.addItem ("Reset to default", [this, v = *def] { param->setParameter (v, sendNotificationSync); });
         m.showMenuAsync (PopupMenu::Options().withTargetComponent (this));

@@ -8,6 +8,7 @@
 #include "Presets.h"
 #include "Macros.h"
 #include "Meters.h"
+#include "PushMap.h"
 #include "AudioSettings.h"
 #include "MidiTools.h"
 #include "DragDrop.h"
@@ -2512,6 +2513,26 @@ namespace SelfTest
                        String (speed, 1) + "x real time, peak " + String (Decibels::gainToDecibels (peak), 1) + " dB, finite " + String ((int) finite));
             for (auto t : heavy) edit->deleteTrack (t);
             jassert (EngineHelpers::getUserTracks (*edit).size() == before);
+        }
+
+        // --- Push encoder assignments ------------------------------------------------------------------
+        {
+            auto t = ClipImport::createContentTrack (*edit, "PushMap", true);
+            bool ok = false;
+            if (t != nullptr)
+            {
+                auto eq = edit->getPluginCache().createNewPlugin (pulse::PulseEQ::xmlTypeName, {});
+                PluginMenu::insertPlugin (t, t->pluginList, eq, nullptr);
+                auto* prm = eq->getAutomatableParameters()[5];
+                PushMap::assign (*t, 2, *prm);
+                const bool found = PushMap::find (*t, 2) == prm && PushMap::find (*t, 3) == nullptr;
+                PushMap::assign (*t, 2, *eq->getAutomatableParameters()[1]);   // replaces
+                const bool replaced = PushMap::find (*t, 2) == eq->getAutomatableParameters()[1];
+                PushMap::clear (*t, 2);
+                ok = found && replaced && PushMap::find (*t, 2) == nullptr;
+                edit->deleteTrack (t);
+            }
+            rep.check (ok, "Push encoder assignments (assign, replace, clear)");
         }
 
         // --- undo -------------------------------------------------------------------------------

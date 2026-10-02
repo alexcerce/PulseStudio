@@ -6,7 +6,7 @@ A native Windows DAW built with C++, [JUCE](https://juce.com) and [Tracktion Eng
 
 ## Install
 
-Run `dist/PulseStudio-0.31.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
+Run `dist/PulseStudio-0.32.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
 
 ## Build
 
@@ -103,6 +103,7 @@ Click **Link** in the transport bar to join a Link session with other apps and d
 The button's tooltip shows how many peers are connected. The first time you turn it on, Windows may ask whether Pulse Studio can use the network. Allow private networks.
 
 ### Ableton Push 2
+- **Your own encoder layout:** right-click any device knob → *Assign to Push encoder* → 1-8. In Device mode those encoders control your picks first (per track, saved with the project).
 - **Parameter banks:** in Device mode, **Shift + Page < >** steps through the device's parameters eight at a time.
 - **Drum banks:** on a Drum Rack track, **Octave up / down** shows the next or previous 16 pads.
 Plug it in and it connects automatically (hot-plug supported). The Push's area is outlined in red in the session view, and **PUSH** appears next to the CPU meter, whose tooltip shows the current mode.
@@ -221,6 +222,9 @@ Pulse's own devices have compact cards: knobs stack in as many rows as the devic
 - **Collect all and save** copies every sample the project uses into a `<project> Samples` folder next to it, then points the project at the copies. That covers audio clips, audio takes, Simpler and Drum Rack samples. Zip the project folder and it opens on any machine. Missing files are listed.
 - **Templates:** *Save as template...* keeps your favourite setup (tracks, devices, routing, returns, even clips). *New Project...* then offers an empty project, the demo song or any of your templates. Templates live in `Documents/Pulse Studio/Templates`.
 
+### Plugins
+- **Background scan:** a few seconds after startup Pulse looks for VST3 plugins it hasn't seen yet (only new files, each one checked in a separate process so a crashing plugin can't take Pulse down). Progress shows in the top bar; click × to stop it. The *Plugins* button has *Plugin manager...*, *Scan for new plugins* and an on / off switch for the startup scan.
+
 ### Safety
 - **Autosave every minute**, with recovery after a crash.
 - **Crash reports:** if Pulse Studio crashes, it saves a log with a stack trace. It also notes which plugin the crash happened in, or which plugin was loading at the time.
@@ -276,7 +280,7 @@ All of these can be changed in *File → Keyboard shortcuts*. New: **Ctrl+P** co
 ## Command line
 
 - `--render out.wav` renders the last project offline and exits.
-- `--selftest report.txt` builds a scratch project and runs 166 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--selftest report.txt` builds a scratch project and runs 167 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
 - `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
 
 ## Code layout

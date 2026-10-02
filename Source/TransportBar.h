@@ -27,6 +27,7 @@ public:
         std::function<void()> toggleLink, cancelRender;
         std::function<float()> renderProgress;     // < 0 when idle
         std::function<String()> renderStatus;
+        std::function<bool()> renderBlocksPlayback;
         std::function<bool()> isLinkEnabled;
         std::function<String()> linkStatus;
     };
@@ -388,8 +389,9 @@ private:
             cancelRenderBtn.setVisible (shown);
             repaint();
         }
-        playBtn.setEnabled (! shown);
-        recBtn.setEnabled (! shown);
+        const bool blocks = shown && (! actions.renderBlocksPlayback || actions.renderBlocksPlayback());
+        playBtn.setEnabled (! blocks);
+        recBtn.setEnabled (! blocks);
 
         auto cpu = engine.getDeviceManager().getCpuUsage();
         cpuLabel.setText ("CPU " + String (roundToInt (cpu * 100.0)) + "%", dontSendNotification);

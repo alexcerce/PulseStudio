@@ -23,6 +23,7 @@
 #include "CrashGuard.h"
 #include "Sharing.h"
 #include "WelcomeScreen.h"
+#include "PluginScan.h"
 #include "BackgroundRender.h"
 #include "Commands.h"
 #include "ClipEnvelopes.h"
@@ -384,14 +385,28 @@ private:
         a.collectAll     = [this] { collectAll(); };
         a.openPalette    = [this] { openPalette(); };
         a.editShortcuts  = [this] { showShortcutEditor(); };
-        a.cancelRender   = [] { BackgroundRender::instance().cancel(); };
-        a.renderProgress = [] { auto& r = BackgroundRender::instance(); return r.isBusy() ? r.getProgress() : -1.0f; };
-        a.renderStatus   = [] { return BackgroundRender::instance().getStatus(); };
+        a.cancelRender   = [this] { if (BackgroundRender::instance().isBusy()) BackgroundRender::instance().cancel(); else pluginScan.cancel(); };
+        a.renderProgress = [this]
+        {
+            auto& r = BackgroundRender::instance();
+            if (r.isBusy()) return r.getProgress();
+            return pluginScan.isScanning() ? pluginScan.getProgress() : -1.0f;
+        };
+        a.renderStatus   = [this] { return BackgroundRender::instance().isBusy() ? BackgroundRender::instance().getStatus() : pluginScan.getStatus(); };
+        a.renderBlocksPlayback = [] { return BackgroundRender::instance().isBusy(); };
         a.saveTemplate   = [this] { saveAsTemplate(); };
         a.exportSelection = [this] { exportSelection(); };
         a.exportMidi     = [this] { exportMidi(); };
         a.audioSettings  = [this] { showAudioSettings(); };
-        a.pluginManager  = [this] { showPluginManager(); };
+        a.pluginManager  = [this]
+        {
+            PopupMenu m;
+            m.addItem ("Plugin manager...", [this] { showPluginManager(); });
+            m.addItem ("Scan for new plugins (in the background)", ! pluginScan.isScanning(), false, [this] { pluginScan.start(); });
+            const bool autoScan = settings().getBoolValue ("autoScanPlugins", true);
+            m.addItem ("Scan for new plugins at startup", true, autoScan, [this, autoScan] { settings().setValue ("autoScanPlugins", ! autoScan); });
+            m.showMenuAsync ({});
+        };
         a.addInstrumentTrack = [this] { addTrack (true); };
         a.addAudioTrack      = [this] { addTrack (false); };
         a.toggleBrowser      = [this] { toggleBrowser(); };
@@ -529,6 +544,9 @@ private:
             loadEdit (last, false);
         else
             loadEdit (projectsFolder().getNonexistentChildFile ("Demo Song", ".tracktionedit", false), true);
+
+        if (settings().getBoolValue ("autoScanPlugins", true) && ! JUCEApplication::getCommandLineParameters().contains ("--snapshots"))
+            Timer::callAfterDelay (5000, [sp = SafePointer<MainComponent> (this)] { if (sp != nullptr) sp->pluginScan.start(); });
 
         if (settings().getBoolValue ("showWelcome", true) && ! JUCEApplication::getCommandLineParameters().contains ("--snapshots"))
             MessageManager::callAsync ([sp = SafePointer<MainComponent> (this)] { if (sp != nullptr) sp->showWelcome(); });
@@ -1117,6 +1135,9 @@ private:
     //==============================================================================
     te::Engine& engine;
     te::SelectionManager selectionManager { engine };
+public:
+    BackgroundPluginScan pluginScan { engine };
+private:
     std::unique_ptr<te::Edit> edit;
     File editFile;
     std::unique_ptr<EditViewState> evs;

@@ -4,6 +4,7 @@
 #include "SessionView.h"
 #include "EditingOps.h"
 #include "DrumRack.h"
+#include "PushMap.h"
 #include "Routing.h"
 #include "Push2Display.h"
 
@@ -461,6 +462,8 @@ private:
         const int i = cc - ccTrackEnc;
         if (encoderMode == EncoderMode::device)
         {
+            if (auto t = selectedTrack(); t != nullptr && paramBank == 0)
+                if (auto mapped = PushMap::find (*t, i)) { nudge (*mapped, delta, shift); return; }   // your assignments come first
             if (auto d = currentDevice())
                 if (auto p = d->getAutomatableParameters()[paramBank * 8 + i])
                     nudge (*p, delta, shift);
@@ -929,9 +932,12 @@ private:
 
             if (encoderMode == EncoderMode::device)
             {
-                if (auto d = currentDevice())
-                    if (auto p = d->getAutomatableParameters()[paramBank * 8 + i])
-                        param = p;
+                if (auto t = selectedTrack(); t != nullptr && paramBank == 0)
+                    param = PushMap::find (*t, i);
+                if (param == nullptr)
+                    if (auto d = currentDevice())
+                        if (auto p = d->getAutomatableParameters()[paramBank * 8 + i])
+                            param = p;
             }
             else if (auto t = all[trackOffset + i])
             {

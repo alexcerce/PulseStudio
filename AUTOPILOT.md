@@ -67,7 +67,7 @@ when you start, touch it after each step, and delete it when you stop.
    - ~~v0.31 owner request~~ (done): filter envelopes (full ADSR + amount) on every instrument filter, and every graph display
      interactive with draggable nodes mapped to the knobs (envelopes, filter curves, compressor / saturator / limiter
      curves, reverb, delay); the display follows the card page
-   - v0.32 background plugin scan with progress; Push encoder MIDI learn
+   - ~~v0.32 background plugin scan; Push encoder MIDI learn~~ (done) - with progress; Push encoder MIDI learn
    - v0.33 audio editing: clip gain envelope, slip edit (Alt-drag content), crossfade editor; groove pool (extract groove)
    - v0.34 content: factory presets for Pulse devices, synth drum kits, project templates; wavetable draw editor
    - v0.35 sharing: export project as a single zip, crash report bundle, update checker (URL configurable)
@@ -106,3 +106,4 @@ when you start, touch it after each step, and delete it when you stop.
 - 2026-10-02: v0.29.0 compact device cards (FM 1460 -> 360 px). 165 checks pass.
 - 2026-10-02: v0.30.0 welcome screen, commands for MIDI tools / collapse all / snapshots / loudness reset. 165 checks pass.
 - 2026-10-02: v0.31.0 Graphs.h (envelope / filter / dynamics editors with draggable nodes), paged displays, filter envelopes on Simpler / FM / Drum pads. 166 checks pass.
+- 2026-10-02: v0.32.0 background plugin scan (out of process, new files only), Push encoder assignments. 167 checks pass.
