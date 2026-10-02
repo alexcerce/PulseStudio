@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(PulseStudio VERSION 0.5.0 LANGUAGES C CXX)
+project(PulseStudio VERSION 0.6.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,6 +16,16 @@ set_property(GLOBAL PROPERTY USE_FOLDERS YES)
 add_subdirectory(external/tracktion_engine/modules/juce)
 add_subdirectory(external/tracktion_engine/modules)
 
+# libusb (static) - drives the Ableton Push 2 display over USB
+set(LIBUSB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/libusb)
+add_library(pulse_libusb STATIC
+    ${LIBUSB_DIR}/libusb/core.c ${LIBUSB_DIR}/libusb/descriptor.c ${LIBUSB_DIR}/libusb/hotplug.c
+    ${LIBUSB_DIR}/libusb/io.c ${LIBUSB_DIR}/libusb/strerror.c ${LIBUSB_DIR}/libusb/sync.c
+    ${LIBUSB_DIR}/libusb/os/events_windows.c ${LIBUSB_DIR}/libusb/os/threads_windows.c
+    ${LIBUSB_DIR}/libusb/os/windows_common.c ${LIBUSB_DIR}/libusb/os/windows_usbdk.c
+    ${LIBUSB_DIR}/libusb/os/windows_winusb.c)
+target_include_directories(pulse_libusb PUBLIC ${LIBUSB_DIR}/libusb PRIVATE ${LIBUSB_DIR}/msvc)
+
 juce_add_gui_app(PulseStudio
     PRODUCT_NAME "Pulse Studio"
     COMPANY_NAME "Pulse"
@@ -30,7 +40,7 @@ juce_generate_juce_header(PulseStudio)
 
 # All app code is header-only and compiled through Main.cpp.
 file(GLOB PULSE_HEADERS CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/Source/*.h)
-target_sources(PulseStudio PRIVATE Source/Main.cpp ${PULSE_HEADERS})
+target_sources(PulseStudio PRIVATE Source/Main.cpp Source/Push2Usb.cpp ${PULSE_HEADERS})
 
 target_compile_definitions(PulseStudio PRIVATE
     # Audio devices: ASIO for pro interfaces, WASAPI/DirectSound as fallbacks
@@ -48,9 +58,17 @@ target_compile_definitions(PulseStudio PRIVATE
     JUCE_DISPLAY_SPLASH_SCREEN=0
     JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:PulseStudio,JUCE_PRODUCT_NAME>"
     JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:PulseStudio,JUCE_VERSION>"
-    TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH=1)
+    TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH=1
+    # Ableton Link (tempo / phase / start-stop sync over the network)
+    TRACKTION_ENABLE_ABLETON_LINK=1)
+
+target_include_directories(PulseStudio PRIVATE
+    external/link/include
+    external/link/modules/asio-standalone/asio/include)
 
 target_link_libraries(PulseStudio PRIVATE
+    pulse_libusb
+    ws2_32 iphlpapi winmm
     tracktion::tracktion_core
     tracktion::tracktion_engine
     tracktion::tracktion_graph

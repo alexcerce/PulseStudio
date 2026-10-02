@@ -197,6 +197,157 @@ namespace Launcher
 }
 
 //==============================================================================
+/** Follow actions: what a session clip does after it has played for a while. */
+namespace Follow
+{
+    struct Option { te::FollowAction action; const char* name; };
+
+    inline const std::vector<Option>& options()
+    {
+        static const std::vector<Option> list
+        {
+            { te::FollowAction::trackNext,       "Next" },
+            { te::FollowAction::trackPrevious,   "Previous" },
+            { te::FollowAction::trackFirst,      "First" },
+            { te::FollowAction::trackLast,       "Last" },
+            { te::FollowAction::trackAny,        "Any" },
+            { te::FollowAction::trackOther,      "Other" },
+            { te::FollowAction::trackRoundRobin, "Round robin" },
+            { te::FollowAction::globalPlayAgain, "Play again" },
+            { te::FollowAction::globalStop,      "Stop" },
+        };
+        return list;
+    }
+
+    inline String nameOf (te::FollowAction a)
+    {
+        for (auto& o : options()) if (o.action == a) return o.name;
+        return "None";
+    }
+
+    /** Actions as (action, weight), in order. */
+    inline std::vector<std::pair<te::FollowAction, double>> get (te::Clip& c)
+    {
+        std::vector<std::pair<te::FollowAction, double>> out;
+        if (auto fa = c.getFollowActions())
+            for (auto a : fa->getActions())
+                out.push_back ({ a->action.get(), a->weight.get() });
+        return out;
+    }
+
+    /** Replaces the clip's follow actions. An empty list turns them off. */
+    inline void set (te::Clip& c, const std::vector<std::pair<te::FollowAction, double>>& actions)
+    {
+        auto fa = c.getFollowActions();
+        if (fa == nullptr) return;
+        while (! fa->getActions().empty())
+            fa->removeAction (*fa->getActions().front());
+        for (auto& [action, weight] : actions)
+        {
+            auto& a = fa->addAction();
+            a.action = action;
+            a.weight = weight;
+        }
+    }
+
+    inline bool hasAny (te::Clip& c) { return ! get (c).empty(); }
+
+    /** "Next after 2 loops", "Next 75% / Any 25% after 4 bars" ... */
+    inline String describe (te::Clip& c)
+    {
+        auto acts = get (c);
+        if (acts.empty()) return {};
+        String s;
+        double total = 0;
+        for (auto& a : acts) total += a.second;
+        for (size_t i = 0; i < acts.size(); ++i)
+        {
+            if (i > 0) s << " / ";
+            s << nameOf (acts[i].first);
+            if (acts.size() > 1) s << " " << roundToInt (acts[i].second / jmax (0.001, total) * 100.0) << "%";
+        }
+        if (c.followActionDurationType.get() == te::Clip::FollowActionDurationType::loops)
+            s << " after " << roundToInt (c.followActionNumLoops.get()) << (c.followActionNumLoops.get() == 1.0 ? " loop" : " loops");
+        else
+            s << " after " << String (c.followActionBeats.get().inBeats() / EngineHelpers::beatsPerBar (c.edit), 0) << " bars";
+        return s;
+    }
+
+    inline void addToMenu (PopupMenu& m, te::Clip& clip)
+    {
+        if (clip.getFollowActions() == nullptr) return;
+        te::Clip::Ptr c (&clip);
+        auto acts = get (clip);
+        auto change = [c] (const char* what, std::function<void (te::Clip&)> fn)
+        {
+            return [c, what, fn] { c->edit.getUndoManager().beginNewTransaction (what); fn (*c); };
+        };
+
+        PopupMenu f, second, after, chance;
+        f.addItem ("None", true, acts.empty(), change ("Follow action", [] (te::Clip& cl) { set (cl, {}); }));
+        for (auto& o : options())
+            f.addItem (o.name, true, ! acts.empty() && acts[0].first == o.action, change ("Follow action", [a = o.action] (te::Clip& cl)
+            {
+                auto cur = get (cl);
+                if (cur.empty()) cur.push_back ({ a, 1.0 }); else cur[0].first = a;
+                set (cl, cur);
+            }));
+
+        second.addItem ("None", true, acts.size() < 2, change ("Follow action", [] (te::Clip& cl)
+        {
+            auto cur = get (cl);
+            if (cur.size() > 1) { cur.resize (1); cur[0].second = 1.0; set (cl, cur); }
+        }));
+        for (auto& o : options())
+            second.addItem (o.name, ! acts.empty(), acts.size() > 1 && acts[1].first == o.action, change ("Follow action", [a = o.action] (te::Clip& cl)
+            {
+                auto cur = get (cl);
+                if (cur.empty()) return;
+                if (cur.size() < 2) { cur[0].second = 0.5; cur.push_back ({ a, 0.5 }); } else cur[1].first = a;
+                set (cl, cur);
+            }));
+
+        for (int pctA : { 90, 75, 50, 25, 10 })
+            chance.addItem (String (pctA) + "% / " + String (100 - pctA) + "%", acts.size() > 1,
+                            acts.size() > 1 && std::abs (acts[0].second / (acts[0].second + acts[1].second) * 100.0 - pctA) < 1.0,
+                            change ("Follow chance", [pctA] (te::Clip& cl)
+            {
+                auto cur = get (cl);
+                if (cur.size() < 2) return;
+                cur[0].second = pctA / 100.0; cur[1].second = 1.0 - pctA / 100.0;
+                set (cl, cur);
+            }));
+
+        const bool byLoops = clip.followActionDurationType.get() == te::Clip::FollowActionDurationType::loops;
+        for (int n : { 1, 2, 4, 8 })
+            after.addItem (String (n) + (n == 1 ? " loop" : " loops"), true, byLoops && roundToInt (clip.followActionNumLoops.get()) == n,
+                           change ("Follow time", [n] (te::Clip& cl)
+            {
+                cl.followActionDurationType = te::Clip::FollowActionDurationType::loops;
+                cl.followActionNumLoops = (double) n;
+            }));
+        after.addSeparator();
+        const int bpb = EngineHelpers::beatsPerBar (clip.edit);
+        for (int bars : { 1, 2, 4, 8, 16 })
+            after.addItem (String (bars) + (bars == 1 ? " bar" : " bars"), true,
+                           ! byLoops && std::abs (clip.followActionBeats.get().inBeats() - bars * bpb) < 1.0e-6,
+                           change ("Follow time", [bars, bpb] (te::Clip& cl)
+            {
+                cl.followActionDurationType = te::Clip::FollowActionDurationType::beats;
+                cl.followActionBeats = te::BeatDuration::fromBeats (bars * bpb);
+            }));
+
+        PopupMenu all;
+        all.addSubMenu ("Action", f);
+        all.addSubMenu ("Second action (chance)", second, ! acts.empty());
+        all.addSubMenu ("Chance", chance, acts.size() > 1);
+        all.addSubMenu ("After", after, ! acts.empty());
+        auto desc = describe (clip);
+        m.addSubMenu ("Follow action" + (desc.isNotEmpty() ? ":  " + desc : String()), all);
+    }
+}
+
+//==============================================================================
 class SlotComponent : public Component,
                       public DragAndDropTarget,
                       public FileDragAndDropTarget
@@ -258,6 +409,14 @@ public:
             const bool blink = queued && (Time::getMillisecondCounter() / 200) % 2 == 0;
             g.setColour (playing ? Theme::green : blink ? Theme::orange : Colours::white.withAlpha (0.85f));
             g.fillPath (tri);
+
+            // follow-action marker (top right)
+            if (Follow::hasAny (*clip))
+            {
+                g.setColour (Colours::white.withAlpha (0.8f));
+                g.setFont (FontOptions (11.0f, Font::bold));
+                g.drawText (String::charToString (0x21AA), r.removeFromRight (16.0f).removeFromTop (16.0f), Justification::centred);
+            }
 
             g.setColour (Colours::white);
             g.setFont (FontOptions (12.0f));
@@ -371,6 +530,7 @@ private:
                     copy->setStart (evs.edit.getTransport().getPosition(), false, true);
                 }
             });
+            Follow::addToMenu (m, *c);
             m.addSeparator();
             m.addItem ("Delete", [c] { c->removeFromParent(); });
         }

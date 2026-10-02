@@ -14,6 +14,9 @@ public:
                               toggleBrowser, toggleSession;
         std::function<bool()> isBrowserShown, isSessionShown;
         std::function<String()> controllerStatus;
+        std::function<void()> toggleLink;
+        std::function<bool()> isLinkEnabled;
+        std::function<String()> linkStatus;
     };
 
     TransportBar (te::Engine& eng, Actions a) : engine (eng), actions (std::move (a))
@@ -29,6 +32,8 @@ public:
         setupToggle (recBtn, Theme::red, "Record armed tracks (R)");
         setupToggle (loopBtn, Theme::orange, "Loop (L) - drag on the ruler to set the range");
         setupToggle (clickBtn, Theme::accent, "Metronome (M)");
+        setupToggle (linkBtn, Theme::green, "Ableton Link: sync tempo, bars and start/stop with other apps and devices on your network");
+        linkBtn.onClick = [this] { if (actions.toggleLink) actions.toggleLink(); };
         recBtn.setColour (TextButton::textColourOffId, Theme::red);
 
         stopBtn.onClick = [this]
@@ -140,12 +145,12 @@ public:
         auto r = getLocalBounds().reduced (8, 8);
         r.removeFromLeft (115);
 
-        for (auto* b : { &stopBtn, &playBtn, &recBtn, &loopBtn, &clickBtn })
+        for (auto* b : { &stopBtn, &playBtn, &recBtn, &loopBtn, &clickBtn, &linkBtn })
         {
             b->setBounds (r.removeFromLeft (38));
             r.removeFromLeft (4);
         }
-        r.removeFromLeft (10);
+        r.removeFromLeft (6);
 
         lcdArea = r.removeFromLeft (322);
         auto lcd = lcdArea.reduced (4, 2);
@@ -159,13 +164,13 @@ public:
         cell (timeLabel, timeCap, 100);
         cell (bpmLabel, bpmCap, 72);
         cell (sigLabel, sigCap, 60);
-        r.removeFromLeft (12);
+        r.removeFromLeft (8);
 
-        undoBtn.setBounds (r.removeFromLeft (46)); r.removeFromLeft (4);
-        redoBtn.setBounds (r.removeFromLeft (46)); r.removeFromLeft (14);
-        instTrackBtn.setBounds (r.removeFromLeft (70)); r.removeFromLeft (4);
-        audioTrackBtn.setBounds (r.removeFromLeft (70)); r.removeFromLeft (14);
-        browserBtn.setBounds (r.removeFromLeft (70)); r.removeFromLeft (4);
+        undoBtn.setBounds (r.removeFromLeft (42)); r.removeFromLeft (4);
+        redoBtn.setBounds (r.removeFromLeft (42)); r.removeFromLeft (8);
+        instTrackBtn.setBounds (r.removeFromLeft (66)); r.removeFromLeft (4);
+        audioTrackBtn.setBounds (r.removeFromLeft (66)); r.removeFromLeft (8);
+        browserBtn.setBounds (r.removeFromLeft (66)); r.removeFromLeft (4);
         viewBtn.setBounds (r.removeFromLeft (80)); r.removeFromLeft (8);
 
         cpuLabel.setBounds (r.removeFromRight (64));
@@ -216,6 +221,12 @@ private:
         recBtn.setToggleState (tc.isRecording(), dontSendNotification);
         loopBtn.setToggleState (tc.looping.get(), dontSendNotification);
         clickBtn.setToggleState (edit->clickTrackEnabled.get(), dontSendNotification);
+        if (actions.isLinkEnabled)
+        {
+            linkBtn.setToggleState (actions.isLinkEnabled(), dontSendNotification);
+            auto ls = actions.linkStatus ? actions.linkStatus() : String();
+            linkBtn.setTooltip (ls.isNotEmpty() ? ls + " (click to turn Link off)" : "Ableton Link: sync tempo, bars and start/stop with other apps and devices on your network");
+        }
         if (actions.isBrowserShown) browserBtn.setToggleState (actions.isBrowserShown(), dontSendNotification);
         if (actions.isSessionShown) viewBtn.setButtonText (actions.isSessionShown() ? "Arrange" : "Session");
         undoBtn.setEnabled (edit->getUndoManager().canUndo());
@@ -237,7 +248,7 @@ private:
     double dragStartBpm = -1.0;
 
     TextButton stopBtn { String::charToString (0x25A0) }, playBtn { String::charToString (0x25B6) },
-               recBtn { String::charToString (0x25CF) }, loopBtn { "Loop" }, clickBtn { "Click" },
+               recBtn { String::charToString (0x25CF) }, loopBtn { "Loop" }, clickBtn { "Click" }, linkBtn { "Link" },
                undoBtn { "Undo" }, redoBtn { "Redo" },
                instTrackBtn { "+ Inst" }, audioTrackBtn { "+ Audio" },
                fileBtn { "File" }, audioBtn { "Audio Settings" }, pluginsBtn { "Plugins" },

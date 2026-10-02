@@ -4,7 +4,7 @@ A native Windows DAW built with C++, [JUCE](https://juce.com) and [Tracktion Eng
 
 ## Install
 
-Run `dist/PulseStudio-0.5.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
+Run `dist/PulseStudio-0.6.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
 
 ## Build
 
@@ -53,6 +53,15 @@ Projects are saved as `.tracktionedit` files in `Documents/Pulse Studio/`. Prese
 - An Ableton-style clip launcher with scenes and launch quantisation. Clips loop until stopped.
 - **Session recording:** on an armed track, click an empty slot (shown with a red dot) to record a new clip into it. Right-click any empty slot → *Record into this slot*.
 - *Back to arrangement* (or a track's **Arr** button) hands tracks back to the timeline.
+- **Follow actions:** right-click a clip → *Follow action* to choose what happens after it has played for N loops or bars: next, previous, first, last, any, other, round robin, play again or stop. Add a *second action* with a chance (e.g. 75% next / 25% any) for generative arrangements. A ↪ marks clips that have one.
+
+### Ableton Link
+Click **Link** in the transport bar to join a Link session with other apps and devices on your network (Ableton Live, Traktor, phone apps and so on).
+- Tempo changes go both ways.
+- Bars line up: playback is nudged to stay in phase.
+- Start/stop is shared.
+
+The button's tooltip shows how many peers are connected. The first time you turn it on, Windows may ask whether Pulse Studio can use the network. Allow private networks.
 
 ### Ableton Push 2
 Plug it in and it connects automatically (hot-plug supported). The Push's area is outlined in red in the session view, and **PUSH** appears next to the CPU meter, whose tooltip shows the current mode.
@@ -68,9 +77,10 @@ Plug it in and it connects automatically (hot-plug supported). The Push's area i
 | Octave ↑/↓, **Scale** | Octave; cycle the scale (Shift + Scale = root note) |
 | **Device** / **Mix** | Encoders control the selected device's parameters (Page ◀ ▶ changes device), or the bank's volume → pan → send A → send B (press Mix again to cycle) |
 | Tempo / master encoders | Tempo (Shift = fine) / master volume |
+| **Layout** (drum tracks, Note mode) | **Step sequencer**: the top 4 rows are 32 sixteenth-note steps for the selected drum (tap to add or remove), the bottom-left 4×4 plays and selects drums, and the bottom-right 4×4 picks 2-bar pages. Pressing a page past the end lengthens the clip. Steps go into the selected clip, else the clip under the playhead, else a new 2-bar clip. |
 | Play, Record, Metronome, Undo (Shift = redo), Duplicate, Quantize, Tap Tempo, Mute, Solo, Browse, Clip | What you'd expect |
 
-The Push's built-in display isn't driven yet (it needs a separate USB driver layer); everything else runs over MIDI.
+**Display:** the Push screen shows the eight encoder values (device parameters or the mix) with arcs, plus the upper-button functions, track names and the current mode. The display uses USB through libusb and needs the Push 2's WinUSB driver. That driver installs with Ableton Live, or Windows installs it automatically on most systems. The PUSH status tooltip says whether the display is connected.
 
 ### Controllers and MIDI
 - **MIDI Learn:** right-click any knob, fader or pan → *MIDI Learn...*, then move a control on your hardware (Esc cancels). Mappings are saved in the project; an orange dot marks mapped knobs.
@@ -149,7 +159,7 @@ Pulse's own devices have cards with labelled sections and a live display. Every 
 ## Command line
 
 - `--render out.wav` renders the last project offline and exits.
-- `--selftest report.txt` builds a scratch project and runs 69 checks, including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--selftest report.txt` builds a scratch project and runs 72 checks, including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
 - `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
 
 ## Code layout
@@ -164,7 +174,9 @@ All app code is header-only in `Source/` and compiled through `Main.cpp`.
 | `ArrangementView.h` | Ruler, track and group rows, clips (fades, multi-select), rubber band, drag & drop |
 | `AutomationLane.h` | Automation lanes |
 | `SessionView.h` | Clip launcher, scenes, session recording |
-| `Push2.h` | Ableton Push 2 controller |
+| `Push2.h` | Ableton Push 2 controller (modes, step sequencer, display drawing) |
+| `Push2Display.h`, `Push2Usb.cpp` | Push 2 display over USB (libusb) |
+| `LinkSync.h` | Ableton Link session |
 | `Browser.h` | File browser with synced preview, device list |
 | `PianoRoll.h` | MIDI editor and controller lanes |
 | `DeviceChain.h` | Device rack: device cards, macros, Drum Rack editor, presets |
@@ -182,4 +194,4 @@ All app code is header-only in `Source/` and compiled through `Main.cpp`.
 
 ## Licensing
 
-JUCE (AGPLv3) and Tracktion Engine (GPLv3) are used under their open-source licences, so this project must stay GPL-compatible. Selling a closed-source build would require commercial licences for both.
+Third-party code is fetched into `external/` by `scripts/get-dependencies.ps1`: Tracktion Engine with JUCE, Ableton Link (GPLv2+) and libusb (LGPL-2.1). JUCE (AGPLv3) and Tracktion Engine (GPLv3) are used under their open-source licences, so this project must stay GPL-compatible. Selling a closed-source build would require commercial licences for both.

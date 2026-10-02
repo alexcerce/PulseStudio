@@ -5,14 +5,17 @@
 #include "EditingOps.h"
 #include "DrumRack.h"
 #include "Routing.h"
+#include "Push2Display.h"
 
 /** Ableton Push 2 support over its "Live" MIDI port (protocol from Ableton's public
-    Push 2 MIDI & Display Interface Manual). The display (USB bulk) is not driven.
+    Push 2 MIDI & Display Interface Manual). The display is driven over USB (Push2Display.h).
 
     Modes
       Session : 8x8 clip grid, scene buttons launch rows, upper row stops tracks, lower row selects tracks
       Note    : in-key 4ths layout for the selected track (scale/root via Scale button)
       Drum    : 4x4 pads for a Drum Rack track (automatic when the selected track has one)
+      Step    : Layout button in drum mode: top 4 rows = 32 sixteenth steps of the selected drum,
+                bottom-left 4x4 = drums (play + select), bottom-right 4x4 = 2-bar pages
     Encoders : Device (selected track's device, Page < > to switch device) or Mix (vol -> pan -> sends)
 */
 class Push2Controller : private MidiInputCallback,
@@ -47,9 +50,10 @@ public:
         {
             case Mode::session: s << "Session  tracks " << (trackOffset + 1) << "-" << (trackOffset + 8)
                                   << "  scenes " << (sceneOffset + 1) << "-" << (sceneOffset + 8); break;
-            case Mode::note:    s << (isDrumTarget() ? "Drums" : "Notes  " + rootName() + " " + scaleName()
+            case Mode::note:    s << (isDrumTarget() ? (stepMode ? "Step sequencer" : "Drums") : "Notes  " + rootName() + " " + scaleName()
                                                                  + "  oct " + String (octave)); break;
         }
+        if (display != nullptr) s << "  |  " << display->getStatus();
         s << "  |  encoders: " << (encoderMode == EncoderMode::device ? "Device" : mixModeName());
         return s;
     }
@@ -69,7 +73,8 @@ private:
         ccLeft = 44, ccRight = 45, ccUp = 46, ccDown = 47, ccSelect = 48, ccShift = 49, ccNote = 50, ccSession = 51,
         ccOctDown = 54, ccOctUp = 55, ccScale = 58, ccMute = 60, ccSolo = 61, ccPageLeft = 62, ccPageRight = 63,
         ccTrackEnc = 71, ccMasterEnc = 79, ccPlay = 85, ccRecord = 86, ccDuplicate = 88, ccUpperRow = 102,
-        ccDevice = 110, ccBrowse = 111, ccMix = 112, ccClip = 113, ccQuantize = 116, ccDelete = 118, ccUndo = 119
+        ccDevice = 110, ccBrowse = 111, ccMix = 112, ccClip = 113, ccQuantize = 116, ccDelete = 118, ccUndo = 119,
+        ccLayout = 31
     };
 
     // Palette: 1..9 = our track colours, 10 = dim red, defaults for 122 white .. 127 red
@@ -113,6 +118,7 @@ private:
         input->start();
         sysex ({ 0x0A, 0x00 });          // Live mode
         setupPalette();
+        display = std::make_unique<Push2Display>();
         markAllDirty();
         if (view != nullptr) view->pushConnected = true;
     }
@@ -125,6 +131,7 @@ private:
             for (int c = 0; c < 128; ++c)  output->sendMessageNow (MidiMessage::controllerEvent (1, c, 0));
         }
         if (input != nullptr) input->stop();
+        display = nullptr;
         input = nullptr;
         output = nullptr;
         if (view != nullptr) view->pushConnected = false;
@@ -235,6 +242,10 @@ private:
             {
                 handlePad (m.getNoteNumber() - 36);
             }
+            else if (m.isNoteOn() && stepMode)
+            {
+                handleStepPad (m.getNoteNumber() - 36);
+            }
         }
         refreshLeds();
     }
@@ -292,6 +303,7 @@ private:
             case ccUndo:      if (shift) edit().redo(); else edit().undo(); break;
             case ccSession:   setMode (Mode::session); break;
             case ccNote:      setMode (Mode::note); break;
+            case ccLayout:    if (mode == Mode::note && isDrumTarget()) { stepMode = ! stepMode; updateNoteTarget(); markAllDirty(); } break;
             case ccOctUp:     octave = jmin (8, octave + 1); updateNoteTarget(); break;
             case ccOctDown:   octave = jmax (-1, octave - 1); updateNoteTarget(); break;
             case ccScale:     if (shift) root = (root + 1) % 12; else scaleIndex = (scaleIndex + 1) % (int) scales().size(); updateNoteTarget(); break;
@@ -503,6 +515,7 @@ private:
             }
             else
             {
+                stepMode = false;
                 auto& steps = scales()[(size_t) scaleIndex].steps;
                 const int n = (int) steps.size();
                 const int rowStep = n == 12 ? 5 : 3;   // rows go up a fourth
@@ -516,6 +529,7 @@ private:
             }
         }
 
+        if (! notes) stepMode = false;
         const SpinLock::ScopedLockType sl (noteLock);
         padPitch = table;
         noteTarget = target;
@@ -586,13 +600,19 @@ private:
             const int trackCol = sel != nullptr ? paletteFor (sel->getColour()) : palBlue;
             auto& steps = scales()[(size_t) scaleIndex].steps;
 
+            if (stepMode)
+                refreshStepLeds (trackCol, blinkOn);
+
             for (int pad = 0; pad < 64; ++pad)
             {
+                if (stepMode && ! (pad / 8 < 4 && pad % 8 < 4))
+                    continue;   // steps and pages are drawn by refreshStepLeds
                 const int pitch = padPitch[(size_t) pad];
                 int colour = 0;
                 if (pitch >= 0)
                 {
                     if (pressed[(size_t) pad])      colour = palGreen;
+                    else if (stepMode && pitch - DrumRack::baseNote == selectedDrum) colour = palWhite;
                     else if (drums)                  colour = rack != nullptr && DrumRack::padName (*rack, pitch - DrumRack::baseNote).isNotEmpty() ? trackCol : palDark;
                     else if (steps.size() == 12)     colour = std::find (std::begin (majorSteps), std::end (majorSteps), ((pitch - root) % 12 + 12) % 12) != std::end (majorSteps)
                                                               ? ((pitch - root) % 12 == 0 ? trackCol : palWhite) : palDark;
@@ -639,6 +659,7 @@ private:
                         (int) ccDuplicate, (int) ccQuantize, (int) ccShift, (int) ccScale, (int) ccBrowse, (int) ccClip, (int) ccTapTempo,
                         (int) ccPageLeft, (int) ccPageRight })
             setButton (cc, 16);
+        setButton (ccLayout, stepMode ? 127 : (mode == Mode::note && isDrumTarget() ? 16 : 0));
         setButton (ccMute, sel != nullptr && sel->isMuted (false) ? 127 : 16);
         setButton (ccSolo, sel != nullptr && sel->isSolo (false) ? 127 : 16);
     }
@@ -675,6 +696,268 @@ private:
         }
 
         refreshLeds();
+
+        if (display != nullptr && view != nullptr && tick % 2 == 0)   // ~12 fps
+        {
+            Image img (Image::RGB, Push2Display::width, Push2Display::height, true);
+            Graphics g (img);
+            paintDisplay (g);
+            display->setFrame (img);
+        }
+    }
+
+    //==============================================================================
+    // Step sequencer (drum tracks)
+    static constexpr int stepsPerPage = 32;
+    static constexpr double stepBeats = 0.25;
+
+    /** The clip being step-edited: the selected MIDI clip on the track, else the one under the
+        playhead, else a new 2-bar clip at the current bar. */
+    te::MidiClip* stepClip (bool create)
+    {
+        auto t = selectedTrack();
+        if (t == nullptr) return nullptr;
+
+        if (auto mc = view->selectionManager.getFirstItemOfType<te::MidiClip>())
+            if (mc->getTrack() == t) return mc;
+
+        const auto now = edit().getTransport().getPosition();
+        for (auto c : t->getClips())
+            if (auto mc = dynamic_cast<te::MidiClip*> (c); mc != nullptr && c->getEditTimeRange().containsInclusive (now))
+                return mc;
+
+        for (auto c : t->getClips())   // otherwise the first one on the track
+            if (auto mc = dynamic_cast<te::MidiClip*> (c)) return mc;
+
+        if (! create) return nullptr;
+        const int bpb = EngineHelpers::beatsPerBar (edit());
+        const double bar = std::floor (EngineHelpers::timeToBeat (edit(), now) / bpb) * bpb;
+        auto mc = t->insertMIDIClip ("Steps", { EngineHelpers::beatToTime (edit(), bar), EngineHelpers::beatToTime (edit(), bar + 2.0 * bpb) }, nullptr);
+        if (mc != nullptr) view->selectionManager.selectOnly (mc.get());
+        return mc.get();
+    }
+
+    int clipSteps (te::MidiClip& mc) const
+    {
+        const double len = mc.isLooping() ? mc.getLoopLengthBeats().inBeats() : mc.getLengthInBeats().inBeats();
+        return jmax (1, (int) std::round (len / stepBeats));
+    }
+
+    te::MidiNote* noteAtStep (te::MidiClip& mc, int step)
+    {
+        const double beat = (mc.isLooping() ? mc.getLoopStartBeats().inBeats() : mc.getOffsetInBeats().inBeats()) + step * stepBeats;
+        const int pitch = DrumRack::baseNote + selectedDrum;
+        for (auto n : mc.getSequence().getNotes())
+            if (n->getNoteNumber() == pitch && std::abs (n->getStartBeat().inBeats() - beat) < stepBeats * 0.5)
+                return n;
+        return nullptr;
+    }
+
+    void handleStepPad (int pad)
+    {
+        if (pad < 0 || pad >= 64) return;
+        const int row = pad / 8, col = pad % 8;
+
+        if (row < 4 && col < 4)   // drum pads: select (they also play, via the low-latency path)
+        {
+            selectedDrum = row * 4 + col;
+            return;
+        }
+
+        auto& um = edit().getUndoManager();
+        if (row < 4)              // pages (2 bars each); pressing past the end lengthens the clip
+        {
+            const int page = (3 - row) * 4 + (col - 4);
+            if (auto mc = stepClip (true))
+            {
+                const int needed = (page + 1) * stepsPerPage;
+                if (needed > clipSteps (*mc) && ! mc->isLooping())
+                {
+                    um.beginNewTransaction ("Lengthen clip");
+                    mc->setEnd (EngineHelpers::beatToTime (edit(), mc->getStartBeat().inBeats() + needed * stepBeats), true);
+                }
+                stepPage = page;
+            }
+            return;
+        }
+
+        // steps: top row first
+        const int step = stepPage * stepsPerPage + (7 - row) * 8 + col;
+        auto mc = stepClip (true);
+        if (mc == nullptr || step >= clipSteps (*mc)) return;
+
+        um.beginNewTransaction ("Step edit");
+        if (auto n = noteAtStep (*mc, step))
+            mc->getSequence().removeNote (*n, &um);
+        else
+        {
+            const double beat = (mc->isLooping() ? mc->getLoopStartBeats().inBeats() : mc->getOffsetInBeats().inBeats()) + step * stepBeats;
+            mc->getSequence().addNote (DrumRack::baseNote + selectedDrum, te::BeatPosition::fromBeats (beat),
+                                       te::BeatDuration::fromBeats (stepBeats), 100, 0, &um);
+        }
+    }
+
+    /** Index of the step under the playhead (or -1). */
+    int playingStep (te::MidiClip& mc)
+    {
+        auto& tc = edit().getTransport();
+        if (! tc.isPlaying()) return -1;
+        const auto now = tc.getPosition();
+        if (! mc.getEditTimeRange().contains (now)) return -1;
+        const double rel = EngineHelpers::timeToBeat (edit(), now) - mc.getStartBeat().inBeats();
+        return (int) std::floor (std::fmod (rel, clipSteps (mc) * stepBeats) / stepBeats);
+    }
+
+    void refreshStepLeds (int trackCol, bool blinkOn)
+    {
+        ignoreUnused (blinkOn);
+        auto mc = stepClip (false);
+        const int total = mc != nullptr ? clipSteps (*mc) : 2 * stepsPerPage;
+        const int pages = (total + stepsPerPage - 1) / stepsPerPage;
+        stepPage = jlimit (0, jmax (0, pages - 1), stepPage);
+        const int now = mc != nullptr ? playingStep (*mc) : -1;
+
+        for (int i = 0; i < stepsPerPage; ++i)
+        {
+            const int step = stepPage * stepsPerPage + i;
+            const int pad = (7 - i / 8) * 8 + i % 8;
+            int colour = 0;
+            if (step < total)
+            {
+                const bool on = mc != nullptr && noteAtStep (*mc, step) != nullptr;
+                colour = step == now ? palGreen : on ? trackCol : ((i / 4) % 2 == 0 ? palGrey : palDark);
+            }
+            setPad (pad, colour);
+        }
+
+        for (int k = 0; k < 16; ++k)
+        {
+            const int pad = (3 - k / 4) * 8 + 4 + k % 4;
+            const bool playingHere = now >= 0 && now / stepsPerPage == k;
+            setPad (pad, k == stepPage ? palWhite : playingHere ? palGreen : k < pages ? palGrey : 0);
+        }
+    }
+
+    //==============================================================================
+    // Display
+    void paintDisplay (Graphics& g)
+    {
+        const int w = Push2Display::width, h = Push2Display::height, colW = w / 8;
+        g.fillAll (Colour (0xff0d0f12));
+        auto all = tracks();
+        auto sel = selectedTrack();
+
+        auto label = [&g] (Rectangle<int> r, const String& text, Colour c, bool bold = false, float size = 13.0f)
+        {
+            g.setColour (c);
+            g.setFont (FontOptions (size, bold ? Font::bold : Font::plain));
+            g.drawFittedText (text, r.reduced (4, 0), Justification::centred, 1, 0.8f);
+        };
+
+        // bottom row: track names (lower buttons select)
+        for (int i = 0; i < 8; ++i)
+            if (auto t = all[trackOffset + i])
+            {
+                auto r = Rectangle<int> (i * colW, h - 22, colW, 22);
+                g.setColour (t->getColour().withAlpha (t == sel ? 1.0f : 0.5f));
+                g.fillRect (r.removeFromTop (3).reduced (4, 0));
+                label (r, t->getName(), t == sel ? Colours::white : Colour (0xffb0b6c0), t == sel);
+            }
+
+        // top row: what the upper buttons do
+        Array<te::Plugin*> devices;
+        if (sel != nullptr)
+            for (auto p : sel->pluginList)
+                if (p != sel->getVolumePlugin() && dynamic_cast<te::LevelMeterPlugin*> (p) == nullptr
+                    && dynamic_cast<te::AuxSendPlugin*> (p) == nullptr && dynamic_cast<te::AuxReturnPlugin*> (p) == nullptr)
+                    devices.add (p);
+
+        for (int i = 0; i < 8; ++i)
+        {
+            auto r = Rectangle<int> (i * colW, 0, colW, 22);
+            if (encoderMode == EncoderMode::device)
+            {
+                if (auto d = devices[i])
+                {
+                    if (i == jmin (deviceIndex, devices.size() - 1)) { g.setColour (Colour (0xff2b5b8a)); g.fillRect (r.reduced (3, 2)); }
+                    label (r, d->getName(), Colours::white);
+                }
+            }
+            else if (mode == Mode::session && all[trackOffset + i] != nullptr)
+            {
+                label (r, "Stop", Colour (0xff80868f), false, 11.0f);
+            }
+        }
+
+        // middle: the 8 encoders (device parameters or the mix)
+        auto knobArea = Rectangle<int> (0, 30, w, 92);
+        for (int i = 0; i < 8; ++i)
+        {
+            auto r = knobArea.withX (i * colW).withWidth (colW);
+            te::AutomatableParameter* param = nullptr;
+            String name, value;
+            float norm = 0.0f;
+            bool bipolar = false;
+
+            if (encoderMode == EncoderMode::device)
+            {
+                if (auto d = currentDevice())
+                    if (auto p = d->getAutomatableParameters()[i])
+                        param = p;
+            }
+            else if (auto t = all[trackOffset + i])
+            {
+                if (mixParam == MixParam::volume)   { if (auto vp = t->getVolumePlugin()) param = vp->volParam.get(); }
+                else if (mixParam == MixParam::pan) { if (auto vp = t->getVolumePlugin()) param = vp->panParam.get(); bipolar = true; }
+                else
+                {
+                    auto returns = Routing::getReturnTracks (edit());
+                    if (auto ret = returns[mixParam == MixParam::sendA ? 0 : 1])
+                    {
+                        const float db = Routing::getSendDb (*t, Routing::getReturnBus (*ret));
+                        name = "Send " + ret->getName();
+                        value = db <= Routing::sendOffDb + 0.01f ? String ("-inf") : String (db, 1) + " dB";
+                        norm = jlimit (0.0f, 1.0f, (db - Routing::sendOffDb) / (6.0f - Routing::sendOffDb));
+                    }
+                }
+            }
+
+            if (param != nullptr)
+            {
+                name = param->getParameterName();
+                value = param->getCurrentValueAsStringWithLabel();
+                norm = param->getCurrentNormalisedValue();
+            }
+            if (name.isEmpty()) continue;
+
+            label (r.removeFromTop (16), name, Colour (0xffb0b6c0), false, 12.0f);
+            label (r.removeFromBottom (18), value, Colours::white, true, 13.0f);
+            auto knob = r.toFloat().withSizeKeepingCentre (52.0f, 52.0f);
+            const float a0 = MathConstants<float>::pi * 1.2f, a1 = MathConstants<float>::pi * 2.8f;
+            Path track, fill;
+            track.addCentredArc (knob.getCentreX(), knob.getCentreY(), 22.0f, 22.0f, 0.0f, a0, a1, true);
+            g.setColour (Colour (0xff2a2e35));
+            g.strokePath (track, PathStrokeType (5.0f));
+            const float from = bipolar ? (a0 + a1) * 0.5f : a0, to = a0 + (a1 - a0) * norm;
+            fill.addCentredArc (knob.getCentreX(), knob.getCentreY(), 22.0f, 22.0f, 0.0f, jmin (from, to), jmax (from, to), true);
+            g.setColour (Colour (0xff4aa3ff));
+            g.strokePath (fill, PathStrokeType (5.0f));
+        }
+
+        // mode banner over the knob row
+        String banner;
+        if (mode == Mode::session)
+            banner = "SESSION   " + String (edit().tempoSequence.getTempo (0)->getBpm(), 1) + " BPM   "
+                   + EngineHelpers::formatBarsBeats (edit(), edit().getTransport().getPosition());
+        else if (isDrumTarget())
+            banner = stepMode ? "STEP SEQ   pad " + String (selectedDrum + 1) + "   page " + String (stepPage + 1) : String ("DRUMS");
+        else
+            banner = "NOTES   " + rootName() + " " + scaleName() + "   octave " + String (octave);
+        banner << "   |   " << (encoderMode == EncoderMode::device ? String ("DEVICE") : "MIX: " + mixModeName().toUpperCase());
+
+        g.setColour (Colour (0xff1a1e24));
+        g.fillRect (0, 124, w, 14);
+        label ({ 0, 124, w, 14 }, banner, Colour (0xffe0a24a), true, 11.0f);
     }
 
     //==============================================================================
@@ -691,6 +974,9 @@ private:
     int trackOffset = 0, sceneOffset = 0, deviceIndex = 0;
     int octave = 2, root = 0, scaleIndex = 0;
     bool shift = false, deleteHeld = false, dupHeld = false, dupUsed = false;
+    bool stepMode = false;
+    int selectedDrum = 0, stepPage = 0;
+    std::unique_ptr<Push2Display> display;
     double lastTap = 0.0;
     int tick = 0;
     te::AudioTrack* lastSelected = nullptr;

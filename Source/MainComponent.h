@@ -14,6 +14,7 @@
 #include "EditingOps.h"
 #include "ExportDialog.h"
 #include "Workflow.h"
+#include "LinkSync.h"
 #include "MidiLearn.h"
 #include "DrumRack.h"
 #include "AudioSettings.h"
@@ -263,6 +264,14 @@ private:
         a.isBrowserShown     = [this] { return showBrowser; };
         a.isSessionShown     = [this] { return showSession; };
         a.controllerStatus   = [this] { return push != nullptr ? push->getStatus() : String(); };
+        a.toggleLink         = [this]
+        {
+            if (linkSync == nullptr) return;
+            linkSync->setEnabled (! linkSync->isEnabled());
+            settings().setValue ("linkEnabled", linkSync->isEnabled());
+        };
+        a.isLinkEnabled      = [this] { return linkSync != nullptr && linkSync->isEnabled(); };
+        a.linkStatus         = [this] { return linkSync != nullptr ? linkSync->getStatus() : String(); };
         return a;
     }
 
@@ -401,6 +410,9 @@ private:
         evs = std::make_unique<EditViewState> (*edit, selectionManager);
         evs->openPianoRoll = [this] (te::MidiClip* mc) { pianoRoll->setClip (mc); showTab (Tab::pianoRoll); };
         midiLearn = std::make_unique<MidiLearn> (*edit);
+        linkSync = std::make_unique<LinkSync> (*edit);
+        if (settings().getBoolValue ("linkEnabled", false))
+            linkSync->setEnabled (true);
         midiLearn->addChangeListener (this);
         if (push != nullptr) push->setView (evs.get());
         evs->midiLearn = midiLearn.get();
@@ -450,6 +462,7 @@ private:
         if (push != nullptr) push->setView (nullptr);
         Launcher::slotRecordings().clear();
         midiLearn = nullptr;
+        linkSync = nullptr;
         evs = nullptr;
         edit = nullptr;
     }
@@ -715,6 +728,7 @@ private:
     File editFile;
     std::unique_ptr<EditViewState> evs;
     std::unique_ptr<MidiLearn> midiLearn;
+    std::unique_ptr<LinkSync> linkSync;
     Label learnBanner;
 
     std::unique_ptr<Push2Controller> push;   // declared before transport: transport polls its status

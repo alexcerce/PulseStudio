@@ -14,6 +14,8 @@
 #include "StateControls.h"
 #include "Workflow.h"
 #include "PulseSynths.h"
+#include "LinkSync.h"
+#include "Push2Display.h"
 
 /** "Pulse Studio.exe --selftest report.txt"
     Builds a scratch project in the temp folder, exercises the editing / routing / device
@@ -550,6 +552,52 @@ namespace SelfTest
             }
             audioLoop = nullptr;
             loopClip = nullptr;
+        }
+
+        // --- performance: follow actions, Link, Push 2 display encoding ------------------------
+        {
+            auto perf = ClipImport::createContentTrack (*edit, "Perf", true);
+            perf->getClipSlotList().ensureNumberOfSlots (2);
+            edit->getSceneList().ensureNumberOfScenes (2);
+            auto slots = perf->getClipSlotList().getClipSlots();
+            te::Clip::Ptr a = te::insertMIDIClip (*slots[0], { te::TimePosition(), bars (1) });
+            te::Clip::Ptr b = te::insertMIDIClip (*slots[1], { te::TimePosition(), bars (1) });
+            if (a != nullptr && b != nullptr)
+            {
+                Follow::set (*a, { { te::FollowAction::trackNext, 0.75 }, { te::FollowAction::trackAny, 0.25 } });
+                a->followActionDurationType = te::Clip::FollowActionDurationType::loops;
+                a->followActionNumLoops = 2.0;
+                auto acts = Follow::get (*a);
+                rep.check (acts.size() == 2 && acts[0].first == te::FollowAction::trackNext && Follow::describe (*a).contains ("after 2 loops"),
+                           "Follow actions on session clips", Follow::describe (*a));
+            }
+            else
+            {
+                rep.check (false, "Follow actions on session clips", "couldn't create slot clips");
+            }
+            a = nullptr; b = nullptr;
+
+            {
+                LinkSync link (*edit);
+                link.setEnabled (true);
+                const bool on = link.isEnabled() && link.getStatus().startsWith ("Link");
+                const int undoBefore = um.getNumActionsInCurrentTransaction();
+                LinkSync::setTempoQuietly (*edit, 128.0);
+                const bool tempoOk = std::abs (edit->tempoSequence.getTempo (0)->getBpm() - 128.0) < 1.0e-6
+                                     && um.getNumActionsInCurrentTransaction() == undoBefore;
+                LinkSync::setTempoQuietly (*edit, 120.0);
+                link.setEnabled (false);
+                rep.check (on && tempoOk && ! link.isEnabled(), "Ableton Link session (enable, tempo, disable)", link.getStatus());
+            }
+
+            Image img (Image::RGB, Push2Display::width, Push2Display::height, true);
+            img.setPixelAt (0, 0, Colours::red);
+            img.setPixelAt (1, 0, Colours::blue);
+            auto bytes = Push2Display::encode (img);
+            // red = 0x001F, blue = 0xF800 (BGR565, little endian) XOR E7 F3 E7 FF
+            rep.check (bytes.size() == 327680 && bytes[0] == (0x1F ^ 0xE7) && bytes[1] == (0x00 ^ 0xF3)
+                         && bytes[2] == (0x00 ^ 0xE7) && bytes[3] == (0xF8 ^ 0xFF) && bytes[2048] == 0xE7,
+                       "Push 2 display frame encoding");
         }
 
         // --- undo -------------------------------------------------------------------------------
