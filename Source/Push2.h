@@ -286,7 +286,7 @@ private:
         if (cc >= ccUpperRow && cc < ccUpperRow + 8)
         {
             const int i = cc - ccUpperRow;
-            if (encoderMode == EncoderMode::device) { deviceIndex = i; return; }   // pick a device
+            if (encoderMode == EncoderMode::device) { deviceIndex = i; paramBank = 0; return; }   // pick a device
             if (auto t = tracks()[trackOffset + i]) Launcher::stopTrack (*t);
             return;
         }
@@ -306,8 +306,18 @@ private:
             case ccSession:   setMode (Mode::session); break;
             case ccNote:      setMode (Mode::note); break;
             case ccLayout:    if (mode == Mode::note && isDrumTarget()) { stepMode = ! stepMode; updateNoteTarget(); markAllDirty(); } break;
-            case ccOctUp:     octave = jmin (8, octave + 1); updateNoteTarget(); break;
-            case ccOctDown:   octave = jmax (-1, octave - 1); updateNoteTarget(); break;
+            case ccOctUp:
+            case ccOctDown:
+            {
+                const int dir = cc == ccOctUp ? 1 : -1;
+                auto t = selectedTrack();
+                if (auto* rack = (t != nullptr && isDrumTarget()) ? DrumRack::rackOf (DrumRack::findOnTrack (*t)) : nullptr)
+                    DrumRack::setBank (*rack, DrumRack::getBank (*rack) + dir * 16);   // drums: next / previous 16 pads
+                else
+                    octave = jlimit (-1, 8, octave + dir);
+                updateNoteTarget();
+                break;
+            }
             case ccScale:     if (shift) root = (root + 1) % 12; else scaleIndex = (scaleIndex + 1) % (int) scales().size(); updateNoteTarget(); break;
             case ccLeft:      navigate (-1, 0); break;
             case ccRight:     navigate (1, 0); break;
@@ -316,8 +326,22 @@ private:
             case ccDevice:    encoderMode = EncoderMode::device; break;
             case ccMix:       if (encoderMode == EncoderMode::mix) mixPage = (mixPage + (shift ? numMixPages() - 1 : 1)) % numMixPages();
                               encoderMode = EncoderMode::mix; break;
-            case ccPageLeft:  deviceIndex = jmax (0, deviceIndex - 1); break;
-            case ccPageRight: deviceIndex = jmin (7, deviceIndex + 1); break;
+            case ccPageLeft:
+            case ccPageRight:
+            {
+                const int dir = cc == ccPageRight ? 1 : -1;
+                if (shift && encoderMode == EncoderMode::device)   // Shift + Page: the next 8 parameters
+                {
+                    const int count = currentDevice() != nullptr ? currentDevice()->getAutomatableParameters().size() : 0;
+                    paramBank = jlimit (0, jmax (0, (count - 1) / 8), paramBank + dir);
+                }
+                else
+                {
+                    deviceIndex = jlimit (0, 7, deviceIndex + dir);
+                    paramBank = 0;
+                }
+                break;
+            }
             case ccBrowse:    if (onToggleBrowser) onToggleBrowser(); break;
             case ccClip:
                 if (auto mc = view->selectionManager.getFirstItemOfType<te::MidiClip>())
@@ -438,7 +462,7 @@ private:
         if (encoderMode == EncoderMode::device)
         {
             if (auto d = currentDevice())
-                if (auto p = d->getAutomatableParameters()[i])
+                if (auto p = d->getAutomatableParameters()[paramBank * 8 + i])
                     nudge (*p, delta, shift);
             return;
         }
@@ -906,7 +930,7 @@ private:
             if (encoderMode == EncoderMode::device)
             {
                 if (auto d = currentDevice())
-                    if (auto p = d->getAutomatableParameters()[i])
+                    if (auto p = d->getAutomatableParameters()[paramBank * 8 + i])
                         param = p;
             }
             else if (auto t = all[trackOffset + i])
@@ -975,7 +999,7 @@ private:
     Mode mode = Mode::session;
     EncoderMode encoderMode = EncoderMode::mix;
     int mixPage = 0;
-    int trackOffset = 0, sceneOffset = 0, deviceIndex = 0;
+    int trackOffset = 0, sceneOffset = 0, deviceIndex = 0, paramBank = 0;
     int octave = 2, root = 0, scaleIndex = 0;
     bool shift = false, deleteHeld = false, dupHeld = false, dupUsed = false;
     bool stepMode = false;

@@ -2305,6 +2305,57 @@ namespace SelfTest
             }
         }
 
+        // --- performance: scene tempo, per-clip launch quantisation, session -> arrangement -----------
+        {
+            rep.step ("performance");
+            auto t = ClipImport::createContentTrack (*edit, "Perf", true);
+            bool tempoOk = false, quantOk = false, recOk = false;
+            String recInfo;
+            if (t != nullptr)
+            {
+                auto& sl = edit->getSceneList();
+                sl.ensureNumberOfScenes (4);
+                t->getClipSlotList().ensureNumberOfSlots (4);
+                auto slot = t->getClipSlotList().getClipSlots()[1];
+                auto mc = te::insertMIDIClip (*slot, "Loop", { te::TimePosition(), EngineHelpers::beatToTime (*edit, 4.0) });
+                if (mc != nullptr)
+                {
+                    mc->getSequence().addNote (60, te::BeatPosition(), te::BeatDuration::fromBeats (1.0), 100, 0, nullptr);
+                    mc->setLoopRangeBeats ({ te::BeatPosition(), te::BeatPosition::fromBeats (4.0) });
+
+                    const double before = edit->tempoSequence.getTempo (0)->getBpm();
+                    sl.getScenes()[1]->state.setProperty (Launcher::sceneTempoID, 133.0, nullptr);
+                    Launcher::launchScene (*edit, 1);
+                    tempoOk = std::abs (edit->tempoSequence.getTempo (0)->getBpm() - 133.0) < 0.01;
+                    Launcher::stopTrack (*t);
+                    edit->tempoSequence.getTempo (0)->setBpm (before);
+                    sl.getScenes()[1]->state.removeProperty (Launcher::sceneTempoID, nullptr);
+
+                    mc->setUsesGlobalLaunchQuatisation (false);
+                    if (auto lq = mc->getLaunchQuantisation()) lq->type = te::LaunchQType::half;
+                    quantOk = ! mc->usesGlobalLaunchQuatisation() && mc->getLaunchQuantisation() != nullptr
+                              && mc->getLaunchQuantisation()->type.get() == te::LaunchQType::half
+                              && &Launcher::quantisationFor (*mc) == mc->getLaunchQuantisation();
+
+                    Launcher::SessionRecorder rec;
+                    rec.writeSegment (*t, *mc, 8.0, 20.0);   // played for 3 bars from bar 3
+                    te::Clip* arr = t->getClips().getFirst();
+                    if (arr != nullptr)
+                    {
+                        const double s0 = EngineHelpers::timeToBeat (*edit, arr->getPosition().getStart());
+                        const double s1 = EngineHelpers::timeToBeat (*edit, arr->getPosition().getEnd());
+                        recOk = std::abs (s0 - 8.0) < 0.01 && std::abs (s1 - 20.0) < 0.01 && arr->isLooping()
+                                && dynamic_cast<te::MidiClip*> (arr) != nullptr && dynamic_cast<te::MidiClip*> (arr)->getSequence().getNumNotes() == 1;
+                        recInfo = String (s0, 2) + " - " + String (s1, 2) + " beats, looping " + String ((int) arr->isLooping());
+                    }
+                }
+                edit->deleteTrack (t);
+            }
+            rep.check (tempoOk, "Scene tempo (launching a scene sets the tempo)");
+            rep.check (quantOk, "Per-clip launch quantisation");
+            rep.check (recOk, "Session clips recorded into the arrangement", recInfo);
+        }
+
         // --- undo -------------------------------------------------------------------------------
         rep.check (um.canUndo(), "Undo history recorded");
 

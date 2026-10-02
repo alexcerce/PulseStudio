@@ -93,8 +93,19 @@ namespace Launcher
                 stopClip (*c);
     }
 
+    inline const Identifier sceneTempoID { "pulseTempo" };
+
+    /** Scene tempo (0 = the scene doesn't change the tempo). */
+    inline double sceneTempo (te::Edit& e, int sceneIndex)
+    {
+        auto sc = e.getSceneList().getScenes()[sceneIndex];
+        return sc != nullptr ? (double) sc->state.getProperty (sceneTempoID, 0.0) : 0.0;
+    }
+
     inline void launchScene (te::Edit& e, int sceneIndex)
     {
+        if (const double bpm = sceneTempo (e, sceneIndex); bpm > 0.0)
+            e.tempoSequence.getTempo (0)->setBpm (bpm);
         for (auto at : EngineHelpers::getUserTracks (e))
         {
             auto slots = at->getClipSlotList().getClipSlots();
@@ -190,6 +201,81 @@ namespace Launcher
             return lh->getPlayingStatus();
         return te::LaunchHandle::PlayState::stopped;
     }
+
+    /** Writes session clip launches into the arrangement while the song plays: each time a
+        track's playing clip changes, the part that played becomes an arrangement clip. */
+    struct SessionRecorder
+    {
+        void setEnabled (te::Edit& e, bool on)
+        {
+            if (! on) closeAll (e);
+            enabled = on;
+        }
+
+        bool isEnabled() const { return enabled; }
+
+        /** Call regularly (the session view does, 12 times a second). */
+        void tick (te::Edit& e)
+        {
+            if (! enabled) return;
+            auto& tc = e.getTransport();
+            if (! tc.isPlaying()) { closeAll (e); return; }
+            lastBeat = EngineHelpers::timeToBeat (e, tc.getPosition());
+            for (auto t : EngineHelpers::getUserTracks (e))
+            {
+                te::Clip* playing = nullptr;
+                if (t->playSlotClips.get())
+                    for (auto slot : t->getClipSlotList().getClipSlots())
+                        if (auto c = slot->getClip(); c != nullptr && stateOf (*c) == te::LaunchHandle::PlayState::playing)
+                            playing = c;
+                auto it = open.find (t->itemID);
+                te::Clip* current = it != open.end() ? it->second.src.get() : nullptr;
+                if (playing == current) continue;
+                if (current != nullptr) commit (*t, it->second, lastBeat);
+                if (playing != nullptr) open[t->itemID] = { playing, std::round (lastBeat) };
+                else                    open.erase (t->itemID);
+            }
+        }
+
+        void closeAll (te::Edit& e)
+        {
+            for (auto& [id, seg] : open)
+                for (auto t : EngineHelpers::getUserTracks (e))
+                    if (t->itemID == id) commit (*t, seg, lastBeat);
+            open.clear();
+        }
+
+        int committed = 0;
+
+        /** Writes one played stretch of a session clip into the arrangement (also used by the self-test). */
+        void writeSegment (te::AudioTrack& t, te::Clip& src, double startBeat, double endBeat) { commit (t, { &src, startBeat }, endBeat); }
+
+    private:
+        struct Segment { te::Clip::Ptr src; double startBeat = 0; };
+
+        void commit (te::AudioTrack& t, const Segment& seg, double endBeat)
+        {
+            if (seg.src == nullptr) return;
+            endBeat = std::round (endBeat);
+            if (endBeat <= seg.startBeat) return;
+            auto& e = t.edit;
+            e.getUndoManager().beginNewTransaction ("Arrangement record");
+            if (auto c = te::insertClipCopy (t, te::ClipCopy::fromClip (*seg.src).withNewItemID (e)))
+            {
+                const auto loop = seg.src->getLoopRangeBeats();
+                const double srcLen = loop.getLength().inBeats() > 0 ? loop.getLength().inBeats() : clipLengthBeats (*seg.src);
+                c->setStart (EngineHelpers::beatToTime (e, seg.startBeat), false, true);
+                c->setEnd (EngineHelpers::beatToTime (e, endBeat), true);
+                if (srcLen > 0 && c->canLoop())
+                    c->setLoopRangeBeats ({ loop.getStart(), te::BeatDuration::fromBeats (srcLen) });
+                ++committed;
+            }
+        }
+
+        bool enabled = false;
+        double lastBeat = 0.0;
+        std::map<te::EditItemID, Segment> open;
+    };
 
     inline bool isQueued (te::Clip& c)
     {
@@ -537,6 +623,25 @@ private:
             te::Clip::Ptr c (clip);
             m.addItem ("Launch", [c] { Launcher::launchClip (*c); });
             m.addItem ("Stop", [c] { Launcher::stopClip (*c); });
+            {
+                PopupMenu q;
+                const bool global = c->usesGlobalLaunchQuatisation();
+                q.addItem ("Global (session setting)", true, global, [c] { c->setUsesGlobalLaunchQuatisation (true); });
+                const char* qNames[] = { "None", "8 bars", "4 bars", "2 bars", "1 bar", "1/2", "1/4", "1/8", "1/16" };
+                const te::LaunchQType qTypes[] = { te::LaunchQType::none, te::LaunchQType::eightBars, te::LaunchQType::fourBars,
+                                                   te::LaunchQType::twoBars, te::LaunchQType::bar, te::LaunchQType::half,
+                                                   te::LaunchQType::quarter, te::LaunchQType::eighth, te::LaunchQType::sixteenth };
+                for (int i = 0; i < 9; ++i)
+                {
+                    const bool ticked = ! global && c->getLaunchQuantisation() != nullptr && c->getLaunchQuantisation()->type.get() == qTypes[i];
+                    q.addItem (qNames[i], true, ticked, [c, t = qTypes[i]]
+                    {
+                        c->setUsesGlobalLaunchQuatisation (false);
+                        if (auto lq = c->getLaunchQuantisation()) lq->type = t;
+                    });
+                }
+                m.addSubMenu ("Launch quantisation", q);
+            }
             if (auto mc = dynamic_cast<te::MidiClip*> (clip))
                 m.addItem ("Open in Piano Roll", [this, mc] { if (evs.openPianoRoll) evs.openPianoRoll (mc); });
             m.addItem ("Copy to arrangement (at playhead)", [this, c]
@@ -612,6 +717,14 @@ public:
             auto& sl = evs.edit.getSceneList();
             sl.ensureNumberOfScenes (sl.getScenes().size() + 1);
         };
+        arrRecBtn.setTooltip ("Arrangement record: while the song plays, clip launches are written into the arrangement");
+        arrRecBtn.setClickingTogglesState (true);
+        arrRecBtn.setColour (TextButton::buttonOnColourId, Theme::red);
+        arrRecBtn.onClick = [this]
+        {
+            recorder.setEnabled (evs.edit, arrRecBtn.getToggleState());
+        };
+        addAndMakeVisible (arrRecBtn);
         backToArrBtn.setTooltip ("Return every track to the arrangement");
         backToArrBtn.onClick = [this] { for (auto t : EngineHelpers::getUserTracks (evs.edit)) t->playSlotClips = false; };
         for (auto* b : { &stopAllBtn, &addSceneBtn, &backToArrBtn }) addAndMakeVisible (b);
@@ -637,7 +750,8 @@ public:
         quantBox.setBounds (bar.removeFromLeft (90)); bar.removeFromLeft (6);
         addSceneBtn.setBounds (bar.removeFromLeft (80)); bar.removeFromLeft (4);
         stopAllBtn.setBounds (bar.removeFromLeft (100)); bar.removeFromLeft (4);
-        backToArrBtn.setBounds (bar.removeFromLeft (150));
+        backToArrBtn.setBounds (bar.removeFromLeft (150)); bar.removeFromLeft (4);
+        arrRecBtn.setBounds (bar.removeFromLeft (150));
         viewport.setBounds (r);
         layoutGrid();
     }
@@ -824,7 +938,8 @@ private:
             auto* b = sceneBtns.add (new IconButton (Icons::Type::play));
             auto sc = sceneList.getScenes()[s];
             const auto sceneName = sc != nullptr ? sc->name.get() : String();
-            b->setText (sceneName.isNotEmpty() ? sceneName : "Scene " + String (s + 1));
+            const double sceneBpm = Launcher::sceneTempo (evs.edit, s);
+            b->setText ((sceneName.isNotEmpty() ? sceneName : "Scene " + String (s + 1)) + (sceneBpm > 0 ? "  " + String (sceneBpm, sceneBpm == std::floor (sceneBpm) ? 0 : 1) : String()));
             b->setIconColour (Theme::green);
             b->setTooltip ("Launch every clip in this row (right-click to rename)");
             b->addMouseListener (this, false);
@@ -863,6 +978,42 @@ private:
         if (s < 0 || ! e.mods.isPopupMenu()) return;
         auto scene = evs.edit.getSceneList().getScenes()[s];
         if (scene == nullptr) return;
+        PopupMenu m;
+        m.addItem ("Rename...", [this, s] { renameScene (s); });
+        m.addItem ("Set tempo...", [this, s] { askSceneTempo (s); });
+        m.addItem ("Clear tempo", Launcher::sceneTempo (evs.edit, s) > 0.0, false, [this, sc = scene]
+        {
+            sc->state.removeProperty (Launcher::sceneTempoID, &evs.edit.getUndoManager());
+            markAndUpdate (rebuildFlag);
+        });
+        m.showMenuAsync (PopupMenu::Options().withTargetComponent (e.eventComponent));
+    }
+
+    void askSceneTempo (int s)
+    {
+        auto scene = evs.edit.getSceneList().getScenes()[s];
+        if (scene == nullptr) return;
+        auto* w = new AlertWindow ("Scene tempo", "Launching this scene sets the tempo to:", MessageBoxIconType::NoIcon);
+        const double cur = Launcher::sceneTempo (evs.edit, s);
+        w->addTextEditor ("bpm", String (cur > 0 ? cur : evs.edit.tempoSequence.getTempo (0)->getBpm(), 1));
+        w->addButton ("OK", 1, KeyPress (KeyPress::returnKey));
+        w->addButton ("Cancel", 0, KeyPress (KeyPress::escapeKey));
+        w->enterModalState (true, ModalCallbackFunction::create ([this, w, sc = scene] (int r)
+        {
+            const double bpm = w->getTextEditorContents ("bpm").getDoubleValue();
+            if (r == 1 && bpm >= 20.0 && bpm <= 400.0)
+            {
+                evs.edit.getUndoManager().beginNewTransaction ("Scene tempo");
+                sc->state.setProperty (Launcher::sceneTempoID, bpm, &evs.edit.getUndoManager());
+                markAndUpdate (rebuildFlag);
+            }
+        }), true);
+    }
+
+    void renameScene (int s)
+    {
+        auto scene = evs.edit.getSceneList().getScenes()[s];
+        if (scene == nullptr) return;
         auto* w = new AlertWindow ("Rename scene", {}, MessageBoxIconType::NoIcon);
         w->addTextEditor ("name", scene->name.get().isNotEmpty() ? scene->name.get() : "Scene " + String (s + 1));
         w->addButton ("OK", 1, KeyPress (KeyPress::returnKey));
@@ -881,6 +1032,7 @@ private:
     void timerCallback() override
     {
         Launcher::tidySlotRecordings (evs.edit);
+        recorder.tick (evs.edit);
         for (auto* s : slots) s->repaint();
         grid.repaint();
         for (auto* h : heads) h->update();
@@ -916,7 +1068,8 @@ private:
     OwnedArray<ColumnFooter> footers;
     ComboBox quantBox;
     std::map<int, te::LaunchQType> qTypeById;
-    TextButton stopAllBtn { "Stop all clips" }, addSceneBtn { "+ Scene" }, backToArrBtn { "Back to arrangement" };
+    TextButton stopAllBtn { "Stop all clips" }, addSceneBtn { "+ Scene" }, backToArrBtn { "Back to arrangement" }, arrRecBtn { "Arrangement record" };
+    Launcher::SessionRecorder recorder;
     Label label;
     int numTracks = 0, numScenes = 0;
     bool rebuildFlag = false;

@@ -58,7 +58,7 @@ when you start, touch it after each step, and delete it when you stop.
      normalisation, mixer snapshots.
    - ~~v0.26 Instruments/FX~~ (done): Pulse Reverb and Delay with displays, FM synth (Operator-like), granular mode in
      Simpler, vocoder, pitch correction.
-   - v0.27 Performance: Push encoder MIDI learn + drum bank + step seq on remapped notes, follow actions,
+   - ~~v0.27 Performance~~ (done; Push encoder MIDI-learn left for later): Push encoder MIDI learn + drum bank + step seq on remapped notes, follow actions,
      per-scene tempo, per-clip launch quantize, record session to arrangement.
    - v0.28 Quality: autosave history (last 20), faster startup / plugin scan, UI snapshot tests, playback stress test.
 4. Then **think of more improvements** and do them in a cycle: polish, reliability, performance, UI clarity,
@@ -91,3 +91,4 @@ when you start, touch it after each step, and delete it when you stop.
 - 2026-10-02: v0.24.0 MIDI tools, audio quantize (own onset detector; the engine transient detector returns none), MIDI record modes (overdub / takes / replace). 146 checks pass.
 - 2026-10-02: v0.25.0 mixing: BS.1770 loudness (probe on master, export report), Glue sidechain + duck menu (needs guessSidechainRouting), linked faders, mixer snapshots. 149 checks pass.
 - 2026-10-02: v0.26.0 Pulse Reverb (FDN), Pulse Delay, Vocoder, Pitch Correction, FM Synth, Simpler granular, device displays. 159 checks pass.
+- 2026-10-02: v0.27.0 session arrangement record, scene tempo, per-clip launch quantisation, Push parameter / drum banks. 162 checks pass.

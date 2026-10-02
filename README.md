@@ -4,7 +4,7 @@ A native Windows DAW built with C++, [JUCE](https://juce.com) and [Tracktion Eng
 
 ## Install
 
-Run `dist/PulseStudio-0.26.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
+Run `dist/PulseStudio-0.27.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
 
 ## Build
 
@@ -83,6 +83,9 @@ Projects are saved as `.tracktionedit` files in `Documents/Pulse Studio/`. Prese
 - **ARA (Melodyne, etc.):** *ARA → Edit with …* hands the clip to an ARA plugin, and double-clicking the clip opens its editor. Edits are saved with the project, and *Stop using ARA* returns to normal playback. ARA plugins appear after a VST3 rescan (*Plugins → Options → Scan*).
 
 ### Session view (Tab)
+- **Arrangement record:** turn on *Arrangement record* in the session toolbar and play: every clip you launch is written into the arrangement where it played (looped for as long as it ran).
+- **Scene tempo:** right-click a scene → *Set tempo...*: launching the scene changes the tempo (shown next to its name). *Rename...* and *Clear tempo* are there too.
+- **Launch quantisation per clip:** right-click a clip slot → *Launch quantisation* (or leave it on *Global*).
 - An Ableton-style clip launcher with scenes and launch quantisation. Clips loop until stopped.
 - **Session recording:** on an armed track, click an empty slot (shown with a red dot) to record a new clip into it. Right-click any empty slot → *Record into this slot*.
 - *Back to arrangement* (or a track's **Arr** button) hands tracks back to the timeline.
@@ -97,6 +100,8 @@ Click **Link** in the transport bar to join a Link session with other apps and d
 The button's tooltip shows how many peers are connected. The first time you turn it on, Windows may ask whether Pulse Studio can use the network. Allow private networks.
 
 ### Ableton Push 2
+- **Parameter banks:** in Device mode, **Shift + Page < >** steps through the device's parameters eight at a time.
+- **Drum banks:** on a Drum Rack track, **Octave up / down** shows the next or previous 16 pads.
 Plug it in and it connects automatically (hot-plug supported). The Push's area is outlined in red in the session view, and **PUSH** appears next to the CPU meter, whose tooltip shows the current mode.
 
 | Control | Action |
@@ -261,7 +266,7 @@ All of these can be changed in *File → Keyboard shortcuts*. New: **Ctrl+P** co
 ## Command line
 
 - `--render out.wav` renders the last project offline and exits.
-- `--selftest report.txt` builds a scratch project and runs 159 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--selftest report.txt` builds a scratch project and runs 162 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
 - `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
 
 ## Code layout
