@@ -116,3 +116,9 @@ when you start, touch it after each step, and delete it when you stop.
 - 2026-10-02: v0.36.0 done: plain track names, Pulse Reverb / Delay returns + devices button on mixer strips,
   DeviceEditor.h (big resizable editor per Pulse device: frames view, drum hits, GR history, parameter bars,
   foldable control groups), graphs with axis labels / glow when large, piano roll draw / edge resize. 180 checks pass.
+- Owner feedback (2026-10-02) -> v0.37+: returns / master as slim rows in the arrangement, raw track names in old
+  projects ("pulseDrumSynth"), no "- device chain" heading text, many more presets, then the v0.36 "what next" list
+  (old-return upgrade, editability audit, MIDI fx / vocoder / utility graphs, VST frame, piano roll, arrangement
+  polish, startup speed).
+- 2026-10-02: v0.37.0 BusLanes.h (return / master rows with device chips, drop, +), Upgrade.h (old returns -> Pulse
+  devices, raw names), auto-named tracks follow their instrument. 183 checks pass.

@@ -119,5 +119,9 @@ public:
     /** Set by the main component: opens a MIDI clip in the piano roll. */
     std::function<void (te::MidiClip*)> openPianoRoll;
     /** Shows a track's devices (selects it and opens the Devices panel; also for return tracks). */
-    std::function<void (te::Track*)> showDevices;
+    std::function<void (te::Track*)> showDevices;   // nullptr = the master
+    /** Opens a device's editor (big Pulse editor, sandbox window or the plugin's own window). */
+    std::function<void (te::Plugin&)> openDeviceEditor;
+    /** True when the Devices panel shows this track's chain (nullptr = the master's). */
+    std::function<bool (te::Track*)> isShowingDevicesOf;
 };

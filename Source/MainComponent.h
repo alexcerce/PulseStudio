@@ -26,6 +26,7 @@
 #include "PluginScan.h"
 #include "FactoryContent.h"
 #include "ShareTools.h"
+#include "Upgrade.h"
 #include "BackgroundRender.h"
 #include "Commands.h"
 #include "ClipEnvelopes.h"
@@ -661,6 +662,7 @@ private:
 
         edit->playInStopEnabled = true;
         DrumRack::migrateAll (*edit);   // racks from Pulse 0.17 and older
+        Upgrade::run (*edit);            // editable returns, plain track names
 
         if (createDemo)
             createDemoContent();
@@ -676,7 +678,24 @@ private:
 
         evs = std::make_unique<EditViewState> (*edit, selectionManager);
         evs->openPianoRoll = [this] (te::MidiClip* mc) { pianoRoll->setClip (mc); showTab (Tab::pianoRoll); };
-        evs->showDevices = [this] (te::Track* t) { if (t != nullptr) selectionManager.selectOnly (t); showTab (Tab::devices); };
+        evs->showDevices = [this] (te::Track* t)
+        {
+            if (t != nullptr) selectionManager.selectOnly (t);
+            if (deviceChain) deviceChain->setShowMaster (t == nullptr);
+            showTab (Tab::devices);
+        };
+        evs->isShowingDevicesOf = [this] (te::Track* t)
+        {
+            if (deviceChain == nullptr || currentTab != Tab::devices) return false;
+            if (t == nullptr) return deviceChain->isShowingMaster();
+            return ! deviceChain->isShowingMaster() && EngineHelpers::getSelectedTrack (selectionManager) == t;
+        };
+        evs->openDeviceEditor = [this] (te::Plugin& p)
+        {
+            if (auto sb = dynamic_cast<pulse::SandboxedPlugin*> (&p)) sb->showEditor();
+            else if (auto pp = dynamic_cast<pulse::PulsePlugin*> (&p)) DeviceEditors::show (*evs, *pp);
+            else p.showWindowExplicitly();
+        };
         midiLearn = std::make_unique<MidiLearn> (*edit);
         linkSync = std::make_unique<LinkSync> (*edit);
         envelopePlayer = std::make_unique<ClipEnvelopes::Player> (*edit);

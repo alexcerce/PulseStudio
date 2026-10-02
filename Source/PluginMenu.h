@@ -127,6 +127,11 @@ namespace PluginMenu
                 if (auto idx = list.indexOf (vp); idx >= 0)
                     return idx;
 
+        if (track == nullptr)   // the master: before its meter, so the meter shows the result
+            if (auto lm = list.findFirstPluginOfType<te::LevelMeterPlugin>())
+                if (auto idx = list.indexOf (lm); idx >= 0)
+                    return idx;
+
         return list.size();
     }
 

@@ -1088,6 +1088,14 @@ public:
         layoutRack();
     }
 
+    /** Shows the master's chain (true) or the selected track's (false). */
+    void setShowMaster (bool m)
+    {
+        masterBtn.setToggleState (m, dontSendNotification);
+        if (m != showMaster) { showMaster = m; rebuild(); }
+    }
+    bool isShowingMaster() const { return showMaster; }
+
 private:
     te::PluginList* currentList()
     {
@@ -1156,9 +1164,9 @@ private:
         }
 
         if (showMaster)
-            heading.setText ("Master bus", dontSendNotification);
+            heading.setText ("Master", dontSendNotification);
         else if (auto t = currentTrack())
-            heading.setText (t->getName() + "  -  device chain", dontSendNotification);
+            heading.setText (t->getName(), dontSendNotification);
         else
             heading.setText ("Select a track to see its devices", dontSendNotification);
 
@@ -1254,7 +1262,7 @@ private:
     Rack rack;
     OwnedArray<Component> cards;
     Array<te::Plugin*> shown;
-    TextButton addBtn { "+ Add device" }, masterBtn { "Master bus" }, chainBtn { "Chain presets" }, modBtn { "+ Modulator" };
+    TextButton addBtn { "+ Add device" }, masterBtn { "Master" }, chainBtn { "Chain presets" }, modBtn { "+ Modulator" };
     int shownModifiers = 0;
     Label heading;
     bool showMaster = false, dropHighlight = false;

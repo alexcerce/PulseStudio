@@ -129,6 +129,65 @@ namespace ClipImport
         return "Track";
     }
 
+    /** Marks a track as named by Pulse (not the user): it then follows its instrument's name. */
+    inline const Identifier autoNameID { "pulseAutoName" }, autoInstID { "pulseAutoInst" };
+
+    /** Remembers a track's current instrument so only a later change renames it. */
+    inline void noteInstrument (te::AudioTrack& t)
+    {
+        for (auto p : t.pluginList)
+            if (p->isSynth() || dynamic_cast<te::RackInstance*> (p) != nullptr) { t.state.setProperty (autoInstID, p->itemID.toString(), nullptr); return; }
+    }
+
+    /** Turns a raw id that ended up as a name ("pulseDrumSynth", "drumrackkit", "plugin:builtin:x")
+        into plain words; other names are returned unchanged. */
+    inline String friendlyName (te::Engine& engine, const String& raw)
+    {
+        auto n = raw.trim();
+        if (n.startsWith ("plugin:")) return trackNameFor (engine, n);
+        const auto lower = n.toLowerCase();
+        if (lower == "drumrack" || lower == "drumrackkit" || lower == "drum rack kit") return "Drums";
+        for (auto& b : builtIns())
+            if (n == b.type) return trackNameFor (engine, String ("plugin:builtin:") + b.type);
+        if (n.startsWith ("pulse") && n.length() > 5 && CharacterFunctions::isUpperCase (n[5]))   // pulseSomeDevice -> Some Device
+        {
+            String out;
+            auto rest = n.substring (5);
+            for (int i = 0; i < rest.length(); ++i)
+            {
+                if (i > 0 && CharacterFunctions::isUpperCase (rest[i]) && CharacterFunctions::isLowerCase (rest[i - 1])) out << ' ';
+                out << rest[i];
+            }
+            return out;
+        }
+        return n;
+    }
+
+    /** The name a track gets from its instrument ("Drums" for drum devices). */
+    inline String instrumentTrackName (te::Plugin& p)
+    {
+        const auto type = p.getPluginType();
+        if (type == pulse::DrumSynth::xmlTypeName || dynamic_cast<te::RackInstance*> (&p) != nullptr) return "Drums";
+        return p.getName();
+    }
+
+    /** Renames tracks that carry a raw id as their name (projects from before 0.36). */
+    inline int fixRawTrackNames (te::Edit& edit)
+    {
+        int fixed = 0;
+        for (auto t : EngineHelpers::getUserTracks (edit))
+        {
+            const auto n = friendlyName (edit.engine, t->getName());
+            if (n != t->getName())
+            {
+                t->setName (n);
+                t->state.setProperty (autoNameID, true, nullptr);
+                ++fixed;
+            }
+        }
+        return fixed;
+    }
+
     inline te::Plugin::Ptr createPluginFromDescription (te::Edit& edit, const String& d)
     {
         if (d == "plugin:builtin:drumrack")

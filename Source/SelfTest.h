@@ -40,6 +40,8 @@
 #include "SampleEditor.h"
 #include "PianoRoll.h"
 #include "DeviceEditor.h"
+#include "BusLanes.h"
+#include "Upgrade.h"
 
 /** "Pulse Studio.exe --selftest report.txt"
     Builds a scratch project in the temp folder, exercises the editing / routing / device
@@ -2879,6 +2881,64 @@ namespace SelfTest
                 rep.check (ok, "Reverb return uses the editable Pulse Reverb");
                 if (ret != nullptr) edit->deleteTrack (ret);
             }
+        }
+
+        // --- v0.37: old projects upgrade, return / master rows ------------------------------------------
+        {
+            rep.step ("upgrade / bus rows");
+            // raw names from older versions become plain words; user names stay
+            const bool friendly = ClipImport::friendlyName (engine, "pulseDrumSynth") == "Drums" && ClipImport::friendlyName (engine, "drumrackkit") == "Drums"
+                                  && ClipImport::friendlyName (engine, String (pulse::WavetableSynth::xmlTypeName)) == "Wavetable"
+                                  && ClipImport::friendlyName (engine, "My Lead") == "My Lead" && ClipImport::friendlyName (engine, "Bass 2") == "Bass 2";
+            auto raw = ClipImport::createContentTrack (*edit, "pulseDrumSynth", false);
+            const int fixedNames = ClipImport::fixRawTrackNames (*edit);
+            rep.check (friendly && raw->getName() == "Drums" && fixedNames >= 1 && raw->state.getProperty (ClipImport::autoNameID),
+                       "Old raw track names fixed on open", raw->getName());
+            edit->deleteTrack (raw);
+
+            // old engine reverb / delay returns are swapped for the editable Pulse devices
+            auto oldRev = Routing::createReturnTrack (*edit, "OldVerb", te::ReverbPlugin::xmlTypeName);
+            auto oldDel = Routing::createReturnTrack (*edit, "OldDelay", te::DelayPlugin::xmlTypeName);
+            if (auto d = oldDel->pluginList.findFirstPluginOfType<te::DelayPlugin>()) { d->lengthMs = 250; d->mixValue = 1.0f; d->feedbackValue = -6.0f; }
+            const int swapped = Upgrade::upgradeReturns (*edit);
+            auto pr = oldRev->pluginList.findFirstPluginOfType<pulse::Reverb>();
+            auto pd = oldDel->pluginList.findFirstPluginOfType<pulse::Delay>();
+            const bool kept = pd != nullptr && std::abs (pd->get (pulse::Delay::pTime) - 250.0f) < 1.0f && pd->get (pulse::Delay::pSync) < 0.5f
+                              && std::abs (pd->get (pulse::Delay::pFeedback) - 0.5f) < 0.02f;
+            const bool orderOk = oldRev->pluginList.size() > 1 && dynamic_cast<te::AuxReturnPlugin*> (oldRev->pluginList[0]) != nullptr
+                                 && dynamic_cast<pulse::Reverb*> (oldRev->pluginList[1]) != nullptr;
+            rep.check (swapped >= 2 && pr != nullptr && kept && orderOk && oldRev->pluginList.findFirstPluginOfType<te::ReverbPlugin>() == nullptr,
+                       "Old reverb / delay returns become editable Pulse devices", String (swapped) + " swapped");
+
+            // bus rows: one per return plus the master; devices dropped on the master land before its meter
+            {
+                EditViewState evs (*edit, sm);
+                bool shown = false; te::Track* shownTrack = (te::Track*) 1;
+                evs.showDevices = [&] (te::Track* t) { shown = true; shownTrack = t; };
+                BusLanes::Area area (evs, 230);
+                area.setSize (1200, area.idealHeight());
+                const int returns = Routing::getReturnTracks (*edit).size();
+                auto* masterRow = area.row (area.numRows() - 1);
+                // click the master row
+                auto src = Desktop::getInstance().getMainMouseSource();
+                const auto now = Time::getCurrentTime();
+                MouseEvent e (src, { 100.0f, 10.0f }, ModifierKeys (ModifierKeys::leftButtonModifier), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                              masterRow, masterRow, now, { 100.0f, 10.0f }, now, 1, false);
+                masterRow->mouseDown (e);
+                auto& ml = edit->getMasterPluginList();
+                if (ml.findFirstPluginOfType<te::LevelMeterPlugin>() == nullptr)
+                    ml.insertPlugin (edit->getPluginCache().createNewPlugin (te::LevelMeterPlugin::xmlTypeName, {}), -1, nullptr);
+                auto eq = edit->getPluginCache().createNewPlugin (pulse::PulseEQ::xmlTypeName, {});
+                ml.insertPlugin (eq, PluginMenu::insertIndexFor (ml, nullptr), nullptr);
+                const bool beforeMeter = ml.indexOf (eq.get()) < ml.indexOf (ml.findFirstPluginOfType<te::LevelMeterPlugin>());
+                const int chips = BusLanes::userDevices (ml).size();
+                rep.check (area.numRows() == returns + 1 && masterRow->getTrack() == nullptr && shown && shownTrack == nullptr && beforeMeter && chips >= 1,
+                           "Return and master rows (click opens devices, master devices before its meter)",
+                           String (area.numRows()) + " rows, master devices " + String (chips));
+                eq->deleteFromParent();
+            }
+            edit->deleteTrack (oldRev);
+            edit->deleteTrack (oldDel);
         }
 
         // --- sharing: project zip, crash bundle, update check -----------------------------------------

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EditViewState.h"
+#include "BusLanes.h"
 #include "PluginMenu.h"
 #include "AutomationLane.h"
 #include "ClipProperties.h"
@@ -1201,7 +1202,7 @@ public:
         name.setText (track->getName(), dontSendNotification);
         name.setEditable (false, true);
         name.setFont (FontOptions (14.0f, Font::bold));
-        name.onTextChange = [this] { track->setName (name.getText()); };
+        name.onTextChange = [this] { track->setName (name.getText()); track->state.removeProperty (ClipImport::autoNameID, nullptr); };
         name.setInterceptsMouseClicks (false, false);
         addAndMakeVisible (name);
 
@@ -1500,8 +1501,21 @@ private:
                 volume.setValue (vp->getVolumeDb(), dontSendNotification);
 
         String desc = "AUDIO";
+        te::Plugin* inst = nullptr;
         for (auto p : track->pluginList)
-            if (p->isSynth()) { desc = "INST  " + p->getName(); break; }
+            if (p->isSynth() || dynamic_cast<te::RackInstance*> (p) != nullptr) { inst = p; desc = "INST  " + (dynamic_cast<te::RackInstance*> (p) != nullptr ? String ("Drum Rack") : p->getName()); break; }
+
+        // tracks Pulse named follow their instrument (until the user renames them)
+        if (inst != nullptr && track->state.getProperty (ClipImport::autoNameID) && ! name.isBeingEdited())
+        {
+            const auto id = inst->itemID.toString();
+            if (track->state.getProperty (ClipImport::autoInstID).toString() != id)
+            {
+                track->state.setProperty (ClipImport::autoInstID, id, nullptr);
+                const auto want = ClipImport::instrumentTrackName (*inst);
+                if (want.isNotEmpty() && track->getName() != want) track->setName (want);
+            }
+        }
 
         if (track->isFrozen (te::Track::anyFreeze))
             desc = "FROZEN  " + desc;
@@ -2246,8 +2260,9 @@ class ArrangementView : public Component,
 public:
     static constexpr int headerWidth = 230;
 
-    explicit ArrangementView (EditViewState& e) : evs (e), ruler (e), markerStrip (e), tempoLane (e), content (e), playhead (e)
+    explicit ArrangementView (EditViewState& e) : evs (e), ruler (e), markerStrip (e), tempoLane (e), content (e), playhead (e), buses (e, headerWidth)
     {
+        addAndMakeVisible (buses);
         addAndMakeVisible (ruler);
         addAndMakeVisible (markerStrip);
         addChildComponent (tempoLane);
@@ -2336,6 +2351,7 @@ public:
         tools.removeFromRight (8);
         snapBox.setBounds (tools.removeFromRight (70));
         ruler.setBounds (top);
+        buses.setBounds (r.removeFromBottom (jmin (buses.idealHeight(), r.getHeight() / 3)));
         viewport.setBounds (r);
         layoutContent();
         playhead.setBounds (r.withTrimmedLeft (headerWidth).withTrimmedRight (viewport.getScrollBarThickness()));
@@ -2479,7 +2495,9 @@ private:
                 auto name = ClipImport::trackNameFor (evs.edit.engine, desc);
                 if (auto t = ClipImport::createContentTrack (evs.edit, name, false))
                 {
+                    t->state.setProperty (ClipImport::autoNameID, true, nullptr);
                     Presets::applyDescription (t, t->pluginList, desc);
+                    ClipImport::noteInstrument (*t);
                     evs.selectionManager.selectOnly (t);
                 }
                 return;
@@ -2633,7 +2651,8 @@ private:
             rows.push_back (r);
         }
 
-        layoutContent();
+        buses.rebuild();
+        resized();
     }
 
     /** Rubber-band selection across all lanes (Shift adds to the current selection). */
@@ -2702,6 +2721,7 @@ private:
     Viewport viewport;
     Content content;
     PlayheadOverlay playhead;
+    BusLanes::Area buses;
     std::vector<Row> rows;
     OwnedArray<Component> headers, lanes;
     Array<TrackLane*> trackLanes;
