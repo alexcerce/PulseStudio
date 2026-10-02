@@ -1,5 +1,8 @@
 #pragma once
 
+#include "Meters.h"
+#include "DrumRack.h"
+
 #include "EditViewState.h"
 #include "Scales.h"
 #include "ClipEnvelopes.h"
@@ -195,10 +198,21 @@ public:
                 auto y = pitchToY (n->getNoteNumber());
                 if (x > getWidth() || x + w < keyW || y > top + gh || y + rowH < top) continue;
                 const bool sel = selected.contains (n);
-                g.setColour (sel ? Colours::white : colour.withAlpha (0.45f + 0.55f * (float) n->getVelocity() / 127.0f));
-                g.fillRect (x, y + 1.0f, w, rowH - 2.0f);
-                g.setColour (sel ? colour : Colours::black.withAlpha (0.5f));
-                g.drawRect (x, y + 1.0f, w, rowH - 2.0f, 1.0f);
+                const float vel = (float) n->getVelocity() / 127.0f;
+                auto nr = Rectangle<float> (x, y + 1.0f, w, rowH - 2.0f);
+                const auto body = sel ? colour.brighter (0.6f) : colour.darker (0.55f - 0.55f * vel).withMultipliedSaturation (0.7f + 0.3f * vel);
+                g.setColour (body);
+                g.fillRoundedRectangle (nr, 2.0f);
+                g.setColour (Colours::white.withAlpha (sel ? 0.5f : 0.18f));   // top highlight
+                g.fillRect (nr.withHeight (jmin (2.0f, nr.getHeight() * 0.3f)).reduced (1.0f, 0.0f));
+                g.setColour (sel ? Colours::white : Colours::black.withAlpha (0.55f));
+                g.drawRoundedRectangle (nr, 2.0f, sel ? 1.5f : 1.0f);
+                if (w > 30.0f && rowH >= 11.0f)
+                {
+                    g.setColour (TrackColours::textOn (body).withAlpha (0.85f));
+                    g.setFont (FontOptions (jmin (11.0f, rowH - 2.0f)));
+                    g.drawText (MidiMessage::getMidiNoteName (n->getNoteNumber(), true, true, 3), nr.reduced (3.0f, 0.0f), Justification::centredLeft, false);
+                }
             }
 
             if (rubber)
@@ -222,10 +236,11 @@ public:
                 {
                     auto x = beatToX (n->getStartBeat().inBeats() - contentStart());
                     if (x < keyW || x > getWidth()) continue;
-                    auto h = (float) n->getVelocity() / 127.0f * (float) (velH - 8);
+                    auto h = (float) n->getVelocity() / 127.0f * (float) (velH - 12);
+                    g.setColour ((selected.contains (n) ? Colours::white : colour).withAlpha (0.8f));
+                    g.fillRect (x + 1.0f, vy + (float) velH - h, 2.0f, h);
                     g.setColour (selected.contains (n) ? Colours::white : colour);
-                    g.fillRect (x, vy + (float) velH - h, 3.0f, h);
-                    g.fillRect (x, vy + (float) velH - h, 8.0f, 2.0f);
+                    g.fillEllipse (x - 1.5f, vy + (float) velH - h - 3.5f, 7.0f, 7.0f);
                 }
             }
             else
@@ -255,11 +270,17 @@ public:
             g.fillRect (0.0f, y, (float) keyW, rowH);
             g.setColour (Colours::black.withAlpha (0.3f));
             g.fillRect (0.0f, y + rowH - 1.0f, (float) keyW, 1.0f);
-            if (p % 12 == 0 || foldBtn.getToggleState())
+            if (auto padName = drumNameFor (p); padName.isNotEmpty() && rowH >= 9.0f)
+            {
+                g.setColour (isBlack (p) ? Colour (0xffc8ccd2) : Colour (0xff2b3038));
+                g.setFont (FontOptions (jmin (10.5f, rowH - 1.0f)));
+                g.drawText (padName, 3, (int) y, keyW - 6, (int) rowH, Justification::centredLeft, true);
+            }
+            else if (p % 12 == 0 || foldBtn.getToggleState())
             {
                 g.setColour (Colour (0xff495057));
-                g.setFont (FontOptions (10.0f));
-                g.drawText (MidiMessage::getMidiNoteName (p, true, true, 4), keyW - 30, (int) y, 28, (int) rowH, Justification::centredRight);
+                g.setFont (FontOptions (10.0f, p % 12 == 0 ? Font::bold : Font::plain));
+                g.drawText (MidiMessage::getMidiNoteName (p, true, true, 3), keyW - 30, (int) y, 28, (int) rowH, Justification::centredRight);
             }
         }
         g.setColour (Colour (0xff111317));
@@ -659,6 +680,19 @@ private:
             m.addSubMenu (pl->getName(), sub);
         }
         m.showMenuAsync (PopupMenu::Options().withTargetComponent (&laneBox));
+    }
+
+    /** On a Drum Rack track: the name of the pad that plays this note (empty otherwise). */
+    String drumNameFor (int note)
+    {
+        if (clip == nullptr) return {};
+        auto* t = dynamic_cast<te::AudioTrack*> (clip->getTrack());
+        auto* rack = t != nullptr ? DrumRack::rackOf (DrumRack::findOnTrack (*t)) : nullptr;
+        if (rack == nullptr) return {};
+        const int slot = DrumRack::padForNote (*rack, note);
+        if (slot < 0) return {};
+        auto n = DrumRack::padName (*rack, slot);
+        return n.isNotEmpty() ? n.upToFirstOccurrenceOf (" (synth)", false, false) : DrumRack::defaultPadLabel (slot);
     }
 
     void drawEnvelopeLane (Graphics& g, float laneY, Colour colour)

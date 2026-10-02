@@ -91,7 +91,7 @@ public:
                 void timerCallback() override
                 {
                     if (step > 0) mc.saveSnapshot (dir.getChildFile ("view_" + String (step - 1) + ".png"));
-                    if (step >= 5) { stopTimer(); JUCEApplication::quit(); return; }
+                    if (step >= 6) { stopTimer(); JUCEApplication::quit(); return; }
                     mc.prepareSnapshot (step++);
                 }
                 MainComponent& mc;

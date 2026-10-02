@@ -230,149 +230,6 @@ private:
     std::shared_ptr<std::atomic<int>> genPtr = std::make_shared<std::atomic<int>> (0);
 };
 
-//==============================================================================
-/** Draggable list of built-in devices and scanned VST3 plugins. */
-class PluginListBox : public Component,
-                      private ListBoxModel,
-                      private ChangeListener,
-                      private Timer
-{
-public:
-    PluginListBox (EditViewState& e) : evs (e)
-    {
-        list.setModel (this);
-        list.setRowHeight (22);
-        list.setColour (ListBox::backgroundColourId, Theme::panel);
-        addAndMakeVisible (list);
-        evs.edit.engine.getPluginManager().knownPluginList.addChangeListener (this);
-        refresh();
-        startTimer (1500);   // picks up newly saved presets
-    }
-
-    ~PluginListBox() override { evs.edit.engine.getPluginManager().knownPluginList.removeChangeListener (this); }
-
-    void resized() override { list.setBounds (getLocalBounds()); }
-
-    void refresh()
-    {
-        rows.clear();
-        rows.push_back ({ "BUILT-IN INSTRUMENTS", {}, true });
-        for (auto& b : ClipImport::builtIns()) if (b.synth)   rows.push_back ({ b.name, String ("plugin:builtin:") + b.type, false });
-        rows.push_back ({ "BUILT-IN EFFECTS", {}, true });
-        for (auto& b : ClipImport::builtIns()) if (! b.synth && ! b.midiFx) rows.push_back ({ b.name, String ("plugin:builtin:") + b.type, false });
-        rows.push_back ({ "MIDI EFFECTS", {}, true });
-        for (auto& b : ClipImport::builtIns()) if (b.midiFx) rows.push_back ({ b.name, String ("plugin:builtin:") + b.type, false });
-
-        auto types = evs.edit.engine.getPluginManager().knownPluginList.getTypes();
-        std::sort (types.begin(), types.end(), [] (auto& a, auto& b) { return a.name.compareIgnoreCase (b.name) < 0; });
-
-        rows.push_back ({ "TRACK PRESETS", {}, true });
-        auto trackPresets = Workflow::trackPresets();
-        for (auto& f : trackPresets)
-            rows.push_back ({ f.getFileNameWithoutExtension(), "plugin:track:" + f.getFullPathName(), false });
-        if (trackPresets.isEmpty())
-            rows.push_back ({ "(right-click a track header > Save track preset)", {}, false });
-
-        rows.push_back ({ "CHAIN PRESETS", {}, true });
-        auto chains = Presets::chainPresets();
-        for (auto& f : chains)
-            rows.push_back ({ f.getFileNameWithoutExtension(), "plugin:chain:" + f.getFullPathName(), false });
-        if (chains.isEmpty())
-            rows.push_back ({ "(save one from the device chain header)", {}, false });
-
-        for (bool inst : { true, false })
-        {
-            rows.push_back ({ inst ? "VST3 INSTRUMENTS" : "VST3 EFFECTS", {}, true });
-            bool any = false;
-            for (auto& d : types)
-                if (d.isInstrument == inst)
-                {
-                    rows.push_back ({ d.name + "  -  " + d.manufacturerName, "plugin:ext:" + d.createIdentifierString(), false });
-                    any = true;
-                }
-            if (! any)
-                rows.push_back ({ "(none - use Plugins... to scan)", {}, false });
-        }
-
-        presetSignature = currentPresetSignature();
-        list.updateContent();
-        list.repaint();
-    }
-
-private:
-    struct Row { String name, id; bool header; };
-
-    int getNumRows() override { return (int) rows.size(); }
-
-    void paintListBoxItem (int row, Graphics& g, int w, int h, bool selected) override
-    {
-        if (row < 0 || row >= (int) rows.size()) return;
-        auto& r = rows[(size_t) row];
-
-        if (r.header)
-        {
-            g.setColour (Theme::muted);
-            g.setFont (FontOptions (11.5f, Font::bold));
-            g.drawText (r.name, 8, 0, w - 8, h, Justification::bottomLeft);
-            return;
-        }
-
-        if (selected) g.fillAll (Theme::accent.withAlpha (0.25f));
-        g.setColour (r.id.isEmpty() ? Theme::muted : Theme::text);
-        g.setFont (FontOptions (13.0f));
-        g.drawText (r.name, 14, 0, w - 16, h, Justification::centredLeft, true);
-    }
-
-    var getDragSourceDescription (const SparseSet<int>& selected) override
-    {
-        if (selected.size() == 1)
-            if (auto row = selected[0]; row >= 0 && row < (int) rows.size())
-                return rows[(size_t) row].id.isNotEmpty() ? var (rows[(size_t) row].id) : var();
-        return {};
-    }
-
-    // Double-click adds the device to the selected track.
-    void listBoxItemDoubleClicked (int row, const MouseEvent&) override
-    {
-        if (row < 0 || row >= (int) rows.size() || rows[(size_t) row].id.isEmpty()) return;
-
-        if (Workflow::isTrackPreset (rows[(size_t) row].id))
-        {
-            evs.edit.getUndoManager().beginNewTransaction ("Load track preset");
-            if (auto t = Workflow::loadTrackPreset (evs.edit, Workflow::trackPresetFile (rows[(size_t) row].id)))
-                evs.selectionManager.selectOnly (t);
-            return;
-        }
-
-        if (auto t = EngineHelpers::getSelectedTrack (evs.selectionManager))
-            Presets::applyDescription (t, t->pluginList, rows[(size_t) row].id);
-    }
-
-    void changeListenerCallback (ChangeBroadcaster*) override { refresh(); }
-
-    static String currentPresetSignature()
-    {
-        String sig;
-        for (auto& f : Workflow::trackPresets()) sig << f.getFileName() << ";";
-        for (auto& f : Presets::chainPresets())  sig << f.getFileName() << ";";
-        return sig;
-    }
-
-    void timerCallback() override
-    {
-        if (isShowing() && currentPresetSignature() != presetSignature)
-            refresh();
-    }
-
-    String presetSignature;
-
-    EditViewState& evs;
-    ListBox list;
-    std::vector<Row> rows;
-};
-
-//==============================================================================
-/** Left-hand browser: file places + tree (audio/MIDI, with preview) and the device list. */
 /** Browser helpers: favourites (stored in the settings) and file search. */
 namespace BrowserSearch
 {
@@ -428,6 +285,204 @@ namespace BrowserSearch
     }
 }
 
+//==============================================================================
+/** Draggable list of built-in devices and scanned VST3 plugins. */
+class PluginListBox : public Component,
+                      private ListBoxModel,
+                      private ChangeListener,
+                      private Timer
+{
+public:
+    PluginListBox (EditViewState& e) : evs (e)
+    {
+        list.setModel (this);
+        list.setRowHeight (22);
+        list.setColour (ListBox::backgroundColourId, Theme::panel);
+        addAndMakeVisible (list);
+        evs.edit.engine.getPluginManager().knownPluginList.addChangeListener (this);
+        refresh();
+        startTimer (1500);   // picks up newly saved presets
+    }
+
+    ~PluginListBox() override { evs.edit.engine.getPluginManager().knownPluginList.removeChangeListener (this); }
+
+    void resized() override { list.setBounds (getLocalBounds()); }
+
+    /** Category: 0 instruments, 1 drums, 2 audio effects, 3 MIDI effects, 4 plugins, 5 presets. */
+    void setFilter (int cat, const String& query)
+    {
+        category = cat;
+        words = BrowserSearch::queryWords (query);
+        refresh();
+    }
+
+    static bool isDrumType (const String& type) { return type.containsIgnoreCase ("drum"); }
+
+    void refresh()
+    {
+        rows.clear();
+        auto add = [this] (Row r)
+        {
+            if (! r.header && r.id.isNotEmpty() && ! words.isEmpty() && ! BrowserSearch::matches (r.name, words)) return;
+            rows.push_back (r);
+        };
+        auto header = [this] (const String& t) { rows.push_back ({ t, {}, true }); };
+
+        auto types = evs.edit.engine.getPluginManager().knownPluginList.getTypes();
+        std::sort (types.begin(), types.end(), [] (auto& a, auto& b) { return a.name.compareIgnoreCase (b.name) < 0; });
+
+        if (category == 0 || category == 1)
+        {
+            header (category == 0 ? "PULSE INSTRUMENTS" : "DRUMS");
+            for (auto& b : ClipImport::builtIns())
+                if (b.synth && (category == 0 || isDrumType (b.type)))
+                    add ({ b.name, String ("plugin:builtin:") + b.type, false, 0 });
+            if (category == 0)
+            {
+                header ("VST3 INSTRUMENTS");
+                for (auto& d : types) if (d.isInstrument) add ({ d.name + "  -  " + d.manufacturerName, "plugin:ext:" + d.createIdentifierString(), false, 4 });
+            }
+        }
+        if (category == 2)
+        {
+            header ("PULSE EFFECTS");
+            for (auto& b : ClipImport::builtIns()) if (! b.synth && ! b.midiFx) add ({ b.name, String ("plugin:builtin:") + b.type, false, 2 });
+            header ("VST3 EFFECTS");
+            for (auto& d : types) if (! d.isInstrument) add ({ d.name + "  -  " + d.manufacturerName, "plugin:ext:" + d.createIdentifierString(), false, 4 });
+        }
+        if (category == 3)
+        {
+            header ("MIDI EFFECTS");
+            for (auto& b : ClipImport::builtIns()) if (b.midiFx) add ({ b.name, String ("plugin:builtin:") + b.type, false, 3 });
+        }
+        if (category == 4)
+        {
+            for (bool inst : { true, false })
+            {
+                header (inst ? "VST3 INSTRUMENTS" : "VST3 EFFECTS");
+                bool any = false;
+                for (auto& d : types)
+                    if (d.isInstrument == inst) { add ({ d.name + "  -  " + d.manufacturerName, "plugin:ext:" + d.createIdentifierString(), false, 4 }); any = true; }
+                if (! any) rows.push_back ({ "(none - use Plugins... to scan)", {}, false });
+            }
+            presetSignature = currentPresetSignature();
+            list.updateContent();
+            list.repaint();
+            return;
+        }
+        if (category != 5)
+        {
+            presetSignature = currentPresetSignature();
+            list.updateContent();
+            list.repaint();
+            return;
+        }
+
+        rows.push_back ({ "TRACK PRESETS", {}, true });
+        auto trackPresets = Workflow::trackPresets();
+        for (auto& f : trackPresets)
+            add ({ f.getFileNameWithoutExtension(), "plugin:track:" + f.getFullPathName(), false, 5 });
+        if (trackPresets.isEmpty())
+            rows.push_back ({ "(right-click a track header > Save track preset)", {}, false });
+
+        rows.push_back ({ "CHAIN PRESETS", {}, true });
+        auto chains = Presets::chainPresets();
+        for (auto& f : chains)
+            add ({ f.getFileNameWithoutExtension(), "plugin:chain:" + f.getFullPathName(), false, 5 });
+        if (chains.isEmpty())
+            rows.push_back ({ "(save one from the device chain header)", {}, false });
+
+        presetSignature = currentPresetSignature();
+        list.updateContent();
+        list.repaint();
+    }
+
+private:
+    struct Row { String name, id; bool header; int kind = -1; };
+    int category = 0;
+    StringArray words;
+
+    int getNumRows() override { return (int) rows.size(); }
+
+    void paintListBoxItem (int row, Graphics& g, int w, int h, bool selected) override
+    {
+        if (row < 0 || row >= (int) rows.size()) return;
+        auto& r = rows[(size_t) row];
+
+        if (r.header)
+        {
+            g.setColour (Theme::muted.withAlpha (0.75f));
+            g.setFont (FontOptions (10.0f, Font::bold));
+            g.drawText (r.name, 8, 0, w - 8, h, Justification::bottomLeft);
+            return;
+        }
+
+        if (selected)
+        {
+            g.setColour (Theme::accent.withAlpha (0.22f));
+            g.fillRoundedRectangle (Rectangle<float> (3.0f, 1.0f, (float) w - 6.0f, (float) h - 2.0f), 3.0f);
+        }
+        if (r.kind >= 0)
+        {
+            const uint32 c[] = { 0xffffa94d, 0xffff6b6b, 0xff4dabf7, 0xffb197fc, 0xff8a929d, 0xff69db7c };
+            g.setColour (Colour (c[jlimit (0, 5, r.kind)]));
+            g.fillRoundedRectangle (10.0f, h * 0.5f - 4.0f, 8.0f, 8.0f, 2.0f);
+        }
+        g.setColour (r.id.isEmpty() ? Theme::muted : (selected ? Colours::white : Theme::text));
+        g.setFont (FontOptions (12.5f));
+        g.drawText (r.name, 24, 0, w - 26, h, Justification::centredLeft, true);
+    }
+
+    var getDragSourceDescription (const SparseSet<int>& selected) override
+    {
+        if (selected.size() == 1)
+            if (auto row = selected[0]; row >= 0 && row < (int) rows.size())
+                return rows[(size_t) row].id.isNotEmpty() ? var (rows[(size_t) row].id) : var();
+        return {};
+    }
+
+    // Double-click adds the device to the selected track.
+    void listBoxItemDoubleClicked (int row, const MouseEvent&) override
+    {
+        if (row < 0 || row >= (int) rows.size() || rows[(size_t) row].id.isEmpty()) return;
+
+        if (Workflow::isTrackPreset (rows[(size_t) row].id))
+        {
+            evs.edit.getUndoManager().beginNewTransaction ("Load track preset");
+            if (auto t = Workflow::loadTrackPreset (evs.edit, Workflow::trackPresetFile (rows[(size_t) row].id)))
+                evs.selectionManager.selectOnly (t);
+            return;
+        }
+
+        if (auto t = EngineHelpers::getSelectedTrack (evs.selectionManager))
+            Presets::applyDescription (t, t->pluginList, rows[(size_t) row].id);
+    }
+
+    void changeListenerCallback (ChangeBroadcaster*) override { refresh(); }
+
+    static String currentPresetSignature()
+    {
+        String sig;
+        for (auto& f : Workflow::trackPresets()) sig << f.getFileName() << ";";
+        for (auto& f : Presets::chainPresets())  sig << f.getFileName() << ";";
+        return sig;
+    }
+
+    void timerCallback() override
+    {
+        if (isShowing() && currentPresetSignature() != presetSignature)
+            refresh();
+    }
+
+    String presetSignature;
+
+    EditViewState& evs;
+    ListBox list;
+    std::vector<Row> rows;
+};
+
+//==============================================================================
+/** Left-hand browser: file places + tree (audio/MIDI, with preview) and the device list. */
 /** A flat list of files (search results / favourites) that can be dragged like the file tree. */
 class FileResultsList : public ListBox,
                         private ListBoxModel,
@@ -511,6 +566,7 @@ private:
 
 class Browser : public Component,
                 private FileBrowserListener,
+                private ListBoxModel,
                 private Timer
 {
 public:
@@ -524,18 +580,10 @@ public:
     {
         thread.startThread (Thread::Priority::low);
 
-        for (auto* b : { &filesTab, &devicesTab })
-        {
-            b->setRadioGroupId (2);
-            b->setClickingTogglesState (true);
-            b->setColour (TextButton::buttonOnColourId, Colour (0xff2b3a4d));
-            addAndMakeVisible (b);
-        }
-        filesTab.onClick = [this] { showFiles (true); };
-        devicesTab.onClick = [this] { showFiles (false); };
-
-        places.onChange = [this] { placeChosen(); };
-        addAndMakeVisible (places);
+        sidebar.setModel (this);
+        sidebar.setRowHeight (22);
+        sidebar.setColour (ListBox::backgroundColourId, Colour (0xff15181c));
+        addAndMakeVisible (sidebar);
 
         preview.setToggleState (settings.getBoolValue ("browserPreview", true), dontSendNotification);
         preview.setTooltip ("Play audio files when you click them");
@@ -559,11 +607,11 @@ public:
         addAndMakeVisible (tree);
         addChildComponent (plugins);
 
-        search.setTextToShowWhenEmpty ("Search this place...", Theme::muted);
-        search.setColour (TextEditor::backgroundColourId, Colour (0xff111317));
+        search.setTextToShowWhenEmpty ("Search", Theme::muted);
+        search.setColour (TextEditor::backgroundColourId, Colour (0xff101215));
         search.setColour (TextEditor::outlineColourId, Theme::line);
-        search.setTooltip ("Type words from the file name (searches all sub-folders). Esc clears.");
-        search.onTextChange = [this] { startTimer (250); };
+        search.setIndents (26, 4);
+        search.onTextChange = [this] { startTimer (200); };
         search.onEscapeKey = [this] { search.clear(); startTimer (1); };
         addAndMakeVisible (search);
 
@@ -571,8 +619,12 @@ public:
         results.onMenu = [this] (const File& f, Component* c) { showFileMenu (f, c); };
         addChildComponent (results);
 
-        rebuildPlaces();
-        showFiles (true);
+        rebuildSidebar();
+        const auto saved = settings.getValue ("browserSection", "cat:0");
+        int row = 0;
+        for (int i = 0; i < (int) entries.size(); ++i) if (entries[(size_t) i].key == saved) row = i;
+        if (entries[(size_t) row].header) row = 1;
+        sidebar.selectRow (row);
     }
 
     ~Browser() override
@@ -588,51 +640,160 @@ public:
         g.fillAll (Theme::panel);
         g.setColour (Theme::line);
         g.drawVerticalLine (getWidth() - 1, 0.0f, (float) getHeight());
+        g.drawVerticalLine (sidebar.getRight(), (float) sidebar.getY(), (float) sidebar.getBottom());
+
         g.setColour (Theme::muted);
-        g.setFont (FontOptions (11.5f));
-        if (filesTab.getToggleState())
-            g.drawText ("Drag files onto a track, an empty area or a clip slot", 8, getHeight() - 20, getWidth() - 12, 16, Justification::centredLeft);
-        else
-            g.drawText ("Drag onto a track or double-click to add", 8, getHeight() - 20, getWidth() - 12, 16, Justification::centredLeft);
+        g.setFont (FontOptions (11.0f));
+        g.drawText (isFileMode() ? "Drag onto a track, the empty area or a clip slot" : "Drag onto a track or double-click to add",
+                    hintArea, Justification::centredLeft, true);
+    }
+
+    void paintOverChildren (Graphics& g) override
+    {
+        auto s = search.getBounds().toFloat();   // search icon
+        g.setColour (Theme::muted);
+        g.drawEllipse (s.getX() + 8.0f, s.getCentreY() - 6.0f, 9.0f, 9.0f, 1.4f);
+        g.drawLine (s.getX() + 16.0f, s.getCentreY() + 2.0f, s.getX() + 19.5f, s.getCentreY() + 5.5f, 1.6f);
     }
 
     void resized() override
     {
-        auto r = getLocalBounds().withTrimmedRight (1).reduced (6);
-        auto tabs = r.removeFromTop (26);
-        filesTab.setBounds (tabs.removeFromLeft (tabs.getWidth() / 2).reduced (1, 0));
-        devicesTab.setBounds (tabs.reduced (1, 0));
-        r.removeFromTop (6);
-        r.removeFromBottom (18);
-
-        auto top = r.removeFromTop (26);
-        syncBtn.setBounds (top.removeFromRight (56));
-        preview.setBounds (top.removeFromRight (74));
-        top.removeFromRight (4);
-        places.setBounds (top);
-        r.removeFromTop (4);
-        search.setBounds (r.removeFromTop (24));
-        r.removeFromTop (4);
+        auto r = getLocalBounds().withTrimmedRight (1);
+        auto top = r.removeFromTop (34).reduced (6, 5);
+        search.setBounds (top);
+        auto bottom = r.removeFromBottom (26).reduced (6, 3);
+        syncBtn.setBounds (bottom.removeFromRight (52));
+        preview.setBounds (bottom.removeFromRight (70));
+        hintArea = bottom;
+        sidebar.setBounds (r.removeFromLeft (112));
+        r.removeFromLeft (1);
         tree.setBounds (r);
         results.setBounds (r);
-        plugins.setBounds (r.withTop (tabs.getBottom() + 6));
+        plugins.setBounds (r);
     }
 
 private:
-    void showFiles (bool files)
+    //==============================================================================
+    // Sidebar
+    enum class Kind { header, favourites, category, place, addFolder };
+    struct Entry { String label, key; Kind kind; int index; bool header = false; };
+    std::vector<Entry> entries;
+    static inline const char* categoryNames[] = { "Instruments", "Drums", "Audio Effects", "MIDI Effects", "Plugins", "Presets" };
+
+    void rebuildSidebar()
     {
-        filesTab.setToggleState (files, dontSendNotification);
-        devicesTab.setToggleState (! files, dontSendNotification);
-        tree.setVisible (files && ! showingResults());
-        results.setVisible (files && showingResults());
-        search.setVisible (files);
-        places.setVisible (files);
-        preview.setVisible (files);
-        syncBtn.setVisible (files);
-        plugins.setVisible (! files);
-        if (! files) previewer.stop();
-        resized();
-        repaint();
+        entries.clear();
+        entries.push_back ({ "COLLECTIONS", {}, Kind::header, 0, true });
+        entries.push_back ({ "Favourites", "fav", Kind::favourites, 0 });
+        entries.push_back ({ "CATEGORIES", {}, Kind::header, 0, true });
+        for (int i = 0; i < 6; ++i)
+            entries.push_back ({ categoryNames[i], "cat:" + String (i), Kind::category, i });
+        entries.push_back ({ "PLACES", {}, Kind::header, 0, true });
+        auto folders = placeFolders();
+        for (int i = 0; i < folders.size(); ++i)
+            entries.push_back ({ folders[i].getFileName(), "place:" + folders[i].getFullPathName(), Kind::place, i });
+        entries.push_back ({ "+ Add folder...", "add", Kind::addFolder, 0 });
+        sidebar.updateContent();
+        sidebar.repaint();
+    }
+
+    int getNumRows() override { return (int) entries.size(); }
+
+    void paintListBoxItem (int row, Graphics& g, int w, int h, bool selected) override
+    {
+        if (! isPositiveAndBelow (row, (int) entries.size())) return;
+        auto& e = entries[(size_t) row];
+        if (e.header)
+        {
+            g.setColour (Theme::muted.withAlpha (0.7f));
+            g.setFont (FontOptions (10.0f, Font::bold));
+            g.drawText (e.label, 8, 0, w - 8, h, Justification::bottomLeft);
+            return;
+        }
+        if (selected)
+        {
+            g.setColour (Theme::accent.withAlpha (0.22f));
+            g.fillRoundedRectangle (Rectangle<float> (3.0f, 1.0f, (float) w - 6.0f, (float) h - 2.0f), 3.0f);
+        }
+        Colour dot = Theme::muted;
+        switch (e.kind)
+        {
+            case Kind::favourites: dot = Theme::yellow; break;
+            case Kind::category:   dot = categoryColour (e.index); break;
+            case Kind::place:      dot = Colour (0xff8a929d); break;
+            default: break;
+        }
+        g.setColour (dot);
+        if (e.kind == Kind::place) g.fillRoundedRectangle (10.0f, h * 0.5f - 4.0f, 9.0f, 7.0f, 1.5f);   // folder
+        else if (e.kind != Kind::addFolder) g.fillEllipse (11.0f, h * 0.5f - 3.5f, 7.0f, 7.0f);
+        g.setColour (e.kind == Kind::addFolder ? Theme::muted : (selected ? Colours::white : Theme::text));
+        g.setFont (FontOptions (12.5f));
+        g.drawText (e.label, e.kind == Kind::addFolder ? 10 : 25, 0, w - 28, h, Justification::centredLeft, true);
+    }
+
+    static Colour categoryColour (int i)
+    {
+        const uint32 c[] = { 0xffffa94d, 0xffff6b6b, 0xff4dabf7, 0xffb197fc, 0xff8a929d, 0xff69db7c };
+        return Colour (c[jlimit (0, 5, i)]);
+    }
+
+    void selectedRowsChanged (int row) override
+    {
+        if (! isPositiveAndBelow (row, (int) entries.size())) return;
+        auto e = entries[(size_t) row];
+        if (e.header) { sidebar.selectRow (row + 1); return; }
+        if (e.kind == Kind::addFolder) { addFolder(); return; }
+        current = e;
+        settings.setValue ("browserSection", e.key);
+        if (e.kind == Kind::place)
+        {
+            auto folders = placeFolders();
+            if (isPositiveAndBelow (e.index, folders.size())) contents.setDirectory (folders[e.index], true, true);
+        }
+        search.setTextToShowWhenEmpty (e.kind == Kind::category ? "Search " + e.label.toLowerCase()
+                                       : e.kind == Kind::favourites ? String ("Search favourites") : "Search " + e.label + " (all sub-folders)", Theme::muted);
+        refreshContent();
+    }
+
+    void listBoxItemClicked (int row, const MouseEvent& e) override
+    {
+        if (! e.mods.isPopupMenu() || ! isPositiveAndBelow (row, (int) entries.size())) return;
+        auto en = entries[(size_t) row];
+        if (en.kind != Kind::place) return;
+        PopupMenu m;
+        auto folders = placeFolders();
+        const auto f = folders[en.index];
+        m.addItem ("Show in Explorer", [f] { f.revealToUser(); });
+        const bool custom = StringArray::fromLines (settings.getValue ("browserFolders")).contains (f.getFullPathName());
+        m.addItem ("Remove from places", custom, false, [this, f]
+        {
+            auto list = StringArray::fromLines (settings.getValue ("browserFolders"));
+            list.removeString (f.getFullPathName());
+            settings.setValue ("browserFolders", list.joinIntoString ("\n"));
+            rebuildSidebar();
+        });
+        m.showMenuAsync (PopupMenu::Options().withMousePosition());
+    }
+
+    void addFolder()
+    {
+        chooser = std::make_shared<FileChooser> ("Add a folder to the browser");
+        chooser->launchAsync (FileBrowserComponent::openMode | FileBrowserComponent::canSelectDirectories,
+                              [this] (const FileChooser& fc)
+                              {
+                                  auto d = fc.getResult();
+                                  if (d.isDirectory())
+                                  {
+                                      auto list = StringArray::fromLines (settings.getValue ("browserFolders"));
+                                      list.addIfNotAlreadyThere (d.getFullPathName());
+                                      list.removeEmptyStrings();
+                                      settings.setValue ("browserFolders", list.joinIntoString ("\n"));
+                                  }
+                                  rebuildSidebar();
+                                  for (int i = 0; i < (int) entries.size(); ++i)
+                                      if (entries[(size_t) i].key == "place:" + d.getFullPathName()) { sidebar.selectRow (i); return; }
+                                  sidebar.selectRow (1);
+                              });
     }
 
     Array<File> placeFolders()
@@ -652,89 +813,44 @@ private:
         return folders;
     }
 
-    void rebuildPlaces()
-    {
-        places.clear (dontSendNotification);
-        places.addItem (String (CharPointer_UTF8 ("\xe2\x98\x85 Favourites")), favouritesId);
-        int id = 1;
-        for (auto& f : placeFolders())
-            places.addItem (f.getFileName(), id++);
-
-        places.addSeparator();
-        places.addItem ("Add folder...", 1000);
-
-        auto last = settings.getIntValue ("browserPlace", 1);
-        places.setSelectedId (last == favouritesId ? favouritesId : jlimit (1, id - 1, last), dontSendNotification);
-        placeChosen();
-    }
-
-    void placeChosen()
-    {
-        if (places.getSelectedId() == 1000)
-        {
-            chooser = std::make_shared<FileChooser> ("Add a folder to the browser");
-            chooser->launchAsync (FileBrowserComponent::openMode | FileBrowserComponent::canSelectDirectories,
-                                  [this] (const FileChooser& fc)
-                                  {
-                                      auto d = fc.getResult();
-                                      if (d.isDirectory())
-                                      {
-                                          auto list = StringArray::fromLines (settings.getValue ("browserFolders"));
-                                          list.addIfNotAlreadyThere (d.getFullPathName());
-                                          list.removeEmptyStrings();
-                                          settings.setValue ("browserFolders", list.joinIntoString ("\n"));
-                                          settings.setValue ("browserPlace", placeFolders().indexOf (d) + 1);
-                                      }
-                                      rebuildPlaces();
-                                  });
-            return;
-        }
-
-        if (places.getSelectedId() == favouritesId)
-        {
-            settings.setValue ("browserPlace", favouritesId);
-            refreshResults();
-            return;
-        }
-
-        auto folders = placeFolders();
-        auto idx = places.getSelectedId() - 1;
-        if (idx >= 0 && idx < folders.size())
-        {
-            settings.setValue ("browserPlace", places.getSelectedId());
-            contents.setDirectory (folders[idx], true, true);
-        }
-        refreshResults();
-    }
-
-    static constexpr int favouritesId = 999;
-
-    bool showingResults() const { return places.getSelectedId() == favouritesId || search.getText().trim().isNotEmpty(); }
+    //==============================================================================
+    bool isFileMode() const { return current.kind == Kind::place || current.kind == Kind::favourites; }
+    bool showingResults() const { return current.kind == Kind::favourites || (current.kind == Kind::place && search.getText().trim().isNotEmpty()); }
 
     File currentFolder()
     {
         auto folders = placeFolders();
-        auto idx = places.getSelectedId() - 1;
-        return idx >= 0 && idx < folders.size() ? folders[idx] : File();
+        return isPositiveAndBelow (current.index, folders.size()) ? folders[current.index] : File();
     }
 
     void timerCallback() override
     {
         stopTimer();
-        refreshResults();
+        refreshContent();
     }
 
-    /** Shows the favourites and / or search results (or the folder tree when neither applies). */
-    void refreshResults()
+    /** Shows what the sidebar selection and the search box ask for. */
+    void refreshContent()
     {
         cancelSearch();
         const auto q = search.getText().trim();
-        const bool favs = places.getSelectedId() == favouritesId;
-        tree.setVisible (filesTab.getToggleState() && ! showingResults());
-        results.setVisible (filesTab.getToggleState() && showingResults());
+        const bool cat = current.kind == Kind::category;
+        plugins.setVisible (cat);
+        tree.setVisible (! cat && ! showingResults());
+        results.setVisible (! cat && showingResults());
+        preview.setVisible (! cat);
+        syncBtn.setVisible (! cat);
+        if (cat) previewer.stop();
+        repaint();
+
+        if (cat)
+        {
+            plugins.setFilter (current.index, q);
+            return;
+        }
         if (! showingResults()) return;
 
-        if (favs)
+        if (current.kind == Kind::favourites)
         {
             Array<File> list;
             const auto words = BrowserSearch::queryWords (q);
@@ -781,7 +897,7 @@ private:
         m.addItem (fav ? "Remove from favourites" : "Add to favourites", [this, f, fav]
         {
             BrowserSearch::setFavourite (settings, f, ! fav);
-            if (places.getSelectedId() == favouritesId) refreshResults();
+            if (current.kind == Kind::favourites) refreshContent();
             results.repaint();
         });
         m.addItem ("Show in Explorer", [f] { f.revealToUser(); });
@@ -809,10 +925,11 @@ private:
     FileTreeComponent tree;
     AudioPreviewer previewer;
     PluginListBox plugins;
-    TextButton filesTab { "Files" }, devicesTab { "Devices" };
+    ListBox sidebar;
+    Entry current { {}, {}, Kind::category, 0 };
     ToggleButton preview { "Preview" }, syncBtn { "Sync" };
-    ComboBox places;
     TextEditor search;
+    Rectangle<int> hintArea;
     FileResultsList results { settings };
     std::unique_ptr<std::thread> searchThread;
     std::atomic<int> searchToken { 0 };

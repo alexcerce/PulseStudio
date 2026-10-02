@@ -109,7 +109,7 @@ public:
         if (browser)
         {
             browser->setVisible (showBrowser);
-            if (showBrowser) browser->setBounds (r.removeFromLeft (250));
+            if (showBrowser) browser->setBounds (r.removeFromLeft (330));
         }
 
         if (arrangement) { arrangement->setBounds (r); arrangement->setVisible (! showSession); }
@@ -776,6 +776,9 @@ public:
                     if (auto mc = dynamic_cast<te::MidiClip*> (tracks[2]->getClips().getFirst())) { pianoRoll->setClip (mc); }
                     showTab (Tab::pianoRoll); break;
             case 4: showSession = false; selectTrack (3); showTab (Tab::devices); break;
+            case 5: showSession = false; selectTrack (0);
+                    if (auto mc = dynamic_cast<te::MidiClip*> (tracks[0]->getClips().getFirst())) { pianoRoll->setClip (mc); }
+                    showTab (Tab::pianoRoll); break;
             default: break;
         }
         resized();

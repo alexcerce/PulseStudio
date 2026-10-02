@@ -49,7 +49,7 @@ when you start, touch it after each step, and delete it when you stop.
      numbers, master track row; clips use track colour; session view mixer footer.
    - ~~v0.22 Drag and drop~~ (done): reorder tracks by dragging headers, drag device cards to reorder / onto other tracks
      (Ctrl = copy), drag clips between arrangement and session slots, drag images + insertion indicators.
-   - v0.23 Look and feel: browser with category sidebar (Instruments, Audio Effects, MIDI Effects, Drums,
+   - ~~v0.23 Look and feel~~ (done): browser with category sidebar (Instruments, Audio Effects, MIDI Effects, Drums,
      Plugins, Samples, Favourites, Places); piano roll notes in track colour with velocity shading; device and
      instrument displays polish; transport polish.
    - v0.24 Editing: audio quantize, MIDI tools (velocity editing, humanize, legato, strum, fit to scale),
@@ -87,3 +87,4 @@ when you start, touch it after each step, and delete it when you stop.
   chords, lead, pad, session scenes); --snapshots mode. 139 checks pass. Note: snapshot playback depends on the
   audio device being free; meter logic is covered by a self-test instead.
 - 2026-10-02: v0.22.0 drag and drop: tracks, devices (reorder / to other tracks, Ctrl copy), session clips, scene rename. 143 checks pass.
+- 2026-10-02: v0.23.0 browser sidebar (collections / categories / places, one search box), piano roll notes and drum pad names. 143 checks pass.
