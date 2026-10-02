@@ -47,6 +47,7 @@
 #include "UndoHistory.h"
 #include "TransportBar.h"
 #include "Sections.h"
+#include "ExportTools.h"
 
 /** "Pulse Studio.exe --selftest report.txt"
     Builds a scratch project in the temp folder, exercises the editing / routing / device
@@ -3886,6 +3887,34 @@ namespace SelfTest
                        "Song sections move, duplicate and delete their content",
                        afterMove + " / " + afterMove2 + " / " + afterDup + " / " + afterDel + " | " + secAfterMove + " | added at " + String (dStart) + " len " + String (dLen));
             ed = nullptr;
+        }
+
+        // --- v0.50: MP3 export, streaming-ready true peak ---------------------------------------------------
+        {
+            rep.step ("export formats");
+            // a sine with peaks between the samples (fs/4 at 45 degrees): its true peak is 3 dB above the sample peak
+            auto wav = dir.getChildFile ("tp.wav");
+            {
+                AudioBuffer<float> b (2, 48000 * 2);
+                for (int i = 0; i < b.getNumSamples(); ++i)
+                    for (int c = 0; c < 2; ++c) b.setSample (c, i, 0.98f * (float) std::sin (MathConstants<double>::halfPi * i + 0.785));
+                wav.deleteFile();
+                WavAudioFormat fmt;
+                std::unique_ptr<OutputStream> os (wav.createOutputStream());
+                std::unique_ptr<AudioFormatWriter> w (fmt.createWriterFor (os.get(), 48000.0, 2, 24, {}, 0));
+                os.release();
+                w->writeFromAudioSampleBuffer (b, 0, b.getNumSamples());
+            }
+            const float beforeTp = pulse::LoudnessAnalyser::measureFile (engine, wav).truePeakDb;
+            const float reduced = ExportTools::limitTruePeak (engine, wav, -1.0f);
+            const float afterTp = pulse::LoudnessAnalyser::measureFile (engine, wav).truePeakDb;
+            // MP3 through Windows' encoder
+            auto mp3 = dir.getChildFile ("tp.mp3");
+            const auto err = Mp3EncoderWin::encode (wav, mp3, 192);
+            const auto size = mp3.getSize();
+            rep.check (beforeTp > -0.5f && reduced > 0.5f && afterTp <= -0.9f && err.isEmpty() && size > 20000,
+                       "Export: true-peak limit for streaming, MP3 encoding",
+                       "true peak " + String (beforeTp, 1) + " -> " + String (afterTp, 2) + " dBTP, MP3 " + (err.isEmpty() ? String (size / 1024) + " KB" : err));
         }
 
         // --- sharing: project zip, crash bundle, update check -----------------------------------------

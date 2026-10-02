@@ -176,3 +176,6 @@ when you start, touch it after each step, and delete it when you stop.
 - 2026-10-02: v0.49.0 Sections.h + SectionStrip (move / duplicate / delete whole song sections with their content, split at
   edges, sections shift with the edits; demo song has Intro / Build / Drop). Session follow actions already existed.
   Automation inside a moved section is not copied (clips only). 211 checks pass.
+- 2026-10-02: v0.50.0 export: MP3 via Windows Media Foundation (Mp3EncoderWin.cpp, system libs only), "Streaming ready"
+  (-14 LUFS + offline true-peak limiter to -1 dBTP, ExportTools.h), stems in MP3. FLAC / OGG / MIDI export already
+  existed. 212 checks pass.

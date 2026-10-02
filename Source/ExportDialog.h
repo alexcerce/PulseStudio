@@ -4,6 +4,7 @@
 #include "Routing.h"
 #include "EditingOps.h"
 #include "BackgroundRender.h"
+#include "ExportTools.h"
 
 /** Export settings: format, bit depth, sample rate, normalisation, range and stems. */
 class ExportDialog : public Component
@@ -21,10 +22,11 @@ public:
             addAndMakeVisible (c);
         };
 
-        addRow (formatL, format, "Format", { "WAV", "AIFF", "FLAC", "OGG Vorbis" }, 1);
+        addRow (formatL, format, "Format", { "WAV", "AIFF", "FLAC", "OGG Vorbis", "MP3 320 kbps", "MP3 192 kbps" }, 1);
         addRow (depthL, depth, "Bit depth", { "16-bit", "24-bit", "32-bit float" }, 2);
         addRow (rateL, rate, "Sample rate", { "44.1 kHz", "48 kHz", "88.2 kHz", "96 kHz" }, 1);
-        addRow (normL, normalise, "Normalise", { "Off", "Peak to -0.3 dB", "Loudness -14 LUFS (streaming)", "Loudness -16 LUFS (Apple / podcasts)", "Loudness -9 LUFS (loud)" }, 1);
+        addRow (normL, normalise, "Normalise", { "Off", "Peak to -0.3 dB", "Loudness -14 LUFS (streaming)", "Loudness -16 LUFS (Apple / podcasts)", "Loudness -9 LUFS (loud)",
+                                                  "Streaming ready: -14 LUFS, true peak under -1 dBTP" }, 1);
         addRow (rangeL, range, "Range", { "Whole song", "Loop range" }, 1);
         if (selection.has_value() && ! selection->isEmpty())
         {
@@ -38,7 +40,11 @@ public:
         addAndMakeVisible (stems);
         addAndMakeVisible (masterFx);
 
-        format.onChange = [this] { depth.setEnabled (format.getSelectedId() <= 3); };
+        format.onChange = [this]
+        {
+            depth.setEnabled (format.getSelectedId() <= 3);
+            if (isMp3() && rate.getSelectedId() > 2) rate.setSelectedId (1);   // MP3 is 44.1 or 48 kHz
+        };
 
         exportBtn.setColour (TextButton::buttonColourId, Colour (0xff1c3a55));
         exportBtn.onClick = [this] { chooseDestination(); };
@@ -94,7 +100,7 @@ private:
 
     String extension() const
     {
-        const char* ext[] = { ".wav", ".aif", ".flac", ".ogg" };
+        const char* ext[] = { ".wav", ".aif", ".flac", ".ogg", ".mp3", ".mp3" };
         return ext[format.getSelectedId() - 1];
     }
 
@@ -106,6 +112,8 @@ private:
             case 2:  return fm.getAiffFormat();
             case 3:  return fm.getFlacFormat();
             case 4:  return fm.getOggFormat();
+            case 5:
+            case 6:  return fm.getWavFormat();   // rendered to WAV, then encoded
             default: return fm.getWavFormat();
         }
     }
@@ -116,6 +124,7 @@ private:
         p.audioFormat = audioFormat();
         const int depths[] = { 16, 24, 32 };
         p.bitDepth = format.getSelectedId() == 3 ? jmin (24, depths[depth.getSelectedId() - 1]) : depths[depth.getSelectedId() - 1];
+        if (isMp3()) p.bitDepth = 16;
         const double rates[] = { 44100.0, 48000.0, 88200.0, 96000.0 };
         p.sampleRateForAudio = rates[rate.getSelectedId() - 1];
         p.quality = format.getSelectedId() == 4 ? 8 : 0;
@@ -130,6 +139,7 @@ private:
             case 3: p.shouldNormaliseByLUFS = true; p.normaliseToLevelDb = -14.0f; break;
             case 4: p.shouldNormaliseByLUFS = true; p.normaliseToLevelDb = -16.0f; break;
             case 5: p.shouldNormaliseByLUFS = true; p.normaliseToLevelDb = -9.0f; break;
+            case 6: p.shouldNormaliseByLUFS = true; p.normaliseToLevelDb = -14.0f; break;   // + a true-peak pass afterwards
             default: break;
         }
 
@@ -172,22 +182,52 @@ private:
         }
     }
 
+    bool isMp3() const { return format.getSelectedId() >= 5; }
+    int mp3Kbps() const { return format.getSelectedId() == 5 ? 320 : 192; }
+    bool truePeakPass() const { return normalise.getSelectedId() == 6; }
+
+    /** After rendering: the true-peak pass and the MP3 encoding. Returns an error or "". */
+    static String finishFile (te::Engine& eng, const File& rendered, const File& dest, bool limit, int mp3Kbps)
+    {
+        if (limit) ExportTools::limitTruePeak (eng, rendered, -1.0f);
+        if (mp3Kbps > 0)
+        {
+            const auto err = Mp3EncoderWin::encode (rendered, dest, mp3Kbps);
+            rendered.deleteFile();
+            return err;
+        }
+        return {};
+    }
+
     void exportMix (const File& f)
     {
         edit.getTransport().stop (false, false);
         EditingOps::waitForClipProxies (edit);
         auto p = baseParams();
-        p.destFile = f;
+        const auto rendered = isMp3() ? f.getSiblingFile (f.getFileNameWithoutExtension() + " (render).wav") : f;
+        p.destFile = rendered;
         BackgroundRender::Job job;
         job.name = "Exporting " + f.getFileName();
         job.renders.push_back (p);
-        job.onDone = [f, &eng = edit.engine] (int ok, int, bool cancelled)
+        const bool limit = truePeakPass();
+        const int kbps = isMp3() ? mp3Kbps() : 0;
+        job.onDone = [f, rendered, limit, kbps, &eng = edit.engine] (int ok, int, bool cancelled)
         {
             if (cancelled) return;
-            String msg = ok > 0 ? "Exported " + f.getFileName() : String ("Export failed.");
+            const auto measureFirst = kbps > 0 && ok > 0;   // measure the WAV before it becomes MP3
+            pulse::LoudnessAnalyser::Result before;
+            String err;
             if (ok > 0)
             {
-                const auto m = pulse::LoudnessAnalyser::measureFile (eng, f);
+                if (limit) ExportTools::limitTruePeak (eng, rendered, -1.0f);
+                if (measureFirst) before = pulse::LoudnessAnalyser::measureFile (eng, rendered);
+                if (kbps > 0) err = finishFile (eng, rendered, f, false, kbps);
+            }
+            if (err.isNotEmpty()) ok = 0;
+            String msg = ok > 0 ? "Exported " + f.getFileName() : "Export failed." + (err.isNotEmpty() ? "\n" + err : String());
+            if (ok > 0)
+            {
+                const auto m = measureFirst ? before : pulse::LoudnessAnalyser::measureFile (eng, f);
                 msg << "\n\nLoudness " << String (m.integrated, 1) << " LUFS, true peak " << String (m.truePeakDb, 1) << " dBTP";
                 if (m.truePeakDb > -1.0f) msg << "\nThe true peak is above -1 dBTP: streaming services may add distortion when they encode it. Try the master limiter.";
             }
@@ -225,12 +265,18 @@ private:
             auto p = baseParams();
             p.useMasterPlugins = false;
             p.tracksToDo = te::toBitSet (juce::Array<te::Track*> { t });
-            p.destFile = folder.getChildFile (File::createLegalFileName (String (total).paddedLeft ('0', 2) + " " + t->getName()) + extension());
+            p.destFile = folder.getChildFile (File::createLegalFileName (String (total).paddedLeft ('0', 2) + " " + t->getName()) + (isMp3() ? String (".wav") : extension()));
             job.renders.push_back (p);
         }
-        job.onDone = [folder] (int done, int count, bool cancelled)
+        const bool limit = truePeakPass();
+        const int kbps = isMp3() ? mp3Kbps() : 0;
+        std::vector<std::pair<File, File>> files;
+        for (auto& r : job.renders) files.push_back ({ r.destFile, r.destFile.withFileExtension (".mp3") });
+        job.onDone = [folder, files, limit, kbps, &eng = edit.engine] (int done, int count, bool cancelled)
         {
             if (cancelled) return;
+            for (auto& [wav, mp3] : files)
+                if (wav.existsAsFile()) finishFile (eng, wav, mp3, limit, kbps);
             AlertWindow::showMessageBoxAsync (done == count ? MessageBoxIconType::InfoIcon : MessageBoxIconType::WarningIcon, "Export",
                                               String (done) + " of " + String (count) + " stems exported to " + folder.getFileName());
             if (done > 0) folder.revealToUser();

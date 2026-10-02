@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(PulseStudio VERSION 0.49.0 LANGUAGES C CXX)
+project(PulseStudio VERSION 0.50.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -42,7 +42,7 @@ juce_generate_juce_header(PulseStudio)
 
 # All app code is header-only and compiled through Main.cpp.
 file(GLOB PULSE_HEADERS CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/Source/*.h)
-target_sources(PulseStudio PRIVATE Source/Main.cpp Source/Push2Usb.cpp Source/CrashGuardWin.cpp ${PULSE_HEADERS})
+target_sources(PulseStudio PRIVATE Source/Main.cpp Source/Push2Usb.cpp Source/CrashGuardWin.cpp Source/Mp3EncoderWin.cpp ${PULSE_HEADERS})
 
 target_compile_definitions(PulseStudio PRIVATE
     # Audio devices: ASIO for pro interfaces, WASAPI/DirectSound as fallbacks

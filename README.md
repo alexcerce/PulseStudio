@@ -246,6 +246,8 @@ Pulse's own devices have compact cards: knobs stack in as many rows as the devic
 - **Push 2 Mix mode:** press Mix repeatedly to cycle volume → pan → a send to every return (Shift+Mix goes back).
 
 ### Export (File menu)
+- **Formats:** WAV, AIFF, FLAC, OGG Vorbis and **MP3** (320 or 192 kbps, encoded by Windows' own MP3 encoder, so nothing extra to install; MP3 is 44.1 or 48 kHz).
+- **Streaming ready:** *Normalise → Streaming ready* makes the mix -14 LUFS and then keeps its true peak under -1 dBTP (a look-ahead limiter on the inter-sample peaks), so streaming services don't distort it.
 - **Export audio / stems** (Ctrl+Shift+R):
   - WAV, AIFF, FLAC or OGG; 16/24/32-bit float; 44.1–96 kHz.
   - Normalise to a peak or to **LUFS**.
