@@ -10,7 +10,7 @@ namespace pulse
     {
     public:
         static constexpr int numOps = 4, perOp = 7;   // ratio, fine, level, a, d, s, r
-        enum { opBase = 0, pAlgorithm = numOps * perOp, pFeedback, pCutoff, pReso, pVelSens, pGlide, pVolume };
+        enum { opBase = 0, pAlgorithm = numOps * perOp, pFeedback, pCutoff, pReso, pVelSens, pGlide, pVolume, pFEnv, pFA, pFD, pFS, pFR };
         static int opParam (int op, int k) { return op * perOp + k; }
         enum { kRatio, kFine, kLevel, kA, kD, kS, kR };
         static inline const char* xmlTypeName = "pulseFM";
@@ -56,6 +56,11 @@ namespace pulse
             add ("velsens", "Velocity", { 0.0f, 1.0f }, 0.6f, fmt::pct);
             add ("glide", "Glide", skewed (0.0f, 1000.0f, 100.0f), 0.0f, fmt::ms);
             add ("volume", "Volume", { -36.0f, 6.0f }, -8.0f, fmt::db);
+            add ("fenv", "Filter Env", { -1.0f, 1.0f }, 0.0f, fmt::pct);
+            add ("fa", "Filter Attack", skewed (0.5f, 10000.0f, 200.0f), 2.0f, fmt::ms);
+            add ("fd", "Filter Decay", skewed (1.0f, 10000.0f, 400.0f), 400.0f, fmt::ms);
+            add ("fs", "Filter Sustain", { 0.0f, 1.0f }, 0.3f, fmt::pct);
+            add ("fr", "Filter Release", skewed (1.0f, 10000.0f, 400.0f), 300.0f, fmt::ms);
 
             for (int i = 0; i < 12; ++i) synth.addVoice (new Voice (*this));
             synth.addSound (new AnySound());
@@ -64,12 +69,14 @@ namespace pulse
 
         String getName() const override      { return "FM Synth"; }
         String getPluginType() override      { return xmlTypeName; }
-        int getDisplayWidth() const override  { return 120; }
+        int getDisplayWidth() const override  { return 170; }
 
         std::vector<Section> getSections() const override
         {
             std::vector<Section> s;
-            s.push_back ({ "Global", { pAlgorithm, pFeedback, pCutoff, pReso, pVelSens, pGlide, pVolume } });
+            s.push_back ({ "Global", { pAlgorithm, pFeedback, pVelSens, pGlide, pVolume } });
+            s.push_back ({ "Filter", { pCutoff, pReso, pFEnv } });
+            s.push_back ({ "Filter env", { pFA, pFD, pFS, pFR } });
             for (int op = 0; op < numOps; ++op)
                 s.push_back ({ "Op " + String (op + 1), { opParam (op, kRatio), opParam (op, kFine), opParam (op, kLevel), opParam (op, kA), opParam (op, kD), opParam (op, kS), opParam (op, kR) } });
             return s;
@@ -98,12 +105,16 @@ namespace pulse
                 }
                 fbState = 0.0f;
                 filter.reset();
+                fenv.setSampleRate (getSampleRate());
+                fenv.reset();
+                fenv.noteOn();
             }
 
             void stopNote (float, bool allowTailOff) override
             {
                 if (! allowTailOff) { clearCurrentNote(); return; }
                 for (auto& e : env) e.noteOff();
+                fenv.noteOff();
             }
 
             void pitchWheelMoved (int) override {}
@@ -122,8 +133,10 @@ namespace pulse
                 }
                 const float fb = o.get (pFeedback);
                 const float gain = Decibels::decibelsToGain (o.get (pVolume)) * (1.0f - o.get (pVelSens) * (1.0f - velocity));
-                const bool filt = o.get (pCutoff) < 19500.0f;
-                if (filt) filter.set (o.get (pCutoff), o.get (pReso), getSampleRate());
+                const float fenvAmt = o.get (pFEnv), cut = o.get (pCutoff), res = o.get (pReso);
+                const bool filt = cut < 19500.0f || std::abs (fenvAmt) > 0.001f;
+                fenv.setParameters (adsrFrom (o.get (pFA), o.get (pFD), o.get (pFS), o.get (pFR)));
+                if (filt) filter.set (cut, res, getSampleRate());
                 const double glideCoeff = o.get (pGlide) > 0.5f ? std::exp (-1.0 / (o.get (pGlide) * 0.001 * getSampleRate())) : 0.0;
                 const float outScale = 1.0f / std::sqrt ((float) alg.outs.size());
 
@@ -149,6 +162,9 @@ namespace pulse
                     float y = 0.0f;
                     for (int c : alg.outs) y += out[(size_t) c];
                     y *= outScale * gain;
+                    const float fe = fenv.getNextSample();
+                    if (filt && std::abs (fenvAmt) > 0.001f && (s & 15) == 0)
+                        filter.set (jlimit (20.0f, 20000.0f, cut * std::pow (2.0f, fenvAmt * fe * 6.0f)), res, getSampleRate());
                     if (filt) y = filter.process (y, 0, 0);
                     buf.addSample (0, start + s, y);
                     if (buf.getNumChannels() > 1) buf.addSample (1, start + s, y);
@@ -161,6 +177,7 @@ namespace pulse
 
             FMSynth& o;
             std::array<ADSR, numOps> env;
+            ADSR fenv;
             std::array<double, numOps> phase {};
             std::array<float, numOps> out {};
             double currentHz = 440.0, targetHz = 440.0;

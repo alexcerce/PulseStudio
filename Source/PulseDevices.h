@@ -295,7 +295,7 @@ namespace pulse
 
         String getName() const override     { return "Glue Compressor"; }
         String getPluginType() override     { return xmlTypeName; }
-        int getDisplayWidth() const override { return 54; }
+        int getDisplayWidth() const override { return 150; }
 
         std::vector<Section> getSections() const override
         {
@@ -641,7 +641,7 @@ namespace pulse
 
         String getName() const override      { return "Auto Filter"; }
         String getPluginType() override      { return xmlTypeName; }
-        int getDisplayWidth() const override  { return 120; }
+        int getDisplayWidth() const override  { return 170; }
 
         std::vector<Section> getSections() const override
         {
@@ -766,7 +766,7 @@ namespace pulse
 
         String getName() const override      { return "Limiter"; }
         String getPluginType() override      { return xmlTypeName; }
-        int getDisplayWidth() const override  { return 54; }
+        int getDisplayWidth() const override  { return 150; }
         double getLatencySeconds() override   { return lookaheadMs / 1000.0; }
 
         std::vector<Section> getSections() const override { return { { "Limiter", { pGain, pCeiling, pRelease, pAutoRelease } } }; }

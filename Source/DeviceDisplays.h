@@ -3,6 +3,7 @@
 #include "ParamKnob.h"
 #include "PulseSynths.h"
 #include "ClipImport.h"
+#include "Graphs.h"
 
 /** Visual panels shown at the left of Pulse device cards. */
 namespace DeviceDisplays
@@ -115,10 +116,30 @@ namespace DeviceDisplays
     };
 
     //==============================================================================
-    class SaturatorCurve : public Polled
+    class SaturatorCurve : public Polled, public SettableTooltipClient
     {
     public:
-        explicit SaturatorCurve (pulse::Saturator& s) : Polled (s), sat (s) {}
+        explicit SaturatorCurve (pulse::Saturator& s) : Polled (s), sat (s) { setTooltip ("Drag up / down: drive, left / right: bias (double-click resets)"); }
+
+        void mouseDown (const MouseEvent&) override
+        {
+            startDrive = sat.get (pulse::Saturator::pDrive);
+            startBias = sat.get (pulse::Saturator::pBias);
+            Graphs::begin ({ sat.param (pulse::Saturator::pDrive), sat.param (pulse::Saturator::pBias) });
+        }
+        void mouseDrag (const MouseEvent& e) override
+        {
+            Graphs::setValue (sat.param (pulse::Saturator::pDrive), startDrive - e.getDistanceFromDragStartY() * 0.2f);
+            Graphs::setValue (sat.param (pulse::Saturator::pBias), startBias + e.getDistanceFromDragStartX() * 0.01f);
+        }
+        void mouseUp (const MouseEvent&) override { Graphs::end ({ sat.param (pulse::Saturator::pDrive), sat.param (pulse::Saturator::pBias) }); }
+        void mouseDoubleClick (const MouseEvent&) override
+        {
+            sat.edit.getUndoManager().beginNewTransaction ("Reset drive");
+            Graphs::reset (sat.param (pulse::Saturator::pDrive));
+            Graphs::reset (sat.param (pulse::Saturator::pBias));
+        }
+        float startDrive = 0, startBias = 0;
 
         void paint (Graphics& g) override
         {
@@ -140,6 +161,8 @@ namespace DeviceDisplays
             }
             g.setColour (Theme::orange);
             g.strokePath (p, PathStrokeType (1.8f));
+            const float nx = 0.7f, ny = jlimit (-1.2f, 1.2f, sat.shaped (nx));
+            Graphs::node (g, { a.getCentreX() + nx * a.getWidth() * 0.5f, a.getCentreY() - ny * a.getHeight() * 0.5f / 1.2f }, Theme::orange, isMouseButtonDown());
         }
 
     private:
@@ -637,17 +660,51 @@ namespace DeviceDisplays
 
     //==============================================================================
     /** Reverb: the decay envelope (bright early part darkened by damping) and predelay. */
-    class ReverbDisplay : public Polled
+    class ReverbDisplay : public Polled, public SettableTooltipClient
     {
     public:
-        explicit ReverbDisplay (pulse::Reverb& r) : Polled (r, 15) {}
+        explicit ReverbDisplay (pulse::Reverb& r) : Polled (r, 15) { setTooltip ("Drag the first point for predelay, the second for decay time (double-click resets)"); }
+
+        float shownSeconds() const { return jmax (4.0f, (pp().get (pulse::Reverb::pPredelay) * 0.001f + pp().get (pulse::Reverb::pDecay)) * 1.15f); }
+        juce::Point<float> nodeAt (int k) const
+        {
+            using R = pulse::Reverb;
+            const float total = shownSeconds(), pd = pp().get (R::pPredelay) * 0.001f;
+            const float t = k == 0 ? pd : pd + pp().get (R::pDecay);
+            return { area.getX() + area.getWidth() * t / total, k == 0 ? area.getY() + 6.0f : area.getBottom() - 4.0f };
+        }
+        void mouseDown (const MouseEvent& e) override
+        {
+            dragNode = nodeAt (0).getDistanceFrom (e.position) < nodeAt (1).getDistanceFrom (e.position) ? 0 : 1;
+            dragTotal = shownSeconds();
+            Graphs::begin ({ pp().param (dragNode == 0 ? pulse::Reverb::pPredelay : pulse::Reverb::pDecay) });
+            mouseDrag (e);
+        }
+        void mouseDrag (const MouseEvent& e) override
+        {
+            using R = pulse::Reverb;
+            const float t = jmax (0.0f, (e.position.x - area.getX()) / area.getWidth() * dragTotal);
+            if (dragNode == 0) Graphs::setValue (pp().param (R::pPredelay), t * 1000.0f);
+            else               Graphs::setValue (pp().param (R::pDecay), t - pp().get (R::pPredelay) * 0.001f);
+        }
+        void mouseUp (const MouseEvent&) override { Graphs::end ({ pp().param (dragNode == 0 ? pulse::Reverb::pPredelay : pulse::Reverb::pDecay) }); }
+        void mouseDoubleClick (const MouseEvent&) override
+        {
+            pp().edit.getUndoManager().beginNewTransaction ("Reset reverb");
+            Graphs::reset (pp().param (pulse::Reverb::pPredelay)); Graphs::reset (pp().param (pulse::Reverb::pDecay));
+        }
+        Rectangle<float> area;
+        int dragNode = 0;
+        float dragTotal = 4.0f;
+
         void paint (Graphics& g) override
         {
             using R = pulse::Reverb;
             auto r = getLocalBounds().toFloat().reduced (2.0f);
             paintPanel (g, r);
             auto a = r.reduced (8.0f, 10.0f);
-            const float total = 4.0f;   // seconds shown
+            area = a;
+            const float total = shownSeconds();
             const float pd = pp().get (R::pPredelay) * 0.001f, decay = pp().get (R::pDecay);
             const bool freeze = pp().getInt (R::pFreeze) > 0;
             Path p;
@@ -668,20 +725,72 @@ namespace DeviceDisplays
             g.setColour (Theme::muted);
             g.setFont (FontOptions (10.5f));
             g.drawText (freeze ? String ("FROZEN") : "RT60 " + String (decay, 1) + " s", a.withHeight (14.0f), Justification::topRight);
+            Graphs::node (g, nodeAt (0), Theme::accent, false);
+            Graphs::node (g, nodeAt (1), Theme::accent, false);
         }
     };
 
     /** Delay: the repeats over two bars, alternating sides in ping-pong mode. */
-    class DelayDisplay : public Polled
+    class DelayDisplay : public Polled, public SettableTooltipClient
     {
     public:
-        explicit DelayDisplay (pulse::Delay& d) : Polled (d, 15), delay (d) {}
+        explicit DelayDisplay (pulse::Delay& d) : Polled (d, 15), delay (d) { setTooltip ("Drag the first repeat for the time, the second repeat's height for feedback (double-click resets)"); }
+
+        juce::Point<float> nodeAt (int k) const
+        {
+            using D = pulse::Delay;
+            const double bpm = delay.lastBpm.load(), secs = delay.delaySeconds (bpm), shown = 8.0 * 60.0 / bpm;
+            const float fb = pp().get (D::pFeedback);
+            const float x = area.getX() + area.getWidth() * (float) (secs * (k + 1) / shown);
+            return { jmin (x, area.getRight()), area.getCentreY() - area.getHeight() * 0.5f * (k == 0 ? 1.0f : fb) };
+        }
+        void mouseDown (const MouseEvent& e) override
+        {
+            dragNode = nodeAt (0).getDistanceFrom (e.position) <= nodeAt (1).getDistanceFrom (e.position) ? 0 : 1;
+            using D = pulse::Delay;
+            Graphs::begin ({ pp().param (dragNode == 1 ? D::pFeedback : (pp().getInt (D::pSync) > 0 ? D::pNote : D::pTime)) });
+            mouseDrag (e);
+        }
+        void mouseDrag (const MouseEvent& e) override
+        {
+            using D = pulse::Delay;
+            const double bpm = delay.lastBpm.load(), shown = 8.0 * 60.0 / bpm;
+            if (dragNode == 1)
+            {
+                Graphs::setValue (pp().param (D::pFeedback), jlimit (0.0f, 1.0f, (area.getCentreY() - e.position.y) / (area.getHeight() * 0.5f)));
+                return;
+            }
+            const double secs = jmax (0.001, (e.position.x - area.getX()) / area.getWidth() * shown);
+            if (pp().getInt (D::pSync) > 0)
+            {
+                int best = 0;
+                for (int i = 1; i < D::noteNames.size(); ++i)
+                    if (std::abs (D::noteBeats (i) * 60.0 / bpm - secs) < std::abs (D::noteBeats (best) * 60.0 / bpm - secs)) best = i;
+                Graphs::setValue (pp().param (D::pNote), (float) best);
+            }
+            else Graphs::setValue (pp().param (D::pTime), (float) (secs * 1000.0));
+        }
+        void mouseUp (const MouseEvent&) override
+        {
+            using D = pulse::Delay;
+            Graphs::end ({ pp().param (D::pFeedback), pp().param (D::pTime), pp().param (D::pNote) });
+        }
+        void mouseDoubleClick (const MouseEvent&) override
+        {
+            using D = pulse::Delay;
+            pp().edit.getUndoManager().beginNewTransaction ("Reset delay");
+            for (int p : { D::pFeedback, D::pTime, D::pNote }) Graphs::reset (pp().param (p));
+        }
+        Rectangle<float> area;
+        int dragNode = 0;
+
         void paint (Graphics& g) override
         {
             using D = pulse::Delay;
             auto r = getLocalBounds().toFloat().reduced (2.0f);
             paintPanel (g, r);
             auto a = r.reduced (8.0f, 10.0f);
+            area = a;
             const double bpm = delay.lastBpm.load();
             const double secs = delay.delaySeconds (bpm), shown = 8.0 * 60.0 / bpm;   // two bars of 4/4
             const float fb = pp().get (D::pFeedback);
@@ -705,6 +814,8 @@ namespace DeviceDisplays
             g.setColour (Theme::muted);
             g.setFont (FontOptions (10.5f));
             g.drawText (pp().getInt (D::pSync) > 0 ? D::noteNames[pp().getInt (D::pNote)] : String (roundToInt (secs * 1000.0)) + " ms", a.withHeight (14.0f), Justification::topRight);
+            Graphs::node (g, nodeAt (0), Colours::white, false);
+            Graphs::node (g, nodeAt (1), Theme::accent, false);
         }
     private:
         pulse::Delay& delay;
@@ -938,21 +1049,104 @@ namespace DeviceDisplays
     };
 
     //==============================================================================
+    /** Envelope + filter graphs for a device page. */
+    inline std::vector<std::unique_ptr<Component>> filterAndEnvelopes (pulse::PulsePlugin& p, int cutoff, int reso, int type, std::function<int (int)> modes,
+                                                                      int envAmt, std::vector<Graphs::EnvelopeGraph::Env> envs)
+    {
+        std::vector<std::unique_ptr<Component>> parts;
+        parts.push_back (std::make_unique<Graphs::FilterGraph> (p.param (cutoff), p.param (reso), type >= 0 ? p.param (type) : nullptr,
+                                                                 std::move (modes), Theme::orange, envAmt >= 0 ? p.param (envAmt) : nullptr));
+        parts.push_back (std::make_unique<Graphs::EnvelopeGraph> (std::move (envs)));
+        return parts;
+    }
+
+    template <typename... T> std::vector<std::unique_ptr<Component>> parts (std::unique_ptr<T>... c)
+    {
+        std::vector<std::unique_ptr<Component>> v;
+        (v.push_back (std::move (c)), ...);
+        return v;
+    }
+
     inline std::unique_ptr<Component> create (EditViewState& evs, te::Plugin& p)
     {
+        using EG = Graphs::EnvelopeGraph;
+        if (auto s = dynamic_cast<pulse::WavetableSynth*> (&p))
+        {
+            using W = pulse::WavetableSynth;
+            auto d = std::make_unique<Graphs::PagedDisplay>();
+            d->add ({ "Osc 1", "Osc 2", "Unison / Sub", "LFO", "Expression (MPE)" }, parts (std::make_unique<WavetableDisplay> (*s)));
+            d->add ({ "Filter", "Filter env", "Amp env" },
+                    filterAndEnvelopes (*s, W::pCutoff, W::pReso, W::pFilterType, [] (int t) { const int m[] = { 1, 5, 2, 3 }; return m[jlimit (0, 3, t)]; }, W::pFilterEnv,
+                                        { EG::Env { s->param (W::pA), s->param (W::pD), s->param (W::pS), s->param (W::pR), Theme::accent, "AMP" },
+                                          EG::Env { s->param (W::pFA), s->param (W::pFD), s->param (W::pFS), s->param (W::pFR), Theme::orange, "FILTER" } }));
+            return d;
+        }
+        if (auto s = dynamic_cast<pulse::Simpler*> (&p))
+        {
+            using S = pulse::Simpler;
+            auto d = std::make_unique<Graphs::PagedDisplay>();
+            d->add ({ "Region", "Pitch", "Granular", "Output" }, parts (std::make_unique<SimplerDisplay> (*s)));
+            d->add ({ "Filter", "Filter env", "Amp env" },
+                    filterAndEnvelopes (*s, S::pCutoff, S::pReso, S::pFilterType, [] (int t) { return jlimit (0, 3, t); }, S::pFEnv,
+                                        { EG::Env { s->param (S::pA), s->param (S::pD), s->param (S::pS), s->param (S::pR), Theme::accent, "AMP" },
+                                          EG::Env { s->param (S::pFA), s->param (S::pFD), s->param (S::pFS), s->param (S::pFR), Theme::orange, "FILTER" } }));
+            return d;
+        }
+        if (auto s = dynamic_cast<pulse::FMSynth*> (&p))
+        {
+            using F = pulse::FMSynth;
+            auto d = std::make_unique<Graphs::PagedDisplay>();
+            d->add ({ "Global" }, parts (std::make_unique<FMDisplay> (*s)));
+            d->add ({ "Filter", "Filter env" },
+                    filterAndEnvelopes (*s, F::pCutoff, F::pReso, -1, {}, F::pFEnv,
+                                        { EG::Env { s->param (F::pFA), s->param (F::pFD), s->param (F::pFS), s->param (F::pFR), Theme::orange, "FILTER" } }));
+            const Colour cols[] = { Theme::orange, Theme::accent, Colour (0xff69db7c), Colour (0xffb197fc) };
+            for (int op = 0; op < F::numOps; ++op)   // each operator page shows that operator's envelope
+                d->add ({ "Op " + String (op + 1) },
+                        parts (std::make_unique<EG> (std::vector<EG::Env> { { s->param (F::opParam (op, F::kA)), s->param (F::opParam (op, F::kD)),
+                                                                             s->param (F::opParam (op, F::kS)), s->param (F::opParam (op, F::kR)), cols[op], "OP " + String (op + 1) } })));
+            return d;
+        }
+        if (auto s = dynamic_cast<pulse::AutoFilter*> (&p))
+        {
+            using A = pulse::AutoFilter;
+            auto d = std::make_unique<Graphs::PagedDisplay>();
+            auto modes = [] (int t) { const int m[] = { 1, 2, 3, 4, 5 }; return m[jlimit (0, 4, t)]; };
+            d->add ({ "Filter" }, parts (std::make_unique<Graphs::FilterGraph> (s->param (A::pCutoff), s->param (A::pReso), s->param (A::pType), modes, Theme::accent)));
+            d->add ({ "LFO" }, parts (std::make_unique<AutoFilterDisplay> (*s)));
+            d->add ({ "Envelope" }, parts (std::make_unique<Graphs::FilterGraph> (s->param (A::pCutoff), s->param (A::pReso), s->param (A::pType), modes, Theme::accent, s->param (A::pEnvAmount)),
+                                           std::make_unique<EG> (std::vector<EG::Env> { { s->param (A::pAttack), nullptr, nullptr, s->param (A::pRelease), Theme::accent, "FOLLOWER" } })));
+            return d;
+        }
+        if (auto s = dynamic_cast<pulse::GlueCompressor*> (&p))
+        {
+            using G = pulse::GlueCompressor;
+            auto curve = [s] (float in)
+            {
+                const float thr = s->get (G::pThreshold), ratio = G::ratios[jlimit (0, 2, s->getInt (G::pRatio))], knee = 6.0f;
+                const float over = in - thr;
+                float gr = 0.0f;
+                if (2.0f * over > knee)       gr = over * (1.0f - 1.0f / ratio);
+                else if (2.0f * over > -knee) gr = (1.0f - 1.0f / ratio) * (over + knee * 0.5f) * (over + knee * 0.5f) / (2.0f * knee);
+                return in - jmin (gr, s->get (G::pRange)) + s->get (G::pMakeup);
+            };
+            return std::make_unique<Graphs::DynamicsGraph> (s->param (G::pThreshold), s->param (G::pRatio), curve, Theme::orange,
+                                                            [s] { return s->gainReductionDb.load(); });
+        }
+        if (auto s = dynamic_cast<pulse::Limiter*> (&p))
+        {
+            using L = pulse::Limiter;
+            auto curve = [s] (float in) { return jmin (in + s->get (L::pGain), s->get (L::pCeiling)); };
+            return std::make_unique<Graphs::DynamicsGraph> (s->param (L::pCeiling), nullptr, curve, Theme::orange,
+                                                            [s] { return s->gainReductionDb.load(); });
+        }
         if (auto s = dynamic_cast<pulse::Tuner*> (&p))          return std::make_unique<TunerDisplay> (*s);
         if (auto s = dynamic_cast<pulse::Reverb*> (&p))         return std::make_unique<ReverbDisplay> (*s);
         if (auto s = dynamic_cast<pulse::Delay*> (&p))          return std::make_unique<DelayDisplay> (*s);
         if (auto s = dynamic_cast<pulse::PitchCorrect*> (&p))   return std::make_unique<PitchCorrectDisplay> (*s);
-        if (auto s = dynamic_cast<pulse::FMSynth*> (&p))        return std::make_unique<FMDisplay> (*s);
         if (auto s = dynamic_cast<pulse::Spectrum*> (&p))       return std::make_unique<SpectrumDisplay> (*s);
-        if (auto s = dynamic_cast<pulse::WavetableSynth*> (&p)) return std::make_unique<WavetableDisplay> (*s);
-        if (auto s = dynamic_cast<pulse::Simpler*> (&p))        return std::make_unique<SimplerDisplay> (*s);
-        if (auto s = dynamic_cast<pulse::GlueCompressor*> (&p)) return std::make_unique<GRMeter<pulse::GlueCompressor>> (*s);
-        if (auto s = dynamic_cast<pulse::Limiter*> (&p))        return std::make_unique<GRMeter<pulse::Limiter>> (*s);
         if (auto s = dynamic_cast<pulse::Saturator*> (&p))      return std::make_unique<SaturatorCurve> (*s);
         if (auto s = dynamic_cast<pulse::PulseEQ*> (&p))        return std::make_unique<EQDisplay> (evs, *s);
-        if (auto s = dynamic_cast<pulse::AutoFilter*> (&p))     return std::make_unique<AutoFilterDisplay> (*s);
         return {};
     }
 }

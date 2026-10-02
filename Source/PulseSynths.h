@@ -309,7 +309,7 @@ namespace pulse
 
         String getName() const override      { return "Wavetable"; }
         String getPluginType() override      { return xmlTypeName; }
-        int getDisplayWidth() const override  { return 150; }
+        int getDisplayWidth() const override  { return 190; }
 
         std::vector<Section> getSections() const override
         {
@@ -546,7 +546,7 @@ namespace pulse
     public:
         enum { pStart, pEnd, pLoop, pLoopStart, pXfade, pRoot, pTranspose, pFine, pMode,
                pA, pD, pS, pR, pFilterType, pCutoff, pReso, pVelSens, pGain, pPan,
-               pGrainSize, pDensity, pSpray, pGrainPos };
+               pGrainSize, pDensity, pSpray, pGrainPos, pFEnv, pFA, pFD, pFS, pFR };
         static inline const char* xmlTypeName = "pulseSimpler";
         static const char* getPluginName() { return "Simpler"; }
         static inline const Identifier sampleFileID { "sampleFile" };
@@ -578,6 +578,11 @@ namespace pulse
             add ("density", "Density", skewed (2.0f, 100.0f, 20.0f), 20.0f, [] (float v) { return String (v, 1) + " /s"; });
             add ("spray", "Spray", { 0.0f, 1.0f }, 0.1f, fmt::pct);
             add ("grainpos", "Scan", { 0.0f, 1.0f }, 0.3f, fmt::pct);
+            add ("fenv", "Filter Env", { -1.0f, 1.0f }, 0.0f, fmt::pct);
+            add ("fa", "Filter Attack", skewed (0.5f, 10000.0f, 200.0f), 2.0f, fmt::ms);
+            add ("fd", "Filter Decay", skewed (1.0f, 10000.0f, 400.0f), 400.0f, fmt::ms);
+            add ("fs", "Filter Sustain", { 0.0f, 1.0f }, 0.3f, fmt::pct);
+            add ("fr", "Filter Release", skewed (1.0f, 10000.0f, 400.0f), 300.0f, fmt::ms);
 
             for (int i = 0; i < 16; ++i)
                 synth.addVoice (new Voice (*this));
@@ -600,7 +605,8 @@ namespace pulse
         std::vector<Section> getSections() const override
         {
             return { { "Region", { pStart, pEnd, pLoop, pLoopStart, pXfade } }, { "Pitch", { pRoot, pTranspose, pFine, pMode } },
-                     { "Amp env", { pA, pD, pS, pR } }, { "Filter", { pFilterType, pCutoff, pReso } },
+                     { "Amp env", { pA, pD, pS, pR } }, { "Filter", { pFilterType, pCutoff, pReso, pFEnv } },
+                     { "Filter env", { pFA, pFD, pFS, pFR } },
                      { "Output", { pVelSens, pGain, pPan } }, { "Granular", { pGrainSize, pDensity, pSpray, pGrainPos } } };
         }
 
@@ -819,6 +825,9 @@ namespace pulse
                 amp.setSampleRate (getSampleRate());
                 amp.reset();
                 amp.noteOn();
+                fenv.setSampleRate (getSampleRate());
+                fenv.reset();
+                fenv.noteOn();
                 releasing = false;
             }
 
@@ -827,6 +836,7 @@ namespace pulse
                 if (! allowTailOff) { clearCurrentNote(); amp.reset(); data.reset(); return; }
                 if (o.getInt (pMode) == 1) return;   // one-shot plays to the end
                 amp.noteOff();
+                fenv.noteOff();
                 releasing = true;
             }
 
@@ -860,13 +870,18 @@ namespace pulse
                 else         amp.setParameters (adsrFrom (o.get (pA), o.get (pD), o.get (pS), o.get (pR)));
 
                 const int ftype = o.getInt (pFilterType);
-                if (ftype > 0) filter.set (o.get (pCutoff), o.get (pReso), getSampleRate());
+                const float cutoff = o.get (pCutoff), reso = o.get (pReso), fenvAmt = o.get (pFEnv);
+                fenv.setParameters (adsrFrom (o.get (pFA), o.get (pFD), o.get (pFS), o.get (pFR)));
+                if (ftype > 0) filter.set (cutoff, reso, getSampleRate());
                 const float gain = Decibels::decibelsToGain (o.get (pGain)) * (1.0f - o.get (pVelSens) * (1.0f - velocity));
                 const float pan = o.get (pPan);
                 const float gl = std::sqrt (0.5f * (1.0f - pan)) * 1.4142f, gr = std::sqrt (0.5f * (1.0f + pan)) * 1.4142f;
 
                 for (int i = 0; i < num; ++i)
                 {
+                    const float fe = fenv.getNextSample();
+                    if (ftype > 0 && std::abs (fenvAmt) > 0.001f && (i & 15) == 0)
+                        filter.set (jlimit (20.0f, 20000.0f, cutoff * std::pow (2.0f, fenvAmt * fe * 6.0f)), reso, getSampleRate());
                     if (loop && pos >= s1)
                         pos -= loopLen;
 
@@ -925,13 +940,18 @@ namespace pulse
                 const float norm = 1.0f / std::sqrt (jmax (1.0f, (float) (grainLen / interval)));
                 amp.setParameters (adsrFrom (o.get (pA), o.get (pD), o.get (pS), o.get (pR)));
                 const int ftype = o.getInt (pFilterType);
-                if (ftype > 0) filter.set (o.get (pCutoff), o.get (pReso), getSampleRate());
+                const float cutoff = o.get (pCutoff), reso = o.get (pReso), fenvAmt = o.get (pFEnv);
+                fenv.setParameters (adsrFrom (o.get (pFA), o.get (pFD), o.get (pFS), o.get (pFR)));
+                if (ftype > 0) filter.set (cutoff, reso, getSampleRate());
                 const float gain = Decibels::decibelsToGain (o.get (pGain)) * (1.0f - o.get (pVelSens) * (1.0f - velocity));
                 const float pan = o.get (pPan);
                 const float gl = std::sqrt (0.5f * (1.0f - pan)) * 1.4142f, gr = std::sqrt (0.5f * (1.0f + pan)) * 1.4142f;
 
                 for (int i = 0; i < num; ++i)
                 {
+                    const float fe = fenv.getNextSample();
+                    if (ftype > 0 && std::abs (fenvAmt) > 0.001f && (i & 15) == 0)
+                        filter.set (jlimit (20.0f, 20000.0f, cutoff * std::pow (2.0f, fenvAmt * fe * 6.0f)), reso, getSampleRate());
                     if ((untilNextGrain -= 1.0) <= 0.0)
                     {
                         untilNextGrain += interval;
@@ -983,6 +1003,7 @@ namespace pulse
             }
 
             Simpler& o;
+            ADSR fenv;
             std::shared_ptr<SampleData> data;
             double pos = 0;
             int noteNumber = 60, zoneRoot = -1;

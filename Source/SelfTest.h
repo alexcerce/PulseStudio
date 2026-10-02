@@ -1725,7 +1725,8 @@ namespace SelfTest
                 int shots = 0;
                 for (auto type : { pulse::Tuner::xmlTypeName, pulse::Spectrum::xmlTypeName, pulse::Reverb::xmlTypeName, pulse::Delay::xmlTypeName,
                                    pulse::FMSynth::xmlTypeName, pulse::PitchCorrect::xmlTypeName, pulse::Vocoder::xmlTypeName,
-                                   pulse::WavetableSynth::xmlTypeName, pulse::Simpler::xmlTypeName, pulse::GlueCompressor::xmlTypeName })
+                                   pulse::WavetableSynth::xmlTypeName, pulse::Simpler::xmlTypeName, pulse::GlueCompressor::xmlTypeName,
+                                   pulse::AutoFilter::xmlTypeName, pulse::Limiter::xmlTypeName, pulse::Saturator::xmlTypeName })
                 {
                     auto pl = edit->getPluginCache().createNewPlugin (type, {});
                     if (ut != nullptr) ut->pluginList.insertPlugin (pl, -1, nullptr);
@@ -1760,6 +1761,15 @@ namespace SelfTest
                             card.setWidthAndNotify (card.getWidth());   // (exercise the API)
                         }
                         for (int k = 0; k < 3; ++k) card.createComponentSnapshot (card.getLocalBounds());   // let averaging settle
+                        for (int pg = 1; pg < card.numPages(); ++pg)   // the other pages (graphs follow the page)
+                        {
+                            card.showPage (pg);
+                            auto pimg = card.createComponentSnapshot (card.getLocalBounds());
+                            auto pf = dir.getChildFile (String (type) + "_p" + String (pg) + ".png");
+                            pf.deleteFile();
+                            if (auto os = pf.createOutputStream()) { PNGImageFormat png; png.writeImageToStream (pimg, *os); }
+                        }
+                        card.showPage (0);
                         auto img = card.createComponentSnapshot (card.getLocalBounds());
                         auto f = dir.getChildFile (String (type) + ".png");
                         f.deleteFile();
@@ -1768,7 +1778,7 @@ namespace SelfTest
                     pl->deleteFromParent();
                 }
                 LookAndFeel::setDefaultLookAndFeel (nullptr);
-                rep.check (shots == 10, "Device cards draw (compact layout, 10 devices)");
+                rep.check (shots == 13, "Device cards draw (compact layout, 13 devices, every page)");
             }
             rep.check (std::abs (a4 - 440.0) < 1.0 && std::abs (a2 - 110.0) < 0.5 && none == 0.0
                          && std::abs (pulse::Tuner::noteOf (a4) - 69.0) < 0.02,
@@ -2321,6 +2331,58 @@ namespace SelfTest
                     lvl = rmsDb (out, 0, 0.1, 0.5);
                 }
                 rep.check (lvl > -40.0f, "Simpler granular mode", String (lvl, 1) + " dB");
+            }
+
+            // filter envelopes: a low cutoff opened by the envelope is brighter at the start of the note
+            {
+                auto brightnessOf = [&] (const AudioBuffer<float>& b, double t0, double t1)
+                {
+                    double e = 0, d = 0;
+                    for (int i = (int) (t0 * sr) + 1; i < (int) (t1 * sr); ++i)
+                    {
+                        const double x = b.getSample (0, i), dx = x - b.getSample (0, i - 1);
+                        e += x * x; d += dx * dx;
+                    }
+                    return e > 0 ? std::sqrt (d / e) : 0.0;
+                };
+                AudioBuffer<float> silence (2, (int) (sr * 1.0));
+                silence.clear();
+                std::vector<std::pair<double, MidiMessage>> note { { 0.01, MidiMessage::noteOn (1, 48, (uint8) 110) } };
+                String info;
+                bool ok = true;
+                auto sv2 = make (pulse::Simpler::xmlTypeName);
+                if (auto* smp = dynamic_cast<pulse::Simpler*> (sv2.get()))
+                {
+                    AudioBuffer<float> saw (2, 96000);
+                    for (int i = 0; i < 96000; ++i) { const float v = 0.4f * (2.0f * std::fmod ((float) i * 130.8f / 48000.0f, 1.0f) - 1.0f); saw.setSample (0, i, v); saw.setSample (1, i, v); }
+                    auto sawFile = dir.getChildFile ("saw_c3.wav");
+                    SampleEdit::writeWav (sawFile, saw, 48000.0);
+                    smp->setSampleFile (sawFile);
+                    smp->set (pulse::Simpler::pRoot, 48.0f);
+                    smp->set (pulse::Simpler::pFilterType, 1.0f);
+                    smp->set (pulse::Simpler::pCutoff, 200.0f);
+                    smp->set (pulse::Simpler::pFEnv, 1.0f);
+                    smp->set (pulse::Simpler::pFA, 1.0f); smp->set (pulse::Simpler::pFD, 250.0f); smp->set (pulse::Simpler::pFS, 0.0f);
+                    auto out = runAudio (*smp, silence, note);
+                    const double early = brightnessOf (out, 0.02, 0.08), late = brightnessOf (out, 0.6, 0.9);
+                    ok = ok && early > late * 1.5;
+                    info << "Simpler " << String (early, 3) << " -> " << String (late, 3);
+                }
+                auto fv2 = make (pulse::FMSynth::xmlTypeName);
+                if (auto* fm = dynamic_cast<pulse::FMSynth*> (fv2.get()))
+                {
+                    fm->set (pulse::FMSynth::opParam (1, pulse::FMSynth::kLevel), 0.9f);
+                    fm->set (pulse::FMSynth::opParam (1, pulse::FMSynth::kS), 1.0f);
+                    fm->set (pulse::FMSynth::opParam (0, pulse::FMSynth::kS), 1.0f);
+                    fm->set (pulse::FMSynth::pCutoff, 300.0f);
+                    fm->set (pulse::FMSynth::pFEnv, 1.0f);
+                    fm->set (pulse::FMSynth::pFA, 1.0f); fm->set (pulse::FMSynth::pFD, 250.0f); fm->set (pulse::FMSynth::pFS, 0.0f);
+                    auto out = runAudio (*fm, silence, note);
+                    const double early = brightnessOf (out, 0.02, 0.08), late = brightnessOf (out, 0.6, 0.9);
+                    ok = ok && early > late * 1.5;
+                    info << ", FM " << String (early, 3) << " -> " << String (late, 3);
+                }
+                rep.check (ok, "Filter envelopes (Simpler, FM)", info);
             }
         }
 

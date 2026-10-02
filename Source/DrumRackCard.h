@@ -763,10 +763,24 @@ private:
                 break;
             }
             case Page::shape:
-                addKnobs (*src, { pulse::DrumPad::pA, pulse::DrumPad::pD, pulse::DrumPad::pS, pulse::DrumPad::pR,
-                                  pulse::DrumPad::pFilterType, pulse::DrumPad::pCutoff, pulse::DrumPad::pReso, pulse::DrumPad::pVelFilter,
-                                  pulse::DrumPad::pVelSens, pulse::DrumPad::pGain }, area);
+            {
+                using D = pulse::DrumPad;
+                using EG = Graphs::EnvelopeGraph;
+                auto graphs = area.removeFromLeft (jmin (230, area.getWidth() / 3));
+                area.removeFromLeft (8);
+                auto* fg = new Graphs::FilterGraph (src->param (D::pCutoff), src->param (D::pReso), src->param (D::pFilterType),
+                                                    [] (int t) { return jlimit (0, 3, t); }, Theme::orange, src->param (D::pFEnv));
+                auto* eg = new EG ({ EG::Env { src->param (D::pA), src->param (D::pD), src->param (D::pS), src->param (D::pR), Theme::accent, "AMP" },
+                                     EG::Env { src->param (D::pFA), src->param (D::pFD), src->param (D::pFS), src->param (D::pFR), Theme::orange, "FILTER" } });
+                fg->setBounds (graphs.removeFromTop (graphs.getHeight() / 2 - 2));
+                graphs.removeFromTop (4);
+                eg->setBounds (graphs);
+                pageHolder.addAndMakeVisible (pageItems.add (fg));
+                pageHolder.addAndMakeVisible (pageItems.add (eg));
+                addKnobs (*src, { D::pA, D::pD, D::pS, D::pR, D::pFilterType, D::pCutoff, D::pReso, D::pFEnv,
+                                  D::pFA, D::pFD, D::pFS, D::pFR, D::pVelFilter, D::pVelSens, D::pGain }, area);
                 break;
+            }
 
             case Page::synth:
             {

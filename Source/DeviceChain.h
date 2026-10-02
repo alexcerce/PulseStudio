@@ -251,6 +251,10 @@ public:
 
     bool isCollapsed() const { return collapsed; }
 
+    /** Shows a page of a paged device card (also used by the self-test). */
+    void showPage (int i) { currentPage = jlimit (0, jmax (0, (int) pages.size() - 1), i); resized(); }
+    int numPages() const { return (int) pages.size(); }
+
     /** Folds the card to a slim strip (stored in the project). */
     void setCollapsed (bool c)
     {
@@ -564,6 +568,12 @@ private:
             for (auto* k : sec.knobs) k->setVisible (false);
         }
         if (pages.empty()) return;
+        if (auto* pd = dynamic_cast<Graphs::PagedDisplay*> (display.get()))
+        {
+            StringArray visible;
+            for (int si : pages[(size_t) currentPage].sections) visible.add (sections[(size_t) si].name);
+            pd->showSections (visible);
+        }
         for (int si : pages[(size_t) currentPage].sections)
         {
             auto& sec = sections[(size_t) si];

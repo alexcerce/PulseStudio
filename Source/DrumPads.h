@@ -235,7 +235,7 @@ namespace pulse
     public:
         enum { pNote, pChoke, pSource, pLayerMode, pStart, pEnd, pReverse, pPlayMode, pTranspose, pFine,
                pA, pD, pS, pR, pFilterType, pCutoff, pReso, pVelFilter, pVelSens, pGain,
-               pSynthType, pSynthTune, pSynthDecay, pSynthTone, pSynthSnap, pSynthDrive };
+               pSynthType, pSynthTune, pSynthDecay, pSynthTone, pSynthSnap, pSynthDrive, pFEnv, pFA, pFD, pFS, pFR };
         static inline const char* xmlTypeName = "pulseDrumPad";
         static const char* getPluginName() { return "Drum Pad"; }
         static inline const Identifier layerType { "LAYER" }, fileID { "file" }, vloID { "vlo" }, vhiID { "vhi" };
@@ -273,6 +273,11 @@ namespace pulse
             add ("stone", "Tone", { 0.0f, 1.0f }, 0.5f, fmt::pct);
             add ("ssnap", "Snap", { 0.0f, 1.0f }, 0.5f, fmt::pct);
             add ("sdrive", "Drive", { 0.0f, 1.0f }, 0.0f, fmt::pct);
+            add ("fenv", "Filter Env", { -1.0f, 1.0f }, 0.0f, fmt::pct);
+            add ("fa", "Filter Attack", skewed (0.5f, 5000.0f, 100.0f), 1.0f, fmt::ms);
+            add ("fd", "Filter Decay", skewed (1.0f, 5000.0f, 200.0f), 150.0f, fmt::ms);
+            add ("fs", "Filter Sustain", { 0.0f, 1.0f }, 0.0f, fmt::pct);
+            add ("fr", "Filter Release", skewed (1.0f, 5000.0f, 200.0f), 100.0f, fmt::ms);
 
             for (int i = 0; i < 8; ++i)
                 synth.addVoice (new Voice (*this));
@@ -303,7 +308,8 @@ namespace pulse
                      { "Sample", { pStart, pEnd, pReverse, pPlayMode } },
                      { "Pitch", { pTranspose, pFine } },
                      { "Envelope", { pA, pD, pS, pR } },
-                     { "Filter", { pFilterType, pCutoff, pReso, pVelFilter } },
+                     { "Filter", { pFilterType, pCutoff, pReso, pVelFilter, pFEnv } },
+                     { "Filter env", { pFA, pFD, pFS, pFR } },
                      { "Output", { pVelSens, pGain } },
                      { "Synth", { pSynthType, pSynthTune, pSynthDecay, pSynthTone, pSynthSnap, pSynthDrive } } };
         }
@@ -533,6 +539,9 @@ namespace pulse
                 filter.reset();
                 amp.setSampleRate (getSampleRate());
                 amp.reset();
+                fenv.setSampleRate (getSampleRate());
+                fenv.reset();
+                fenv.noteOn();
 
                 if (synthMode)
                 {
@@ -559,6 +568,7 @@ namespace pulse
                 if (! allowTailOff) { finish(); return; }
                 if (o.getInt (pPlayMode) == 0) return;   // one-shot plays out
                 amp.noteOff();
+                fenv.noteOff();
                 releasing = true;
             }
 
@@ -574,11 +584,10 @@ namespace pulse
                 const bool oneShot = o.getInt (pPlayMode) == 0;
                 amp.setParameters (adsrFrom (jmax (0.05f, o.get (pA)), o.get (pD), o.get (pS), o.get (pR)));
                 const int ftype = o.getInt (pFilterType);
-                if (ftype > 0)
-                {
-                    const float cut = o.get (pCutoff) * std::pow (2.0f, -o.get (pVelFilter) * (1.0f - velocity) * 5.0f);
-                    filter.set (cut, o.get (pReso), getSampleRate());
-                }
+                const float cut = o.get (pCutoff) * std::pow (2.0f, -o.get (pVelFilter) * (1.0f - velocity) * 5.0f);
+                const float fenvAmt = o.get (pFEnv), reso = o.get (pReso);
+                fenv.setParameters (adsrFrom (o.get (pFA), o.get (pFD), o.get (pFS), o.get (pFR)));
+                if (ftype > 0) filter.set (cut, reso, getSampleRate());
                 const float gain = Decibels::decibelsToGain (o.get (pGain)) * (1.0f - o.get (pVelSens) * (1.0f - velocity));
                 const float chokeStep = 1.0f / (float) (0.004 * getSampleRate());
 
@@ -617,6 +626,9 @@ namespace pulse
                         }
                     }
 
+                    const float fe = fenv.getNextSample();
+                    if (ftype > 0 && std::abs (fenvAmt) > 0.001f && (i & 15) == 0)
+                        filter.set (jlimit (20.0f, 20000.0f, cut * std::pow (2.0f, fenvAmt * fe * 6.0f)), reso, getSampleRate());
                     if (ftype > 0)
                     {
                         const int mode = ftype == 1 ? 0 : ftype == 2 ? 1 : 2;
@@ -648,6 +660,7 @@ namespace pulse
             }
 
             DrumPad& o;
+            ADSR fenv;
             std::shared_ptr<SampleData> data;
             DrumVoice drum;
             double pos = 0, s0 = 0, s1 = 0;

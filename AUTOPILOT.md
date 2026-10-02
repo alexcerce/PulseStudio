@@ -64,7 +64,7 @@ when you start, touch it after each step, and delete it when you stop.
 4. **Owner request 2 (2026-10-02): "Do all of that" + compact device cards.**
    - ~~v0.29 compact device cards (rows by height, pages with tabs, collapse, A/B, randomise, reset, copy/paste)~~ (done)
    - ~~v0.30 welcome screen~~ (done) (recent projects, demo, templates, getting started tips), shortcuts for the new features
-   - v0.31 owner request: filter envelopes (full ADSR + amount) on every instrument filter, and every graph display
+   - ~~v0.31 owner request~~ (done): filter envelopes (full ADSR + amount) on every instrument filter, and every graph display
      interactive with draggable nodes mapped to the knobs (envelopes, filter curves, compressor / saturator / limiter
      curves, reverb, delay); the display follows the card page
    - v0.32 background plugin scan with progress; Push encoder MIDI learn
@@ -105,3 +105,4 @@ when you start, touch it after each step, and delete it when you stop.
 - 2026-10-02: v0.28.0 backup history (20, restore as copy), stress render test (16 heavy tracks at 4.4x real time). 164 checks pass. The "all of it" list is done; next: cycle (Push encoder MIDI learn, startup speed, more UI polish).
 - 2026-10-02: v0.29.0 compact device cards (FM 1460 -> 360 px). 165 checks pass.
 - 2026-10-02: v0.30.0 welcome screen, commands for MIDI tools / collapse all / snapshots / loudness reset. 165 checks pass.
+- 2026-10-02: v0.31.0 Graphs.h (envelope / filter / dynamics editors with draggable nodes), paged displays, filter envelopes on Simpler / FM / Drum pads. 166 checks pass.
