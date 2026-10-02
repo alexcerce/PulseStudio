@@ -4,7 +4,7 @@ A native Windows DAW built with C++, [JUCE](https://juce.com) and [Tracktion Eng
 
 ## Install
 
-Run `dist/PulseStudio-0.9.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
+Run `dist/PulseStudio-0.10.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
 
 ## Build
 
@@ -44,7 +44,19 @@ Projects are saved as `.tracktionedit` files in `Documents/Pulse Studio/`. Prese
 - **Render:** right-click a track header to **freeze/unfreeze**, **flatten** (replace with audio), or **bounce to a new audio track**. Ctrl+J bounces the selected clips' range.
 - **Automation:** the **A** button opens a lane for any parameter. Click to add points and drag to move them; right-click removes one.
 - **Audio clips:** drag the fade handles; double-click for gain, pitch, fades, reverse and **warp to tempo**.
-- **Takes:** loop-recorded takes appear under right-click → *Takes*.
+- **Markers:** the strip above the ruler holds song markers (verse, chorus...).
+  - Double-click the strip or press **Ctrl+K** to add one at the playhead.
+  - Click a marker to jump to it, drag to move it, and double-click to rename it.
+  - **Ctrl+←/→** jumps to the previous or next marker.
+- **Tempo and time signature changes:**
+  - **Tempo** (above the track headers) opens the tempo lane: double-click to add a tempo change, drag points up or down (BPM) and sideways (position), and right-click to delete one.
+  - Right-click the marker strip to add a time signature (e.g. 3/4, 7/8) at that bar.
+  - The ruler, grid and LCD follow both.
+- **Takes and comping:**
+  - Loop-recorded MIDI takes appear under right-click → *Takes*.
+  - For audio, select several recorded passes and choose *Combine into takes*.
+  - Then use the track menu → *Show take lanes*. Each take gets a row under the clip. Click a take to use it for the whole clip, or drag across part of it to use that take for just that range: the clip is split there.
+- **Crossfades:** overlapping audio clips crossfade automatically (the **X-fade** button toggles this). Moving them apart removes the fades again.
 - **Keyboard editing:** the arrow keys move the selected clips. ←/→ move by the grid (Shift = 1 bar) and ↑/↓ move them to the track above or below. **Z** zooms to the selection (Shift+Z = whole song), **+**/**−** zoom, and **Ctrl+L** loops the selection.
 - **Clip looping:** right-click a MIDI or audio clip → *Loop clip*, then drag the right edge (or use *Clip length*) to repeat it. For example, loop a 1-bar clip across 8 bars. *Loop length* sets the looped region; dashed lines mark each repeat.
 - **Warp markers** (audio): right-click → *Warp markers*. Double-click the strip at the bottom of the clip to add a marker, drag markers to move audio onto the beat (Alt = no snap), and right-click a marker to delete it. You can also add markers at the playhead or at every detected transient.
@@ -171,6 +183,8 @@ Pulse's own devices have cards with labelled sections and a live display. Every 
 | Z / Shift+Z | Zoom to the selection / whole song |
 | + / − | Zoom in / out |
 | Ctrl+L | Loop the selected clips |
+| Ctrl+K | Add a marker at the playhead |
+| Ctrl+← / → | Previous / next marker |
 | Ctrl+Shift+R / E / M | Export audio / export selection / export MIDI |
 | Delete | Delete the selected clips (or notes in the piano roll) |
 | 1 / 2 / 3 | Devices / Mixer / Piano Roll |
@@ -180,7 +194,7 @@ Pulse's own devices have cards with labelled sections and a live display. Every 
 ## Command line
 
 - `--render out.wav` renders the last project offline and exits.
-- `--selftest report.txt` builds a scratch project and runs 85 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--selftest report.txt` builds a scratch project and runs 89 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
 - `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
 
 ## Code layout
@@ -204,6 +218,7 @@ All app code is header-only in `Source/` and compiled through `Main.cpp`.
 | `PianoRoll.h` | MIDI editor and controller lanes |
 | `DeviceChain.h` | Device rack: device cards, macros, Drum Rack editor, presets |
 | `DrumRack.h`, `Presets.h`, `Macros.h`, `MidiLearn.h` | Sound design and controller features |
+| `Timeline.h` | Markers, tempo / time signature maths, crossfades, comping |
 | `EditingOps.h` | Clipboard, split, time edits, bounce/flatten/freeze, grouping |
 | `Workflow.h` | Keyboard nudging, clip looping, warp markers, MIDI export, track presets, groove |
 | `PulseDevices.h`, `PulseSynths.h` | Pulse's own devices (EQ, Glue, Saturator, Auto Filter, Wavetable, Simpler) |

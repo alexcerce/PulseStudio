@@ -10,27 +10,35 @@
 #include "Workflow.h"
 #include "AudioToMidi.h"
 #include "Stems.h"
+#include "Timeline.h"
 
 //==============================================================================
 /** Draws a bar/beat grid between x positions for the given view. */
 inline void drawBeatGrid (Graphics& g, const EditViewState& evs, Rectangle<int> area)
 {
-    const int bpb = EngineHelpers::beatsPerBar (evs.edit);
+    auto& edit = const_cast<te::Edit&> (evs.edit);
+    const int bpb = EngineHelpers::beatsPerBar (edit);
     double step = 0.25;
-    for (double s : { 0.25, 0.5, 1.0, (double) bpb, bpb * 2.0, bpb * 4.0, bpb * 16.0 })
-        if (s * evs.pixelsPerBeat >= 14.0) { step = s; break; }
+    for (double st : { 0.25, 0.5, 1.0 })
+        if (st * evs.pixelsPerBeat >= 14.0) { step = st; break; }
+    const bool showBeats = step * evs.pixelsPerBeat >= 14.0 && evs.pixelsPerBeat >= 10.0;
 
-    auto b0 = std::floor (evs.xToBeat (0.0f) / step) * step;
-    auto b1 = evs.xToBeat ((float) area.getRight());
+    const auto b0 = evs.xToBeat (0.0f), b1 = evs.xToBeat ((float) area.getRight());
+    if (showBeats)
+        for (double b = std::floor (b0 / step) * step; b <= b1; b += step)
+        {
+            const bool beat = std::abs (b - std::round (b)) < 1.0e-6;
+            g.setColour (Colours::white.withAlpha (beat ? 0.06f : 0.03f));
+            g.drawVerticalLine ((int) evs.beatToX (b), (float) area.getY(), (float) area.getBottom());
+        }
 
-    for (double b = b0; b <= b1; b += step)
+    int barStep = 1;
+    while (barStep * bpb * evs.pixelsPerBeat < 14.0) barStep *= 2;
+    Timeline::forEachBar (edit, b0, b1, barStep, [&] (int, double b)
     {
-        auto x = evs.beatToX (b);
-        const bool bar = std::abs (std::fmod (b, (double) bpb)) < 1.0e-6;
-        const bool beat = std::abs (b - std::round (b)) < 1.0e-6;
-        g.setColour (Colours::white.withAlpha (bar ? 0.13f : beat ? 0.06f : 0.03f));
-        g.drawVerticalLine ((int) x, (float) area.getY(), (float) area.getBottom());
-    }
+        g.setColour (Colours::white.withAlpha (0.13f));
+        g.drawVerticalLine ((int) evs.beatToX (b), (float) area.getY(), (float) area.getBottom());
+    });
 }
 
 //==============================================================================
@@ -202,13 +210,24 @@ public:
 
     void mouseUp (const MouseEvent& e) override
     {
+        auto* sourceTrack = dynamic_cast<te::AudioTrack*> (clip->getTrack());
+        auto updateFades = [c = clip, sourceTrack]
+        {
+            if (sourceTrack != nullptr) Timeline::updateCrossfades (*sourceTrack);
+            if (auto t = dynamic_cast<te::AudioTrack*> (c->getTrack()); t != nullptr && t != sourceTrack) Timeline::updateCrossfades (*t);
+        };
+
         if (mode != Mode::move || e.mods.isPopupMenu() || findTrackAt == nullptr || groupStarts.size() > 1)
+        {
+            if (mode == Mode::move || mode == Mode::resize) updateFades();
             return;
+        }
 
         // Moving to another track happens on release (it rebuilds the clip components).
         if (auto target = findTrackAt (e.getScreenY()))
             if (target != clip->getTrack())
                 clip->moveTo (*target);
+        updateFades();
     }
 
     void mouseDoubleClick (const MouseEvent& e) override
@@ -695,14 +714,35 @@ private:
         }));
         m.addItem (PopupMenu::Item ("Delete").setAction ([sm, &edit] { edit.getUndoManager().beginNewTransaction ("Delete clips"); EditingOps::deleteSelected (*sm); }));
 
-        // takes (from loop recording)
-        if (clip->hasAnyTakes())
+        // takes (loop-recorded MIDI takes, or audio takes combined from several passes)
+        if (const int n = Timeline::numTakes (*clip); n > 0)
         {
             PopupMenu takes;
-            auto names = clip->getTakeDescriptions();
-            for (int i = 0; i < names.size(); ++i)
-                takes.addItem (names[i], true, clip->getCurrentTake() == i, [c = clip, i] { c->setCurrentTake (i); });
+            for (int i = 0; i < n; ++i)
+                takes.addItem ("Take " + String (i + 1), true, Timeline::currentTake (*clip) == i, [c = clip, i]
+                {
+                    c->edit.getUndoManager().beginNewTransaction ("Choose take");
+                    Timeline::setTake (*c, i);
+                });
+            takes.addSeparator();
+            takes.addItem ("Show take lanes for comping", [this]
+            {
+                if (auto t = clip->getTrack()) { evs.takeLanes.insert (t->itemID); evs.layoutChanged.sendChangeMessage(); }
+            });
             m.addSubMenu ("Takes", takes);
+        }
+        {
+            int audioSelected = 0;
+            for (auto c : EditingOps::selectedClips (*sm)) audioSelected += dynamic_cast<te::WaveAudioClip*> (c) != nullptr;
+            if (audioSelected >= 2)
+                m.addItem ("Combine " + String (audioSelected) + " selected audio clips into takes", [sm, &edit]
+                {
+                    edit.getUndoManager().beginNewTransaction ("Combine into takes");
+                    auto clips = EditingOps::selectedClips (*sm);
+                    sm->deselectAll();
+                    if (auto t = Timeline::combineIntoTakes (clips))
+                        sm->selectOnly (t);
+                });
         }
         if (auto mc = dynamic_cast<te::MidiClip*> (clip.get()))
         {
@@ -781,17 +821,68 @@ public:
 
     void resized() override
     {
+        const float clipH = (float) (getHeight() - evs.takeRows (*track) * EditViewState::takeRowHeight);
         for (auto* cc : clips)
         {
             auto pos = cc->getClip().getPosition();
             auto x1 = evs.timeToX (pos.getStart()), x2 = evs.timeToX (pos.getEnd());
-            cc->setBounds (Rectangle<float> (x1, 3.0f, jmax (4.0f, x2 - x1), (float) getHeight() - 6.0f).toNearestInt());
+            cc->setBounds (Rectangle<float> (x1, 3.0f, jmax (4.0f, x2 - x1), clipH - 6.0f).toNearestInt());
+        }
+    }
+
+    // Take lanes: one row per take under the clips. Drag across a take to use it for that range.
+    int takeRowAt (int y) const
+    {
+        const int rows = evs.takeRows (*track);
+        const int top = getHeight() - rows * EditViewState::takeRowHeight;
+        return (rows > 0 && y >= top) ? (y - top) / EditViewState::takeRowHeight : -1;
+    }
+
+    void paintOverChildren (Graphics& g) override
+    {
+        paintDropHighlight (g);
+        const int rows = evs.takeRows (*track);
+        if (rows == 0) return;
+
+        const int top = getHeight() - rows * EditViewState::takeRowHeight;
+        auto col = track->getColour();
+        for (int i = 0; i < rows; ++i)
+        {
+            auto rowArea = Rectangle<int> (0, top + i * EditViewState::takeRowHeight, getWidth(), EditViewState::takeRowHeight);
+            g.setColour (i % 2 ? Colour (0xff1a1d22) : Colour (0xff1e2127));
+            g.fillRect (rowArea);
+            for (auto c : track->getClips())
+            {
+                if (Timeline::numTakes (*c) <= i) continue;
+                auto r = c->getEditTimeRange();
+                auto x1 = evs.timeToX (r.getStart()), x2 = evs.timeToX (r.getEnd());
+                const bool active = Timeline::currentTake (*c) == i;
+                g.setColour (col.withAlpha (active ? 0.85f : 0.25f));
+                g.fillRoundedRectangle (Rectangle<float> (x1 + 1, (float) rowArea.getY() + 2, x2 - x1 - 2, (float) rowArea.getHeight() - 4), 3.0f);
+                g.setColour (active ? Colours::black : Theme::muted);
+                g.setFont (FontOptions (10.0f));
+                g.drawText ("Take " + String (i + 1), Rectangle<float> (x1 + 4, (float) rowArea.getY(), x2 - x1 - 6, (float) rowArea.getHeight()),
+                            Justification::centredLeft, true);
+            }
+        }
+        if (compRow >= 0)
+        {
+            const float a = (float) jmin (compX0, compX1), b = (float) jmax (compX0, compX1);
+            g.setColour (Colours::white.withAlpha (0.25f));
+            g.fillRect (a, (float) (top + compRow * EditViewState::takeRowHeight), b - a, (float) EditViewState::takeRowHeight);
         }
     }
 
     void mouseDown (const MouseEvent& e) override
     {
         evs.selectionManager.selectOnly (track.get());
+
+        compRow = e.mods.isPopupMenu() ? -1 : takeRowAt (e.y);
+        if (compRow >= 0)
+        {
+            compX0 = compX1 = e.x;
+            return;
+        }
 
         if (e.mods.isPopupMenu())
         {
@@ -805,12 +896,35 @@ public:
     // Dragging on empty space draws a selection rectangle across lanes.
     void mouseDrag (const MouseEvent& e) override
     {
+        if (compRow >= 0) { compX1 = e.x; repaint(); return; }
         if (! e.mods.isPopupMenu() && e.getDistanceFromDragStart() > 4 && onRubberBand)
             onRubberBand (e, false);
     }
 
     void mouseUp (const MouseEvent& e) override
     {
+        if (compRow >= 0)
+        {
+            // a click picks the take for the whole clip, a drag picks it for that range (snapped)
+            auto t0 = evs.xToTime ((float) jmin (compX0, compX1)), t1 = evs.xToTime ((float) jmax (compX0, compX1));
+            if (std::abs (compX1 - compX0) < 4)
+            {
+                if (auto c = Timeline::clipAt (*track, t0)) { t0 = c->getEditTimeRange().getStart(); t1 = c->getEditTimeRange().getEnd(); }
+            }
+            else
+            {
+                t0 = EngineHelpers::beatToTime (evs.edit, evs.snap (EngineHelpers::timeToBeat (evs.edit, t0)));
+                t1 = EngineHelpers::beatToTime (evs.edit, evs.snap (EngineHelpers::timeToBeat (evs.edit, t1)));
+            }
+            if (t1 > t0)
+            {
+                evs.edit.getUndoManager().beginNewTransaction ("Comp take");
+                Timeline::compTake (*track, { t0, t1 }, compRow);
+            }
+            compRow = -1;
+            repaint();
+            return;
+        }
         if (e.getDistanceFromDragStart() > 4 && onRubberBand)
             onRubberBand (e, true);
     }
@@ -885,7 +999,7 @@ public:
         insertAudioFiles (paths, (float) d.localPosition.x);
     }
 
-    void paintOverChildren (Graphics& g) override
+    void paintDropHighlight (Graphics& g)
     {
         if (dropHighlight)
         {
@@ -938,6 +1052,7 @@ private:
     }
 
     bool dropHighlight = false;
+    int compRow = -1, compX0 = 0, compX1 = 0, lastTakeRows = 0;
 
     void valueTreeChanged() override {}
 
@@ -967,7 +1082,14 @@ private:
     void handleAsyncUpdate() override
     {
         if (compareAndReset (updateClips))
+        {
             buildClips();
+            if (const int rows = evs.takeRows (*track); rows != lastTakeRows)
+            {
+                lastTakeRows = rows;
+                evs.layoutChanged.sendChangeMessage();
+            }
+        }
 
         if (compareAndReset (updatePositions))
         {
@@ -1147,6 +1269,17 @@ public:
                 EditingOps::flatten (*t);
             });
             m.addItem ("Bounce to new audio track", [t = track] { EditingOps::bounceToNewTrack (*t); });
+            {
+                bool anyTakes = false;
+                for (auto c : track->getClips()) anyTakes = anyTakes || Timeline::numTakes (*c) > 0;
+                const bool shown = evs.takeLanes.count (track->itemID) > 0;
+                m.addItem ("Show take lanes (comping)", anyTakes || shown, shown, [this]
+                {
+                    if (evs.takeLanes.count (track->itemID)) evs.takeLanes.erase (track->itemID);
+                    else                                      evs.takeLanes.insert (track->itemID);
+                    evs.layoutChanged.sendChangeMessage();
+                });
+            }
             m.addSeparator();
             m.addItem ("Save track preset...", [t = track]
             {
@@ -1317,15 +1450,14 @@ public:
         while (barStep * bpb * evs.pixelsPerBeat < 36.0) barStep *= 2;
 
         g.setFont (FontOptions (11.0f));
-        int firstBar = jmax (0, (int) (evs.xToBeat (0) / bpb) / barStep * barStep);
-        for (int bar = firstBar; evs.beatToX (bar * bpb) < (float) getWidth(); bar += barStep)
+        Timeline::forEachBar (evs.edit, evs.xToBeat (0), evs.xToBeat ((float) getWidth()), barStep, [&] (int bar, double beat)
         {
-            auto x = (int) evs.beatToX (bar * bpb);
+            auto x = (int) evs.beatToX (beat);
             g.setColour (Colours::white.withAlpha (0.25f));
             g.drawVerticalLine (x, 11.0f, (float) getHeight());
             g.setColour (Theme::muted.brighter (0.3f));
             g.drawText (String (bar + 1), x + 4, 9, 40, 16, Justification::centredLeft);
-        }
+        });
 
         auto px = evs.timeToX (tc.getPosition());
         g.setColour (Theme::accent);
@@ -1589,6 +1721,335 @@ private:
 };
 
 //==============================================================================
+/** Strip above the ruler: song markers (click to jump, drag to move, double-click to rename)
+    and time-signature changes. */
+class MarkerStrip : public Component,
+                    private Timer
+{
+public:
+    explicit MarkerStrip (EditViewState& e) : evs (e) { startTimerHz (10); }
+
+    void paint (Graphics& g) override
+    {
+        g.fillAll (Colour (0xff131519));
+        auto& ts = evs.edit.tempoSequence;
+
+        // time signature changes (the first one is shown in the transport bar)
+        g.setFont (FontOptions (10.0f, Font::bold));
+        for (int i = 1; i < ts.getNumTimeSigs(); ++i)
+        {
+            auto* sig = ts.getTimeSig (i);
+            const float x = evs.beatToX (sig->getStartBeat().inBeats());
+            if (x < -40 || x > getWidth()) continue;
+            auto r = Rectangle<float> (x, 2.0f, 30.0f, (float) getHeight() - 4.0f);
+            g.setColour (Colour (0xff3a3f48));
+            g.fillRoundedRectangle (r, 3.0f);
+            g.setColour (Theme::text);
+            g.drawText (String (sig->numerator.get()) + "/" + String (sig->denominator.get()), r, Justification::centred);
+        }
+
+        // markers
+        g.setFont (FontOptions (11.0f, Font::bold));
+        for (auto m : Timeline::markers (evs.edit))
+        {
+            const float x = evs.timeToX (m->getPosition().getStart());
+            if (x > getWidth()) continue;
+            const float w = jmax (40.0f, GlyphArrangement::getStringWidth (g.getCurrentFont(), m->getName()) + 12.0f);
+            auto r = Rectangle<float> (x, 1.0f, w, (float) getHeight() - 2.0f);
+            g.setColour (m == dragged ? Theme::orange : Colour (0xffd8a24a));
+            Path flag;
+            flag.addRoundedRectangle (r.getX(), r.getY(), r.getWidth(), r.getHeight(), 3.0f, 3.0f, false, true, false, true);
+            g.fillPath (flag);
+            g.setColour (Colours::black.withAlpha (0.85f));
+            g.drawText (m->getName(), r.withTrimmedLeft (5.0f), Justification::centredLeft, true);
+        }
+    }
+
+    void mouseDown (const MouseEvent& e) override
+    {
+        dragged = markerAt (e.position.x);
+        const int sig = timeSigAt (e.position.x);
+
+        if (e.mods.isPopupMenu())
+        {
+            PopupMenu m;
+            const double beat = evs.snap (evs.xToBeat (e.position.x));
+            auto& edit = evs.edit;
+            if (auto mk = dragged)
+            {
+                te::Clip::Ptr hold (mk);
+                m.addItem ("Rename marker...", [this, hold] { rename (dynamic_cast<te::MarkerClip*> (hold.get())); });
+                m.addItem ("Delete marker", [hold, &edit] { edit.getUndoManager().beginNewTransaction ("Delete marker"); hold->removeFromParent(); });
+            }
+            else if (sig > 0)
+            {
+                m.addItem ("Delete time signature change", [sig, &edit]
+                {
+                    edit.getUndoManager().beginNewTransaction ("Delete time signature");
+                    edit.tempoSequence.removeTimeSig (sig);
+                });
+            }
+            else
+            {
+                m.addItem ("Add marker here", [beat, &edit]
+                {
+                    edit.getUndoManager().beginNewTransaction ("Add marker");
+                    Timeline::addMarker (edit, EngineHelpers::beatToTime (edit, beat));
+                });
+                m.addItem ("Add tempo change here...", [this, beat] { askTempo (beat); });
+                m.addItem ("Add time signature change here...", [this, beat] { askTimeSig (beat); });
+            }
+            dragged = nullptr;
+            m.showMenuAsync (PopupMenu::Options().withTargetComponent (this));
+            return;
+        }
+
+        if (dragged != nullptr)
+        {
+            dragStart = EngineHelpers::timeToBeat (evs.edit, dragged->getPosition().getStart());
+            evs.edit.getUndoManager().beginNewTransaction ("Move marker");
+        }
+    }
+
+    void mouseDrag (const MouseEvent& e) override
+    {
+        if (dragged == nullptr || e.getDistanceFromDragStartX() == 0) return;
+        moved = true;
+        const double b = jmax (0.0, evs.snap (dragStart + e.getDistanceFromDragStartX() / evs.pixelsPerBeat));
+        dragged->setStart (EngineHelpers::beatToTime (evs.edit, b), false, true);
+        repaint();
+    }
+
+    void mouseUp (const MouseEvent&) override
+    {
+        if (dragged != nullptr && ! moved)
+            evs.edit.getTransport().setPosition (dragged->getPosition().getStart());
+        dragged = nullptr;
+        moved = false;
+        repaint();
+    }
+
+    void mouseDoubleClick (const MouseEvent& e) override
+    {
+        if (auto m = markerAt (e.position.x)) { rename (m); return; }
+        evs.edit.getUndoManager().beginNewTransaction ("Add marker");
+        Timeline::addMarker (evs.edit, EngineHelpers::beatToTime (evs.edit, evs.snap (evs.xToBeat (e.position.x))));
+    }
+
+private:
+    te::MarkerClip* markerAt (float x)
+    {
+        te::MarkerClip* found = nullptr;
+        for (auto m : Timeline::markers (evs.edit))
+        {
+            const float mx = evs.timeToX (m->getPosition().getStart());
+            if (x >= mx - 2 && x <= mx + 60) found = m;   // later markers win (drawn on top)
+        }
+        return found;
+    }
+
+    int timeSigAt (float x)
+    {
+        auto& ts = evs.edit.tempoSequence;
+        for (int i = 1; i < ts.getNumTimeSigs(); ++i)
+        {
+            const float sx = evs.beatToX (ts.getTimeSig (i)->getStartBeat().inBeats());
+            if (x >= sx && x <= sx + 30) return i;
+        }
+        return -1;
+    }
+
+    static void askText (const String& title, const String& prompt, const String& initial, std::function<void (const String&)> onOk)
+    {
+        auto* w = new AlertWindow (title, prompt, MessageBoxIconType::NoIcon);
+        w->addTextEditor ("t", initial);
+        w->addButton ("OK", 1, KeyPress (KeyPress::returnKey));
+        w->addButton ("Cancel", 0, KeyPress (KeyPress::escapeKey));
+        w->enterModalState (true, ModalCallbackFunction::create ([w, onOk] (int r)
+        {
+            if (r == 1) onOk (w->getTextEditorContents ("t").trim());
+        }), true);
+    }
+
+    void rename (te::MarkerClip* m)
+    {
+        if (m == nullptr) return;
+        te::Clip::Ptr hold (m);
+        askText ("Rename marker", "Name:", m->getName(), [hold] (const String& name)
+        {
+            if (name.isNotEmpty()) { hold->edit.getUndoManager().beginNewTransaction ("Rename marker"); hold->setName (name); }
+        });
+    }
+
+    void askTempo (double beat)
+    {
+        auto& edit = evs.edit;
+        const double now = edit.tempoSequence.getTempoAt (te::BeatPosition::fromBeats (beat)).getBpm();
+        askText ("Tempo change", "New tempo (BPM) from bar " + String (Timeline::barAtBeat (edit, beat) + 1) + ":", String (now, 1),
+                 [&edit, beat] (const String& t)
+        {
+            const double bpm = t.getDoubleValue();
+            if (bpm < 20.0 || bpm > 300.0) return;
+            edit.getUndoManager().beginNewTransaction ("Tempo change");
+            Timeline::addTempo (edit, beat, bpm);
+        });
+    }
+
+    void askTimeSig (double beat)
+    {
+        auto& edit = evs.edit;
+        askText ("Time signature change", "Time signature from bar " + String (Timeline::barAtBeat (edit, beat) + 1) + " (e.g. 3/4, 7/8):", "3/4",
+                 [&edit, beat] (const String& t)
+        {
+            int num = 4, den = 4;
+            if (! Timeline::parseTimeSig (t, num, den)) return;
+            edit.getUndoManager().beginNewTransaction ("Time signature change");
+            Timeline::addTimeSig (edit, beat, num, den);
+        });
+    }
+
+    void timerCallback() override { repaint(); }
+
+    EditViewState& evs;
+    te::MarkerClip* dragged = nullptr;
+    double dragStart = 0;
+    bool moved = false;
+};
+
+//==============================================================================
+/** Tempo automation lane: tempo points (drag up/down for BPM, sideways to move),
+    double-click to add, right-click to delete. */
+class TempoLane : public Component,
+                  private Timer
+{
+public:
+    explicit TempoLane (EditViewState& e) : evs (e) { startTimerHz (10); }
+
+    void paint (Graphics& g) override
+    {
+        g.fillAll (Colour (0xff17191e));
+        drawBeatGrid (g, evs, getLocalBounds());
+        auto& ts = evs.edit.tempoSequence;
+        updateRange();
+
+        Path line;
+        const int n = ts.getNumTempos();
+        for (int i = 0; i < n; ++i)
+        {
+            auto* t = ts.getTempo (i);
+            const float x = evs.beatToX (t->getStartBeat().inBeats()), y = yFor (t->getBpm());
+            const float nextX = i + 1 < n ? evs.beatToX (ts.getTempo (i + 1)->getStartBeat().inBeats()) : (float) getWidth();
+            if (i == 0) line.startNewSubPath (jmin (0.0f, x), y); else line.lineTo (x, y);
+            line.lineTo (nextX, y);   // tempo holds until the next point
+        }
+        g.setColour (Theme::accent);
+        g.strokePath (line, PathStrokeType (1.6f));
+
+        g.setFont (FontOptions (10.0f));
+        for (int i = 0; i < n; ++i)
+        {
+            auto* t = ts.getTempo (i);
+            const float x = evs.beatToX (t->getStartBeat().inBeats()), y = yFor (t->getBpm());
+            g.setColour (i == dragIndex ? Colours::white : Theme::accent);
+            g.fillEllipse (x - 4.0f, y - 4.0f, 8.0f, 8.0f);
+            g.setColour (Theme::muted);
+            g.drawText (String (t->getBpm(), 1), Rectangle<float> (x + 6.0f, y - 14.0f, 50.0f, 12.0f), Justification::left);
+        }
+    }
+
+    void mouseDown (const MouseEvent& e) override
+    {
+        dragIndex = pointAt (e.position);
+        auto& edit = evs.edit;
+        if (e.mods.isPopupMenu())
+        {
+            if (dragIndex > 0)
+            {
+                PopupMenu m;
+                m.addItem ("Delete tempo change", [&edit, i = dragIndex]
+                {
+                    edit.getUndoManager().beginNewTransaction ("Delete tempo change");
+                    edit.tempoSequence.removeTempo (i, true);
+                });
+                m.showMenuAsync (PopupMenu::Options().withTargetComponent (this));
+            }
+            dragIndex = -1;
+            return;
+        }
+        if (dragIndex >= 0)
+        {
+            auto* t = edit.tempoSequence.getTempo (dragIndex);
+            startBpm = t->getBpm();
+            startBeat = t->getStartBeat().inBeats();
+            edit.getUndoManager().beginNewTransaction ("Change tempo");
+        }
+    }
+
+    void mouseDrag (const MouseEvent& e) override
+    {
+        if (dragIndex < 0) return;
+        auto& ts = evs.edit.tempoSequence;
+        auto* t = ts.getTempo (dragIndex);
+        if (t == nullptr) return;
+
+        const double perPixel = (hiBpm - loBpm) / jmax (1, getHeight() - 8);
+        const double bpm = jlimit (20.0, 300.0, std::round ((startBpm - e.getDistanceFromDragStartY() * perPixel) * 10.0) / 10.0);
+        double beat = startBeat;
+        if (dragIndex > 0)   // the first tempo stays at the start
+        {
+            const double prev = ts.getTempo (dragIndex - 1)->getStartBeat().inBeats() + 0.25;
+            const double next = dragIndex + 1 < ts.getNumTempos() ? ts.getTempo (dragIndex + 1)->getStartBeat().inBeats() - 0.25 : 1.0e9;
+            beat = jlimit (prev, next, evs.snap (startBeat + e.getDistanceFromDragStartX() / evs.pixelsPerBeat));
+        }
+        t->set (te::BeatPosition::fromBeats (beat), bpm, t->getCurve(), true);
+        repaint();
+    }
+
+    void mouseUp (const MouseEvent&) override { dragIndex = -1; repaint(); }
+
+    void mouseDoubleClick (const MouseEvent& e) override
+    {
+        if (pointAt (e.position) >= 0) return;
+        const double beat = evs.snap (evs.xToBeat (e.position.x));
+        auto& edit = evs.edit;
+        edit.getUndoManager().beginNewTransaction ("Add tempo change");
+        Timeline::addTempo (edit, beat, bpmForY (e.position.y));
+    }
+
+private:
+    void updateRange()
+    {
+        if (dragIndex >= 0) return;   // keep the scale steady while dragging
+        auto& ts = evs.edit.tempoSequence;
+        double lo = 1.0e9, hi = 0;
+        for (int i = 0; i < ts.getNumTempos(); ++i) { lo = jmin (lo, ts.getTempo (i)->getBpm()); hi = jmax (hi, ts.getTempo (i)->getBpm()); }
+        loBpm = jmax (20.0, lo - 20.0);
+        hiBpm = jmin (300.0, hi + 20.0);
+    }
+
+    float yFor (double bpm) const     { return 4.0f + (float) ((hiBpm - bpm) / (hiBpm - loBpm)) * (float) (getHeight() - 8); }
+    double bpmForY (float y) const    { return jlimit (20.0, 300.0, std::round ((hiBpm - (y - 4.0f) / (float) (getHeight() - 8) * (hiBpm - loBpm)) * 10.0) / 10.0); }
+
+    int pointAt (Point<float> p)
+    {
+        auto& ts = evs.edit.tempoSequence;
+        for (int i = 0; i < ts.getNumTempos(); ++i)
+        {
+            auto* t = ts.getTempo (i);
+            if (Point<float> (evs.beatToX (t->getStartBeat().inBeats()), yFor (t->getBpm())).getDistanceFrom (p) < 8.0f)
+                return i;
+        }
+        return -1;
+    }
+
+    void timerCallback() override { if (dragIndex < 0) repaint(); }
+
+    EditViewState& evs;
+    int dragIndex = -1;
+    double startBpm = 120, startBeat = 0, loBpm = 60, hiBpm = 180;
+};
+
+//==============================================================================
 class ArrangementView : public Component,
                         private te::ValueTreeAllEventListener,
                         private FlaggedAsyncUpdater,
@@ -1597,9 +2058,24 @@ class ArrangementView : public Component,
 public:
     static constexpr int headerWidth = 230;
 
-    explicit ArrangementView (EditViewState& e) : evs (e), ruler (e), content (e), playhead (e)
+    explicit ArrangementView (EditViewState& e) : evs (e), ruler (e), markerStrip (e), tempoLane (e), content (e), playhead (e)
     {
         addAndMakeVisible (ruler);
+        addAndMakeVisible (markerStrip);
+        addChildComponent (tempoLane);
+
+        tempoBtn.setClickingTogglesState (true);
+        tempoBtn.setTooltip ("Show the tempo lane (tempo changes and ramps). Right-click the marker strip for time signatures.");
+        tempoBtn.onClick = [this] { tempoLane.setVisible (tempoBtn.getToggleState()); resized(); };
+        xfadeBtn.setClickingTogglesState (true);
+        xfadeBtn.setToggleState (Timeline::autoCrossfadesEnabled (evs.edit), dontSendNotification);
+        xfadeBtn.setTooltip ("Auto-crossfade overlapping audio clips");
+        xfadeBtn.onClick = [this] { Timeline::setAutoCrossfades (evs.edit, xfadeBtn.getToggleState()); };
+        for (auto* b : { &tempoBtn, &xfadeBtn })
+        {
+            b->setColour (TextButton::buttonOnColourId, Colour (0xff2b5b8a));
+            addAndMakeVisible (b);
+        }
         addAndMakeVisible (viewport);
         addAndMakeVisible (playhead);
         viewport.setViewedComponent (&content, false);
@@ -1637,15 +2113,28 @@ public:
     {
         g.fillAll (Colour (0xff15171b));
         g.setColour (Colour (0xff16181d));
-        g.fillRect (0, 0, headerWidth, rulerHeight);
+        g.fillRect (0, 0, headerWidth, topHeight());
+        g.setColour (Theme::muted);
+        g.setFont (FontOptions (10.0f, Font::bold));
+        g.drawText ("MARKERS", 10, 0, headerWidth - 20, markerStripHeight, Justification::centredLeft);
+        if (tempoLane.isVisible())
+            g.drawText ("TEMPO", 10, markerStripHeight + rulerHeight, headerWidth - 20, tempoLaneHeight, Justification::centredLeft);
         g.setColour (Theme::line);
-        g.drawHorizontalLine (rulerHeight - 1, 0.0f, (float) getWidth());
+        g.drawHorizontalLine (topHeight() - 1, 0.0f, (float) getWidth());
     }
 
     void resized() override
     {
         auto r = getLocalBounds();
+        auto strip = r.removeFromTop (markerStripHeight);
+        markerStrip.setBounds (strip.withTrimmedLeft (headerWidth));
+        auto stripTools = strip.removeFromLeft (headerWidth).reduced (4, 1);
+        xfadeBtn.setBounds (stripTools.removeFromRight (52));
+        stripTools.removeFromRight (3);
+        tempoBtn.setBounds (stripTools.removeFromRight (52));
         auto top = r.removeFromTop (rulerHeight);
+        if (tempoLane.isVisible())
+            tempoLane.setBounds (r.removeFromTop (tempoLaneHeight).withTrimmedLeft (headerWidth));
         auto tools = top.removeFromLeft (headerWidth).reduced (6, 4);
         zoomIn.setBounds (tools.removeFromRight (24));
         tools.removeFromRight (3);
@@ -1689,7 +2178,8 @@ public:
     }
 
 private:
-    static constexpr int rulerHeight = 30;
+    static constexpr int rulerHeight = 30, markerStripHeight = 20, tempoLaneHeight = 64;
+    int topHeight() const { return markerStripHeight + rulerHeight + (tempoLane.isVisible() ? tempoLaneHeight : 0); }
 
     /** Holds the rows; drops on the empty area below the tracks create a new track. */
     struct Content : public Component,
@@ -1825,7 +2315,7 @@ private:
         int y = 0;
         for (auto& r : rows)
         {
-            const int h = r.autoLane != nullptr ? evs.trackHeight : r.height;
+            const int h = r.autoLane != nullptr ? r.height - EditViewState::automationHeight : r.height;
             r.header->setBounds (0, y, headerWidth, h);
             r.lane->setBounds (headerWidth, y, w - headerWidth, h);
             y += h;
@@ -1968,6 +2458,9 @@ private:
 
     EditViewState& evs;
     Ruler ruler;
+    MarkerStrip markerStrip;
+    TempoLane tempoLane;
+    TextButton tempoBtn { "Tempo" }, xfadeBtn { "X-fade" };
     Viewport viewport;
     Content content;
     PlayheadOverlay playhead;

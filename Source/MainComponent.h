@@ -15,6 +15,7 @@
 #include "ExportDialog.h"
 #include "Workflow.h"
 #include "LinkSync.h"
+#include "Timeline.h"
 #include "MidiLearn.h"
 #include "DrumRack.h"
 #include "AudioSettings.h"
@@ -147,6 +148,17 @@ public:
         if (k == KeyPress ('3'))                           { showTab (Tab::pianoRoll); return true; }
         if (k == KeyPress::homeKey)                        { tc.setPosition (0s); return true; }
         if (isCtrlKey (k, 'l'))                            { loopSelection(); return true; }
+        if (isCtrlKey (k, 'k'))
+        {
+            edit->getUndoManager().beginNewTransaction ("Add marker");
+            Timeline::addMarker (*edit, tc.getPosition());
+            return true;
+        }
+        if (k.getModifiers().isCommandDown() && (k.isKeyCode (KeyPress::leftKey) || k.isKeyCode (KeyPress::rightKey)))
+        {
+            Timeline::jumpToMarker (*edit, k.isKeyCode (KeyPress::rightKey));
+            return true;
+        }
         if (CharacterFunctions::toUpperCase ((juce_wchar) k.getKeyCode()) == 'Z' && ! k.getModifiers().isCommandDown() && arrangement != nullptr)
         {
             arrangement->zoomToFit (shift);   // Z = selection, Shift+Z = whole song
@@ -201,6 +213,8 @@ public:
                                       : (evs->snapBeats > 0.0 ? evs->snapBeats : 0.25);
             um.beginNewTransaction ("Nudge clips");
             Workflow::nudgeClips (clips, k.isKeyCode (KeyPress::leftKey) ? -grid : grid);
+            for (auto c : clips)
+                if (auto t = dynamic_cast<te::AudioTrack*> (c->getTrack())) Timeline::updateCrossfades (*t);
             return true;
         }
 

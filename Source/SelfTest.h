@@ -19,6 +19,7 @@
 #include "AudioToMidi.h"
 #include "Stems.h"
 #include "CrashGuard.h"
+#include "Timeline.h"
 
 /** "Pulse Studio.exe --selftest report.txt"
     Builds a scratch project in the temp folder, exercises the editing / routing / device
@@ -771,6 +772,63 @@ namespace SelfTest
                 rep.check (postFirst && pre && ! Routing::isPreFader (*loud, bus) && std::abs (Routing::getSendDb (*loud, bus) + 6.0f) < 0.1f,
                            "Pre / post-fader sends");
             }
+        }
+
+        // --- arrangement: markers, tempo / time signature, crossfades, comping -------------------------
+        {
+            auto m1 = Timeline::addMarker (*edit, bars (4), "Chorus");
+            Timeline::addMarker (*edit, bars (1), "Verse");
+            auto list = Timeline::markers (*edit);
+            edit->getTransport().setPosition (te::TimePosition());
+            Timeline::jumpToMarker (*edit, true);
+            const bool toVerse = std::abs ((edit->getTransport().getPosition() - bars (1)).inSeconds()) < 0.001;
+            Timeline::jumpToMarker (*edit, true);
+            const bool toChorus = std::abs ((edit->getTransport().getPosition() - bars (4)).inSeconds()) < 0.001;
+            rep.check (m1 != nullptr && list.size() == 2 && list[0]->getName() == "Verse" && toVerse && toChorus, "Markers (add, sort, jump)");
+            for (auto m : list) m->removeFromParent();
+
+            // tempo change at bar 5, 3/4 from bar 3
+            const auto beforeTempo = EngineHelpers::beatToTime (*edit, 32.0);
+            Timeline::addTempo (*edit, 16.0, 140.0);
+            const bool tempoOk = std::abs (edit->tempoSequence.getTempoAt (te::BeatPosition::fromBeats (20.0)).getBpm() - 140.0) < 0.01
+                                 && EngineHelpers::beatToTime (*edit, 32.0) < beforeTempo;
+            Timeline::addTimeSig (*edit, 8.0, 3, 4);
+            const double bar4 = Timeline::barStartBeat (*edit, 3), bar5 = Timeline::barStartBeat (*edit, 4);
+            rep.check (tempoOk && std::abs (bar4 - 11.0) < 1.0e-6 && std::abs (bar5 - 14.0) < 1.0e-6 && Timeline::barAtBeat (*edit, 12.5) == 3,
+                       "Tempo and time-signature changes", "bar 4 at beat " + String (bar4) + ", bar 5 at beat " + String (bar5));
+            while (edit->tempoSequence.getNumTimeSigs() > 1) edit->tempoSequence.removeTimeSig (1);
+            while (edit->tempoSequence.getNumTempos() > 1)   edit->tempoSequence.removeTempo (1, false);
+
+            // crossfades
+            auto xt = ClipImport::createContentTrack (*edit, "Xfade", false);
+            auto fa = writeTestWav (dir.getChildFile ("xa.wav"), 2.0, 220.0), fb = writeTestWav (dir.getChildFile ("xb.wav"), 2.0, 330.0);
+            te::Clip::Ptr ca = ClipImport::importFile (*xt, *edit, fa, te::TimePosition());
+            te::Clip::Ptr cb = ClipImport::importFile (*xt, *edit, fb, te::TimePosition::fromSeconds (1.5));
+            auto aca = dynamic_cast<te::AudioClipBase*> (ca.get()), acb = dynamic_cast<te::AudioClipBase*> (cb.get());
+            Timeline::updateCrossfades (*xt);
+            const bool faded = aca != nullptr && acb != nullptr && std::abs (aca->getFadeOut().inSeconds() - 0.5) < 0.01 && std::abs (acb->getFadeIn().inSeconds() - 0.5) < 0.01;
+            if (cb != nullptr) cb->setStart (te::TimePosition::fromSeconds (3.0), false, true);
+            Timeline::updateCrossfades (*xt);
+            rep.check (faded && aca->getFadeOut().inSeconds() < 0.001 && acb->getFadeIn().inSeconds() < 0.001, "Auto-crossfade overlapping clips (and undo it when they separate)");
+            ca = nullptr; cb = nullptr;
+
+            // comping: two takes, use take 2 for the middle second
+            auto ct = ClipImport::createContentTrack (*edit, "Comp", false);
+            te::Clip::Ptr cc = ClipImport::importFile (*ct, *edit, fa, te::TimePosition());
+            if (auto w = dynamic_cast<te::WaveAudioClip*> (cc.get()))
+            {
+                Timeline::addAudioTake (*w, fb);
+                const int takes = Timeline::numTakes (*w);
+                auto piece = Timeline::compTake (*ct, { te::TimePosition::fromSeconds (0.5), te::TimePosition::fromSeconds (1.5) }, 1);
+                int onTake2 = 0, onTake1 = 0;
+                for (auto c : ct->getClips()) (Timeline::currentTake (*c) == 1 ? onTake2 : onTake1)++;
+                rep.check (takes == 2 && piece != nullptr && ct->getClips().size() == 3 && onTake2 == 1 && onTake1 == 2
+                             && std::abs ((piece->getPosition().getStart() - te::TimePosition::fromSeconds (0.5)).inSeconds()) < 0.001
+                             && dynamic_cast<te::WaveAudioClip*> (piece)->getOriginalFile() == fb,
+                           "Comp takes (split + choose a take for a range)", String (ct->getClips().size()) + " pieces, " + String (takes) + " takes, piece " + String (piece != nullptr ? "ok" : "null") + ", clip " + String (w->getEditTimeRange().getLength().inSeconds(), 2) + " s");
+            }
+            else rep.check (false, "Comp takes", "import failed");
+            cc = nullptr;
         }
 
         // --- undo -------------------------------------------------------------------------------

@@ -185,7 +185,7 @@ public:
         if (e.eventComponent == &bpmLabel && edit != nullptr)
         {
             if (! e.mouseWasDraggedSinceMouseDown()) return;
-            if (dragStartBpm < 0) dragStartBpm = edit->tempoSequence.getTempo (0)->getBpm();
+            if (dragStartBpm < 0) dragStartBpm = edit->tempoSequence.getTempoAt (edit->getTransport().getPosition()).getBpm();
             setBpm (std::round ((dragStartBpm - e.getDistanceFromDragStartY() * 0.25) * 10.0) / 10.0);
         }
     }
@@ -196,7 +196,7 @@ private:
     void setBpm (double bpm)
     {
         if (edit != nullptr && bpm >= 20.0 && bpm <= 400.0)
-            edit->tempoSequence.getTempo (0)->setBpm (bpm);
+            edit->tempoSequence.getTempoAt (edit->getTransport().getPosition()).setBpm (bpm);
     }
 
     void timerCallback() override
@@ -208,11 +208,11 @@ private:
         timeLabel.setText (EngineHelpers::formatTime (pos), dontSendNotification);
 
         if (! bpmLabel.isBeingEdited())
-            bpmLabel.setText (String (edit->tempoSequence.getTempo (0)->getBpm(), 1), dontSendNotification);
+            bpmLabel.setText (String (edit->tempoSequence.getTempoAt (pos).getBpm(), 1), dontSendNotification);
 
         if (! sigLabel.isBeingEdited())
         {
-            auto* ts = edit->tempoSequence.getTimeSig (0);
+            auto* ts = &edit->tempoSequence.getTimeSigAt (pos);
             sigLabel.setText (String (ts->numerator.get()) + "/" + String (ts->denominator.get()), dontSendNotification);
         }
 

@@ -83,7 +83,25 @@ public:
         layoutChanged.sendChangeMessage();
     }
 
-    int heightFor (te::Track& t) const  { return trackHeight + (isAutomationVisible (t) ? automationHeight : 0); }
+    /** Tracks showing their take lanes (for comping). */
+    std::set<te::EditItemID> takeLanes;
+    static constexpr int takeRowHeight = 22;
+
+    int takeRows (te::Track& t) const
+    {
+        if (takeLanes.count (t.itemID) == 0) return 0;
+        int n = 0;
+        if (auto ct = dynamic_cast<te::ClipTrack*> (&t))
+            for (auto c : ct->getClips())
+            {
+                if (dynamic_cast<te::WaveAudioClip*> (c) != nullptr) n = jmax (n, c->state.getChildWithName ("PULSETAKES").getNumChildren());
+                else if (c->hasAnyTakes())                           n = jmax (n, c->getTakeDescriptions().size());
+            }
+        return n;
+    }
+
+    int laneHeight (te::Track& t) const  { return trackHeight + takeRows (t) * takeRowHeight; }
+    int heightFor (te::Track& t) const   { return laneHeight (t) + (isAutomationVisible (t) ? automationHeight : 0); }
 
     /** Track rows changed height (automation shown/hidden or parameter changed). */
     ChangeBroadcaster layoutChanged;
