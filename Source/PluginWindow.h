@@ -100,8 +100,11 @@ private:
 };
 
 //==============================================================================
-/** Hosts a VST3 plugin's own editor (falls back to JUCE's generic editor). */
-struct ExternalEditorComponent : public te::Plugin::EditorComponent
+/** Pulse's frame around a plugin's own editor: a header with presets (the plugin's programs and
+    your saved states), A/B compare, randomise (undoable) and a strip of parameter knobs you can
+    search; the parameters you touched last come first. */
+struct ExternalEditorComponent : public te::Plugin::EditorComponent,
+                                 private Timer
 {
     explicit ExternalEditorComponent (te::ExternalPlugin& p) : plugin (p)
     {
@@ -115,20 +118,61 @@ struct ExternalEditorComponent : public te::Plugin::EditorComponent
             addAndMakeVisible (*editor);
         }
 
+        title.setText (plugin.getName(), dontSendNotification);
+        title.setFont (FontOptions (14.0f, Font::bold));
+        title.setColour (Label::textColourId, Theme::text);
+        addAndMakeVisible (title);
+        for (auto* b : { &presetBtn, &abBtn, &randomBtn, &paramsBtn })
+            addAndMakeVisible (b);
+        presetBtn.onClick = [this] { showPresets(); };
+        abBtn.setTooltip ("Compare two versions of the settings (click to switch between A and B)");
+        abBtn.onClick = [this] { toggleAB(); };
+        randomBtn.onClick = [this] { showRandomMenu(); };
+        paramsBtn.setClickingTogglesState (true);
+        paramsBtn.setTooltip ("Show the plugin's parameters as knobs (the ones you touched last come first)");
+        paramsBtn.setColour (TextButton::buttonOnColourId, Colour (0xff2b5b8a));
+        paramsBtn.onClick = [this] { strip.setVisible (paramsBtn.getToggleState()); search.setVisible (paramsBtn.getToggleState()); rebuildKnobs(); resizeToFitEditor(); };
+
+        search.setTextToShowWhenEmpty ("Search parameters...", Theme::muted);
+        search.onTextChange = [this] { rebuildKnobs(); };
+        addChildComponent (search);
+        strip.setViewedComponent (&knobHolder, false);
+        strip.setScrollBarsShown (false, true);
+        addChildComponent (strip);
+
+        for (auto* prm : plugin.getAutomatableParameters())
+            lastValues.push_back (prm->getCurrentValue());
         resizeToFitEditor();
+        startTimerHz (10);
     }
 
     bool allowWindowResizing() override { return false; }
+    ComponentBoundsConstrainer* getBoundsConstrainer() override { return nullptr; }
 
-    ComponentBoundsConstrainer* getBoundsConstrainer() override
+    void paint (Graphics& g) override
     {
-        return editor != nullptr ? editor->getConstrainer() : nullptr;
+        g.fillAll (Theme::panel);
+        g.setColour (Colour (0xff1b1e23));
+        g.fillRect (getLocalBounds().removeFromTop (headerH));
+        g.setColour (Theme::accent);
+        g.fillRect (0, headerH - 2, getWidth(), 2);
     }
 
     void resized() override
     {
-        if (editor != nullptr)
-            editor->setBounds (getLocalBounds());
+        auto r = getLocalBounds();
+        auto top = r.removeFromTop (headerH).reduced (8, 6).withTrimmedBottom (2);
+        for (auto* b : { &paramsBtn, &randomBtn, &abBtn, &presetBtn }) { b->setBounds (top.removeFromRight (b == &abBtn ? 44 : 92)); top.removeFromRight (6); }
+        title.setBounds (top);
+        if (strip.isVisible())
+        {
+            auto bottom = r.removeFromBottom (stripH);
+            search.setBounds (bottom.removeFromTop (24).reduced (8, 2).withWidth (240));
+            strip.setBounds (bottom);
+            knobHolder.setSize (jmax (strip.getWidth(), knobs.size() * knobW + 8), stripH - 24 - strip.getScrollBarThickness());
+            for (int i = 0; i < knobs.size(); ++i) knobs[i]->setBounds (4 + i * knobW, 0, knobW, knobHolder.getHeight());
+        }
+        if (editor != nullptr) editor->setBounds (r.withWidth (editor->getWidth()).withHeight (editor->getHeight()));
     }
 
     void childBoundsChanged (Component* c) override
@@ -142,12 +186,252 @@ struct ExternalEditorComponent : public te::Plugin::EditorComponent
 
     void resizeToFitEditor()
     {
-        setSize (jmax (8, editor != nullptr ? editor->getWidth() : 0),
-                 jmax (8, editor != nullptr ? editor->getHeight() : 0));
+        const int ew = editor != nullptr ? editor->getWidth() : 0, eh = editor != nullptr ? editor->getHeight() : 0;
+        setSize (jmax (520, ew), headerH + jmax (8, eh) + (strip.isVisible() ? stripH : 0));
+        resized();
     }
 
+    //==============================================================================
+    /** A knob for one parameter (drag, double-click resets, shows the value). */
+    struct Knob : public Component
+    {
+        explicit Knob (te::AutomatableParameter& prm) : param (&prm)
+        {
+            slider.setSliderStyle (Slider::RotaryHorizontalVerticalDrag);
+            slider.setTextBoxStyle (Slider::NoTextBox, false, 0, 0);
+            auto range = prm.getValueRange();
+            slider.setRange (range.getStart(), range.getEnd(), 0.0);
+            slider.setValue (prm.getCurrentValue(), dontSendNotification);
+            slider.onDragStart = [this] { param->getEdit().getUndoManager().beginNewTransaction ("Change " + param->getParameterName()); param->parameterChangeGestureBegin(); };
+            slider.onDragEnd   = [this] { param->parameterChangeGestureEnd(); };
+            slider.onValueChange = [this] { param->setParameter ((float) slider.getValue(), sendNotificationSync); };
+            if (auto d = prm.getDefaultValue()) slider.setDoubleClickReturnValue (true, *d);
+            name.setText (prm.getParameterName(), dontSendNotification);
+            name.setTooltip (prm.getParameterName());
+            for (auto* l : { &name, &value })
+            {
+                l->setJustificationType (Justification::centred);
+                l->setFont (FontOptions (10.5f));
+                l->setInterceptsMouseClicks (false, false);
+                addAndMakeVisible (l);
+            }
+            name.setColour (Label::textColourId, Theme::muted);
+            addAndMakeVisible (slider);
+        }
+        void resized() override
+        {
+            auto r = getLocalBounds();
+            name.setBounds (r.removeFromTop (14));
+            value.setBounds (r.removeFromBottom (14));
+            slider.setBounds (r.reduced (6, 0));
+        }
+        void refresh()
+        {
+            if (! slider.isMouseButtonDown()) slider.setValue (param->getCurrentValue(), dontSendNotification);
+            value.setText (param->getCurrentValueAsString(), dontSendNotification);
+        }
+        te::AutomatableParameter::Ptr param;
+        Slider slider;
+        Label name, value;
+    };
+
+    int numKnobs() const { return knobs.size(); }
+    void setSearch (const String& t) { search.setText (t, false); rebuildKnobs(); }
+    void showParameters (bool show) { paramsBtn.setToggleState (show, sendNotificationSync); }
+    String knobName (int i) const { return knobs[i] != nullptr ? knobs[i]->param->getParameterName() : String(); }
+
+    /** Settings: the plugin's state plus every parameter value (some plugins only fold parameter
+        changes into their state while audio runs). */
+    struct Snapshot
+    {
+        MemoryBlock state;
+        std::vector<float> params;
+        bool isEmpty() const { return state.getSize() == 0 && params.empty(); }
+        void reset() { state.reset(); params.clear(); }
+    };
+
+    Snapshot capture() const
+    {
+        Snapshot sn;
+        if (auto pi = plugin.getAudioPluginInstance())
+        {
+            pi->getStateInformation (sn.state);
+            for (auto* prm : pi->getParameters()) sn.params.push_back (prm->getValue());
+        }
+        return sn;
+    }
+
+    void restore (const Snapshot& sn)
+    {
+        auto pi = plugin.getAudioPluginInstance();
+        if (pi == nullptr || sn.isEmpty()) return;
+        if (sn.state.getSize() > 0) pi->setStateInformation (sn.state.getData(), (int) sn.state.getSize());
+        auto& ps = pi->getParameters();
+        for (int i = 0; i < ps.size() && i < (int) sn.params.size(); ++i)
+            if (std::abs (ps[i]->getValue() - sn.params[(size_t) i]) > 1.0e-6f) ps[i]->setValueNotifyingHost (sn.params[(size_t) i]);
+        plugin.edit.pluginChanged (plugin);
+    }
+
+    /** A / B: the current settings go into this slot, the other slot's come back. */
+    void toggleAB()
+    {
+        auto pi = plugin.getAudioPluginInstance();
+        if (pi == nullptr) return;
+        auto& mine = abIsB ? slotB : slotA;
+        auto& other = abIsB ? slotA : slotB;
+        mine = capture();
+        restore (other);
+        abIsB = ! abIsB;
+        abBtn.setButtonText (abIsB ? "B" : "A");
+        plugin.edit.pluginChanged (plugin);
+    }
+
+    /** Randomises every parameter (amount 1) or nudges them (0.2); undo restores. */
+    void randomise (float amount)
+    {
+        auto pi = plugin.getAudioPluginInstance();
+        if (pi == nullptr) return;
+        beforeRandom = capture();
+        Random rng;
+        for (auto* prm : pi->getParameters())
+        {
+            if (prm->isMetaParameter() || ! prm->isAutomatable()) continue;
+            const float v = prm->getValue();
+            prm->setValueNotifyingHost (jlimit (0.0f, 1.0f, amount >= 1.0f ? rng.nextFloat() : v + (rng.nextFloat() * 2.0f - 1.0f) * amount));
+        }
+        plugin.edit.pluginChanged (plugin);
+    }
+
+    void undoRandomise()
+    {
+        restore (beforeRandom);
+        beforeRandom.reset();
+    }
+
+    static File stateFolder (te::ExternalPlugin& p)
+    {
+        auto f = File::getSpecialLocation (File::userDocumentsDirectory).getChildFile ("Pulse Studio").getChildFile ("Presets").getChildFile ("Plugin States")
+                     .getChildFile (File::createLegalFileName (p.getName()));
+        f.createDirectory();
+        return f;
+    }
+
+    bool saveState (const String& name)
+    {
+        auto pi = plugin.getAudioPluginInstance();
+        if (pi == nullptr) return false;
+        MemoryBlock mb;
+        pi->getStateInformation (mb);
+        return stateFolder (plugin).getChildFile (File::createLegalFileName (name) + ".pulsestate").replaceWithData (mb.getData(), mb.getSize());
+    }
+
+    bool loadState (const File& f)
+    {
+        auto pi = plugin.getAudioPluginInstance();
+        MemoryBlock mb;
+        if (pi == nullptr || ! f.loadFileAsData (mb) || mb.getSize() == 0) return false;
+        pi->setStateInformation (mb.getData(), (int) mb.getSize());
+        plugin.edit.pluginChanged (plugin);
+        return true;
+    }
+
+private:
+    void showPresets()
+    {
+        PopupMenu m;
+        if (auto pi = plugin.getAudioPluginInstance(); pi != nullptr && pi->getNumPrograms() > 1)
+        {
+            PopupMenu progs;
+            for (int i = 0; i < jmin (512, pi->getNumPrograms()); ++i)
+                progs.addItem (pi->getProgramName (i).isNotEmpty() ? pi->getProgramName (i) : "Program " + String (i + 1), true, i == pi->getCurrentProgram(),
+                               [this, i] { if (auto p2 = plugin.getAudioPluginInstance()) { p2->setCurrentProgram (i); plugin.edit.pluginChanged (plugin); } });
+            m.addSubMenu ("Plugin programs", progs);
+        }
+        auto files = stateFolder (plugin).findChildFiles (File::findFiles, false, "*.pulsestate");
+        files.sort();
+        if (! files.isEmpty())
+        {
+            m.addSectionHeader ("Your saved settings");
+            for (auto& f : files) m.addItem (f.getFileNameWithoutExtension(), [this, f] { loadState (f); });
+        }
+        m.addSeparator();
+        m.addItem ("Save current settings...", [this]
+        {
+            auto* w = new AlertWindow ("Save settings", "Name:", MessageBoxIconType::NoIcon);
+            w->addTextEditor ("name", plugin.getName() + " 1");
+            w->addButton ("Save", 1, KeyPress (KeyPress::returnKey));
+            w->addButton ("Cancel", 0, KeyPress (KeyPress::escapeKey));
+            w->enterModalState (true, ModalCallbackFunction::create ([this, w] (int r)
+            {
+                const auto n = w->getTextEditorContents ("name").trim();
+                if (r == 1 && n.isNotEmpty()) saveState (n);
+            }), true);
+        });
+        m.addItem ("Open the settings folder", [this] { stateFolder (plugin).startAsProcess(); });
+        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&presetBtn));
+    }
+
+    void showRandomMenu()
+    {
+        PopupMenu m;
+        m.addItem ("Randomise", [this] { randomise (1.0f); });
+        m.addItem ("Randomise a little", [this] { randomise (0.2f); });
+        m.addItem ("Undo randomise", ! beforeRandom.isEmpty(), false, [this] { undoRandomise(); });
+        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&randomBtn));
+    }
+
+    void rebuildKnobs()
+    {
+        knobs.clear();
+        if (! strip.isVisible()) return;
+        const auto q = search.getText().trim();
+        auto params = plugin.getAutomatableParameters();
+        std::vector<int> order;
+        for (auto idx : touched) if (idx < params.size()) order.push_back (idx);
+        for (int i = 0; i < params.size(); ++i) if (std::find (order.begin(), order.end(), i) == order.end()) order.push_back (i);
+        for (int idx : order)
+        {
+            auto* prm = params[idx];
+            if (q.isNotEmpty() && ! prm->getParameterName().containsIgnoreCase (q)) continue;
+            knobHolder.addAndMakeVisible (knobs.add (new Knob (*prm)));
+            if (knobs.size() >= 256) break;
+        }
+        resized();
+    }
+
+    void timerCallback() override
+    {
+        auto params = plugin.getAutomatableParameters();
+        bool moved = false;
+        for (int i = 0; i < params.size() && i < (int) lastValues.size(); ++i)
+        {
+            const float v = params[i]->getCurrentValue();
+            if (std::abs (v - lastValues[(size_t) i]) > 1.0e-5f)
+            {
+                lastValues[(size_t) i] = v;
+                touched.erase (std::remove (touched.begin(), touched.end(), i), touched.end());
+                touched.insert (touched.begin(), i);
+                if (touched.size() > 64) touched.pop_back();
+                moved = true;
+            }
+        }
+        for (auto* k : knobs) k->refresh();
+        if (moved && strip.isVisible() && search.getText().isEmpty() && ! isMouseButtonDownAnywhere()) rebuildKnobs();
+    }
+
+    static constexpr int headerH = 38, stripH = 120, knobW = 76;
     te::ExternalPlugin& plugin;
     std::unique_ptr<AudioProcessorEditor> editor;
+    Label title;
+    TextButton presetBtn { "Presets" }, abBtn { "A" }, randomBtn { "Randomise" }, paramsBtn { "Parameters" };
+    TextEditor search;
+    Viewport strip;
+    Component knobHolder;
+    OwnedArray<Knob> knobs;
+    std::vector<float> lastValues;
+    std::vector<int> touched;
+    Snapshot slotA, slotB, beforeRandom;
+    bool abIsB = false;
 };
 
 //==============================================================================

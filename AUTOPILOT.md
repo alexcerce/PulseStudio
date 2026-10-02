@@ -126,3 +126,6 @@ when you start, touch it after each step, and delete it when you stop.
   phrase preview via an offline copy, vocoder bands, Utility stereo field). 185 checks pass.
 - 2026-10-02: v0.39.0 piano roll draw tool / Alt-drag copy / ghost notes / velocity bars, per-track lane heights,
   clip rename, audit fixes (master devices button, bus row volume, clickable instrument label). 187 checks pass.
+- 2026-10-02: v0.40.0 VST frame (presets / programs, saved states, A/B with parameter snapshots, randomise + undo,
+  searchable knob strip), StartupTimer + splash. Startup: ~2.0 s of 2.9 s is the audio interface opening
+  (WASAPI, Komplete Audio 2) - driver cost; the rest of startup is ~0.5 s. 188 checks pass.

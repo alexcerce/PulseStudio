@@ -1024,6 +1024,86 @@ namespace SelfTest
             }
         }
 
+        // --- VST frame: presets / A-B / randomise / parameter strip around a plugin's own editor ---------------
+        {
+            File vst;
+            for (auto name : { "Replika.vst3", "Phasis.vst3", "Choral.vst3", "Flair.vst3" })
+                if (auto f = File ("C:/Program Files/Common Files/VST3").getChildFile (name); f.exists()) { vst = f; break; }
+            if (vst == File())
+                rep.lines.add ("NOTE  no VST3 effect found for the plugin frame test - skipped");
+            else
+            {
+                rep.step ("plugin frame " + vst.getFileName());
+                OwnedArray<PluginDescription> types;
+                VST3PluginFormat fmt;
+                fmt.findAllTypesForFile (types, vst.getFullPathName());
+                bool ok = false;
+                String info;
+                if (! types.isEmpty())
+                {
+                    engine.getPluginManager().knownPluginList.addType (*types[0]);
+                    auto t = ClipImport::createContentTrack (*edit, "FrameTest", false);
+                    auto ext = edit->getPluginCache().createNewPlugin (te::ExternalPlugin::xmlTypeName, *types[0]);
+                    t->pluginList.insertPlugin (ext, 0, nullptr);
+                    for (int i = 0; i < 100; ++i)
+                    {
+                        auto* e2 = dynamic_cast<te::ExternalPlugin*> (ext.get());
+                        if (e2 == nullptr || e2->getAudioPluginInstance() != nullptr) break;
+                        if (i == 0) e2->forceFullReinitialise();
+                        MessageManager::getInstance()->runDispatchLoopUntil (50);
+                    }
+                    if (auto* ep = dynamic_cast<te::ExternalPlugin*> (ext.get()); ep != nullptr && ep->getAudioPluginInstance() != nullptr)
+                    {
+                        PulseLookAndFeel laf;
+                        LookAndFeel::setDefaultLookAndFeel (&laf);
+                        {
+                            ExternalEditorComponent frame (*ep);
+                            frame.showParameters (true);
+                            const int all = frame.numKnobs();
+                            const auto firstName = frame.knobName (0);
+                            frame.setSearch (firstName.substring (0, 3));
+                            const int filtered = frame.numKnobs();
+                            frame.setSearch ({});
+
+                            auto* pi = ep->getAudioPluginInstance();
+                            auto values = [pi] { std::vector<float> v; for (auto* prm : pi->getParameters()) v.push_back (prm->getValue()); return v; };
+                            const auto before = values();
+                            frame.randomise (1.0f);
+                            const bool changed = values() != before;
+                            frame.undoRandomise();
+                            auto near = [] (const std::vector<float>& a, const std::vector<float>& b)
+                            {
+                                if (a.size() != b.size()) return false;
+                                for (size_t i = 0; i < a.size(); ++i) if (std::abs (a[i] - b[i]) > 0.01f) return false;
+                                return true;
+                            };
+                            const bool restored = near (values(), before);
+                            // A / B: change B, switch back to A = original
+                            frame.toggleAB();                      // now B (starts as A's copy is not set: B empty -> stays)
+                            frame.randomise (1.0f);
+                            const auto bValues = values();
+                            frame.toggleAB();                      // back to A
+                            const bool aBack = near (values(), before);
+                            frame.toggleAB();                      // B again
+                            const bool bBack = near (values(), bValues);
+                            auto img = frame.createComponentSnapshot (frame.getLocalBounds());
+                            auto f = dir.getChildFile ("plugin_frame.png");
+                            f.deleteFile();
+                            if (auto os = f.createOutputStream()) { PNGImageFormat png; png.writeImageToStream (img, *os); }
+                            ok = all > 0 && filtered >= 1 && filtered < all && changed && restored && aBack && bBack;
+                            info << all << " knobs, search " << filtered << ", randomise " << (changed ? "changed" : "same") << " / undo "
+                                 << (restored ? "ok" : "no") << ", A/B " << (aBack ? "a" : "-") << (bBack ? "b" : "-");
+                        }
+                        LookAndFeel::setDefaultLookAndFeel (nullptr);
+                    }
+                    else info = "plugin did not load";
+                    ext = nullptr;
+                    edit->deleteTrack (t);
+                }
+                rep.check (ok, "Plugin frame (parameters, search, randomise + undo, A/B)", info);
+            }
+        }
+
         // --- background export -------------------------------------------------------------------------
         {
             auto& br = BackgroundRender::instance();

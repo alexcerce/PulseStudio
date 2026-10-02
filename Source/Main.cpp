@@ -12,6 +12,10 @@ struct PulseEngineBehaviour : public te::EngineBehaviour
 {
     bool canScanPluginsOutOfProcess() override { return true; }
 
+    // the app opens the audio device itself (timed, see StartupTimer); tests keep the default
+    bool openDevicesInEngine = true;
+    bool autoInitialiseDeviceManager() override { return openDevicesInEngine; }
+
     // Safe mode loads no plugins; disabled (crashing) plugins are skipped. Their settings stay in the project.
     bool shouldLoadPlugin (te::ExternalPlugin& p) override
     {
@@ -45,6 +49,7 @@ public:
             return;
 
         auto args = StringArray::fromTokens (getCommandLineParameters(), true);
+        StartupTimer::origin();
 
         // --crash-test : used by the self-test to check the crash handler (crashes "inside" a fake plugin load)
         if (args.contains ("--crash-test"))
@@ -78,9 +83,28 @@ public:
         CrashGuard::install (profile);
         const bool safeRequested = args.contains ("--safe-mode") || ModifierKeys::getCurrentModifiersRealtime().isShiftDown();
         CrashGuard::safeMode() = CrashGuard::askAfterCrash (safeRequested);
-        engine = std::make_unique<te::Engine> (profile, std::make_unique<PulseUIBehaviour>(), std::make_unique<PulseEngineBehaviour>());
+
+        // a splash right away: opening the audio interface can take a couple of seconds
+        if (! args.contains ("--snapshots") && ! args.contains ("--render"))
+        {
+            splash = std::make_unique<Splash>();
+            splash->setStatus ("Starting the audio engine...");
+        }
+        StartupTimer::mark ("look and feel, crash guard");
+        auto behaviour = std::make_unique<PulseEngineBehaviour>();
+        behaviour->openDevicesInEngine = false;
+        engine = std::make_unique<te::Engine> (profile, std::make_unique<PulseUIBehaviour>(), std::move (behaviour));
+        StartupTimer::mark ("engine (no devices)");
+        if (splash != nullptr) splash->setStatus ("Opening the audio device (this can take a moment)...");
+        engine->getDeviceManager().initialise (engine->getEngineBehaviour().shouldOpenAudioInputByDefault() ? te::DeviceManager::defaultNumChannelsToOpen : 0,
+                                               te::DeviceManager::defaultNumChannelsToOpen);
+        StartupTimer::mark ("audio / MIDI devices opened");
         pulse::registerDevices (*engine);
+        StartupTimer::mark ("devices registered");
+        if (splash != nullptr) splash->setStatus ("Loading the project...");
         mainWindow = std::make_unique<MainWindow> (*engine);
+        StartupTimer::mark ("main window shown");
+        MessageManager::callAsync ([this] { StartupTimer::mark ("first message loop"); StartupTimer::save(); splash = nullptr; });
 
         // Pulse Studio.exe --snapshots <dir> : screenshots of the main views (for UI work), then exit
         if (auto i = args.indexOf ("--snapshots"); i >= 0 && i + 1 < args.size())
@@ -162,6 +186,52 @@ private:
     std::unique_ptr<te::Engine> engine;
     std::unique_ptr<MainWindow> mainWindow;
     std::unique_ptr<Timer> snapshotRunner;
+
+    /** Shown while the engine and audio device start. */
+    struct Splash : public Component
+    {
+        Splash()
+        {
+            setOpaque (true);
+            setSize (440, 200);
+            addToDesktop (ComponentPeer::windowAppearsOnTaskbar);
+            centreWithSize (getWidth(), getHeight());
+            setVisible (true);
+            toFront (false);
+        }
+        void setStatus (const String& s)
+        {
+            status = s;
+            repaint();
+            if (auto* peer = getPeer()) peer->performAnyPendingRepaintsNow();
+            MessageManager::getInstance()->runDispatchLoopUntil (15);   // let Windows show it before the next slow step
+        }
+        void paint (Graphics& g) override
+        {
+            auto r = getLocalBounds().toFloat();
+            g.setGradientFill (ColourGradient (Colour (0xff1c2027), 0.0f, 0.0f, Colour (0xff111317), 0.0f, r.getBottom(), false));
+            g.fillRect (r);
+            g.setColour (Theme::accent);
+            g.fillRect (r.removeFromBottom (3.0f));
+            // pulse mark
+            Path wave;
+            const float cx = 40.0f, cy = 78.0f;
+            wave.startNewSubPath (cx, cy);
+            wave.lineTo (cx + 14, cy); wave.lineTo (cx + 22, cy - 22); wave.lineTo (cx + 32, cy + 20); wave.lineTo (cx + 40, cy - 8); wave.lineTo (cx + 46, cy); wave.lineTo (cx + 60, cy);
+            g.setColour (Theme::accent);
+            g.strokePath (wave, PathStrokeType (3.0f, PathStrokeType::curved, PathStrokeType::rounded));
+            g.setColour (Theme::text);
+            g.setFont (FontOptions (30.0f, Font::bold));
+            g.drawText ("Pulse Studio", 112, 54, 300, 40, Justification::centredLeft);
+            g.setColour (Theme::muted);
+            g.setFont (FontOptions (12.0f));
+            g.drawText ("Version " + JUCEApplication::getInstance()->getApplicationVersion(), 114, 92, 300, 18, Justification::centredLeft);
+            g.setFont (FontOptions (13.0f));
+            g.drawText (status, 40, 150, 380, 20, Justification::centredLeft);
+        }
+        String status;
+    };
+    std::unique_ptr<Splash> splash;
 };
 
 START_JUCE_APPLICATION (PulseStudioApplication)

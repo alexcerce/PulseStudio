@@ -187,3 +187,17 @@ public:
         return true;
     }
 };
+
+//==============================================================================
+/** Startup timing: each mark is written (ms since launch) to %TEMP%/pulse-startup.log. */
+namespace StartupTimer
+{
+    inline double& origin() { static double t = Time::getMillisecondCounterHiRes(); return t; }
+    inline StringArray& lines() { static StringArray l; return l; }
+    inline void mark (const String& what)
+    {
+        const double ms = Time::getMillisecondCounterHiRes() - origin();
+        lines().add (String (roundToInt (ms)).paddedLeft (' ', 6) + " ms  " + what);
+    }
+    inline void save() { File::getSpecialLocation (File::tempDirectory).getChildFile ("pulse-startup.log").replaceWithText (lines().joinIntoString ("\n")); }
+}

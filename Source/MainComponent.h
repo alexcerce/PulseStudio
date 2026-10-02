@@ -76,13 +76,16 @@ public:
             return f;
         };
 
+        StartupTimer::mark ("ui basics");
         push = std::make_unique<Push2Controller> (engine);
+        StartupTimer::mark ("push controller");
         push->onToggleBrowser = [this] { toggleBrowser(); };
 
         setWantsKeyboardFocus (true);
         commands = std::make_unique<CommandRegistry> (settings());
         registerCommands();
         enableInputs();
+        StartupTimer::mark ("commands, inputs");
         openStartupProject();
         setSize (1440, 900);
         startTimer (60 * 1000);   // autosave
@@ -622,7 +625,9 @@ private:
         else
             loadEdit (projectsFolder().getNonexistentChildFile ("Demo Song", ".tracktionedit", false), true);
 
+        StartupTimer::mark ("project loaded");
         FactoryContent::ensureTemplates (engine);
+        StartupTimer::mark ("factory templates");
         if (! JUCEApplication::getCommandLineParameters().contains ("--snapshots")) checkForUpdates (false);   // only if an address was set
         if (settings().getBoolValue ("autoScanPlugins", true) && ! JUCEApplication::getCommandLineParameters().contains ("--snapshots"))
             Timer::callAfterDelay (5000, [sp = SafePointer<MainComponent> (this)] { if (sp != nullptr) sp->pluginScan.start(); });
@@ -655,10 +660,12 @@ private:
         closeEdit();
         editFile = file;
 
+        StartupTimer::mark ("closed previous edit");
         if (file.existsAsFile())
             edit = te::loadEditFromFile (engine, file);
         else
             edit = te::createEmptyEdit (engine, file);
+        StartupTimer::mark ("edit file read");
 
         edit->playInStopEnabled = true;
         DrumRack::migrateAll (*edit);   // racks from Pulse 0.17 and older
@@ -676,6 +683,7 @@ private:
         edit->getTransport().ensureContextAllocated();
         edit->getUndoManager().clearUndoHistory();
 
+        StartupTimer::mark ("edit prepared (upgrades, meters, context)");
         evs = std::make_unique<EditViewState> (*edit, selectionManager);
         evs->openPianoRoll = [this] (te::MidiClip* mc) { pianoRoll->setClip (mc); showTab (Tab::pianoRoll); };
         evs->showDevices = [this] (te::Track* t)
@@ -706,11 +714,17 @@ private:
         evs->midiLearn = midiLearn.get();
 
         transport.setEdit (edit.get());
+        StartupTimer::mark ("helpers");
         arrangement = std::make_unique<ArrangementView> (*evs);
+        StartupTimer::mark ("arrangement view");
         session     = std::make_unique<SessionView> (*evs);
+        StartupTimer::mark ("session view");
         browser     = std::make_unique<Browser> (*evs, settings());
+        StartupTimer::mark ("browser");
         deviceChain = std::make_unique<DeviceChain> (*evs);
+        StartupTimer::mark ("device chain");
         mixer       = std::make_unique<Mixer> (*evs);
+        StartupTimer::mark ("mixer");
         pianoRoll   = std::make_unique<PianoRoll> (*evs);
         pianoRoll->setClip (nullptr);
         showBrowser = settings().getBoolValue ("showBrowser", true);

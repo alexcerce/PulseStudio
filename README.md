@@ -28,6 +28,9 @@ ISCC.exe installer\PulseStudio.iss
 The installer is written to `dist/`. Add `/DBuildDir=..\build-dev` to package a different build folder.
 
 ## First run
+
+A small splash shows while Pulse starts: opening the audio interface can take a couple of seconds with some drivers. Each start writes its timings to *%TEMP%/pulse-startup.log*.
+
 - **Welcome screen:** at startup (turn it off with *Show this at startup*, reopen it from *File → Welcome screen...*): your recent projects, new project (empty, demo song or one of your templates), open, and the main shortcuts.
 
 1. **Audio Settings → Audio / MIDI**: pick your interface. Choose **ASIO** for the lowest latency, then set the buffer size.
@@ -242,6 +245,7 @@ Pulse's own devices have compact cards: knobs stack in as many rows as the devic
 - **Templates:** *Save as template...* keeps your favourite setup (tracks, devices, routing, returns, even clips). *New Project...* then offers an empty project, the demo song or any of your templates. Templates live in `Documents/Pulse Studio/Templates`.
 
 ### Plugins
+- **Plugin frame:** a VST plugin's window has a Pulse header above the plugin's own editor: *Presets* (the plugin's programs, plus settings you save yourself, kept in *Documents/Pulse Studio/Presets/Plugin States*), **A/B** to compare two versions, *Randomise* / *Randomise a little* with *Undo randomise*, and *Parameters*: a strip of knobs for every parameter with a search box. The parameters you touched last come first.
 - **Background scan:** a few seconds after startup Pulse looks for VST3 plugins it hasn't seen yet (only new files, each one checked in a separate process so a crashing plugin can't take Pulse down). Progress shows in the top bar; click × to stop it. The *Plugins* button has *Plugin manager...*, *Scan for new plugins* and an on / off switch for the startup scan.
 
 ### Safety
