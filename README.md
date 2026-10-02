@@ -6,7 +6,7 @@ A native Windows DAW built with C++, [JUCE](https://juce.com) and [Tracktion Eng
 
 ## Install
 
-Run `dist/PulseStudio-0.28.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
+Run `dist/PulseStudio-0.29.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
 
 ## Build
 
@@ -135,7 +135,7 @@ Plug it in and it connects automatically (hot-plug supported). The Push's area i
 - **MPE:** the Wavetable synth responds per note to pitch bend (Bend Range up to 48 semitones), pressure (cutoff and level) and slide/CC74 (wavetable position). It also takes poly aftertouch from Push 2 pads.
 
 ### Instruments and effects
-Pulse's own devices have cards with labelled sections and a live display. Every knob can be automated, MIDI-learned and mapped to a macro. Knobs follow the parameter's natural scale (for example, 1 kHz sits at the middle of a frequency knob).
+Pulse's own devices have compact cards: knobs stack in as many rows as the device panel's height allows (drag the divider above the panel up for more), and big devices put their sections on pages with tabs (e.g. FM Synth: *Global*, *Op 1*-*Op 4*). Each card has a collapse arrow (fold it to a slim strip), an **A/B** button to compare two versions of its settings, and in its ☰ menu *Randomise* (levels are left alone), *Randomise a little*, *Reset to defaults*, *Copy settings* and *Paste settings*. Cards have labelled sections and a live display. Every knob can be automated, MIDI-learned and mapped to a macro. Knobs follow the parameter's natural scale (for example, 1 kHz sits at the middle of a frequency knob).
 
 | Device | What it does |
 | --- | --- |
@@ -269,7 +269,7 @@ All of these can be changed in *File → Keyboard shortcuts*. New: **Ctrl+P** co
 ## Command line
 
 - `--render out.wav` renders the last project offline and exits.
-- `--selftest report.txt` builds a scratch project and runs 164 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--selftest report.txt` builds a scratch project and runs 165 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
 - `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
 
 ## Code layout

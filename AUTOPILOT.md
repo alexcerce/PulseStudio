@@ -61,7 +61,14 @@ when you start, touch it after each step, and delete it when you stop.
    - ~~v0.27 Performance~~ (done; Push encoder MIDI-learn left for later): Push encoder MIDI learn + drum bank + step seq on remapped notes, follow actions,
      per-scene tempo, per-clip launch quantize, record session to arrangement.
    - ~~v0.28 Quality~~ (done: backups, stress render; startup / scan speed not changed): autosave history (last 20), faster startup / plugin scan, UI snapshot tests, playback stress test.
-4. Then **think of more improvements** and do them in a cycle: polish, reliability, performance, UI clarity,
+4. **Owner request 2 (2026-10-02): "Do all of that" + compact device cards.**
+   - ~~v0.29 compact device cards (rows by height, pages with tabs, collapse, A/B, randomise, reset, copy/paste)~~ (done)
+   - v0.30 welcome screen (recent projects, demo, templates, getting started tips), shortcuts for the new features
+   - v0.31 background plugin scan with progress; Push encoder MIDI learn
+   - v0.32 audio editing: clip gain envelope, slip edit (Alt-drag content), crossfade editor; groove pool (extract groove)
+   - v0.33 content: factory presets for Pulse devices, synth drum kits, project templates; wavetable draw editor
+   - v0.34 sharing: export project as a single zip, crash report bundle, update checker (URL configurable)
+5. Then **think of more improvements** and do them in a cycle: polish, reliability, performance, UI clarity,
    missing DAW features (e.g. sidechain UI improvements, audio quantize, tuner/spectrum devices, MIDI
    learn for Push encoders, better browser search/tags, recent projects, auto-update of README docs).
    Pick the most valuable next item, add it to this queue, implement it, test it, commit.
@@ -93,3 +100,4 @@ when you start, touch it after each step, and delete it when you stop.
 - 2026-10-02: v0.26.0 Pulse Reverb (FDN), Pulse Delay, Vocoder, Pitch Correction, FM Synth, Simpler granular, device displays. 159 checks pass.
 - 2026-10-02: v0.27.0 session arrangement record, scene tempo, per-clip launch quantisation, Push parameter / drum banks. 162 checks pass.
 - 2026-10-02: v0.28.0 backup history (20, restore as copy), stress render test (16 heavy tracks at 4.4x real time). 164 checks pass. The "all of it" list is done; next: cycle (Push encoder MIDI learn, startup speed, more UI polish).
+- 2026-10-02: v0.29.0 compact device cards (FM 1460 -> 360 px). 165 checks pass.

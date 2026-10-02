@@ -1724,7 +1724,8 @@ namespace SelfTest
                 EditViewState evs (*edit, sm);
                 int shots = 0;
                 for (auto type : { pulse::Tuner::xmlTypeName, pulse::Spectrum::xmlTypeName, pulse::Reverb::xmlTypeName, pulse::Delay::xmlTypeName,
-                                   pulse::FMSynth::xmlTypeName, pulse::PitchCorrect::xmlTypeName, pulse::Vocoder::xmlTypeName })
+                                   pulse::FMSynth::xmlTypeName, pulse::PitchCorrect::xmlTypeName, pulse::Vocoder::xmlTypeName,
+                                   pulse::WavetableSynth::xmlTypeName, pulse::Simpler::xmlTypeName, pulse::GlueCompressor::xmlTypeName })
                 {
                     auto pl = edit->getPluginCache().createNewPlugin (type, {});
                     if (ut != nullptr) ut->pluginList.insertPlugin (pl, -1, nullptr);
@@ -1739,7 +1740,25 @@ namespace SelfTest
                     if (auto sp = dynamic_cast<pulse::Spectrum*> (pl.get())) sp->fifo.push (l.data(), r.data(), 8192);
                     {
                         PluginCard card (evs, pl.get(), [] (te::Plugin&, int) {});
-                        card.setSize (card.getWidth(), 220);
+                        card.setSize (card.getWidth(), 250);
+                        card.resized();
+                        if (auto* pp = dynamic_cast<pulse::PulsePlugin*> (pl.get()); pp != nullptr && String (type) == pulse::FMSynth::xmlTypeName)
+                        {
+                            // device tools: randomise leaves levels alone; reset and copy / paste
+                            const float vol = pp->get (pulse::FMSynth::pVolume);
+                            auto before = DeviceTools::capture (*pp);
+                            Random rng (5);
+                            DeviceTools::randomise (*pp, rng);
+                            const bool changed = DeviceTools::capture (*pp) != before, keptVol = pp->get (pulse::FMSynth::pVolume) == vol;
+                            DeviceTools::clipboard() = { pl->getPluginType(), DeviceTools::capture (*pp) };
+                            DeviceTools::resetToDefaults (*pp);
+                            const bool reset = std::abs (pp->get (pulse::FMSynth::pAlgorithm)) < 0.01f;
+                            DeviceTools::apply (*pp, DeviceTools::clipboard().values);
+                            const bool pasted = DeviceTools::capture (*pp) == DeviceTools::clipboard().values;
+                            DeviceTools::apply (*pp, before);
+                            rep.check (changed && keptVol && reset && pasted, "Device tools (randomise keeps levels, reset, copy / paste)");
+                            card.setWidthAndNotify (card.getWidth());   // (exercise the API)
+                        }
                         for (int k = 0; k < 3; ++k) card.createComponentSnapshot (card.getLocalBounds());   // let averaging settle
                         auto img = card.createComponentSnapshot (card.getLocalBounds());
                         auto f = dir.getChildFile (String (type) + ".png");
@@ -1749,7 +1768,7 @@ namespace SelfTest
                     pl->deleteFromParent();
                 }
                 LookAndFeel::setDefaultLookAndFeel (nullptr);
-                rep.check (shots == 7, "Device cards draw (Tuner, Spectrum, Reverb, Delay, FM, Pitch Correction, Vocoder)");
+                rep.check (shots == 10, "Device cards draw (compact layout, 10 devices)");
             }
             rep.check (std::abs (a4 - 440.0) < 1.0 && std::abs (a2 - 110.0) < 0.5 && none == 0.0
                          && std::abs (pulse::Tuner::noteOf (a4) - 69.0) < 0.02,

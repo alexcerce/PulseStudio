@@ -26,6 +26,15 @@ public:
         header in the arrangement to move it there (Ctrl copies). */
     te::Plugin::Ptr dragPlugin;
 
+    /** Called when a card changes its own width (so the chain can lay out again). */
+    std::function<void()> onSizeChanged;
+    void setWidthAndNotify (int w)
+    {
+        if (w == getWidth()) return;
+        setSize (w, getHeight());
+        if (onSizeChanged) MessageManager::callAsync ([sp = SafePointer<CardBase> (this)] { if (sp != nullptr && sp->onSizeChanged) sp->onSizeChanged(); });
+    }
+
     void mouseDrag (const MouseEvent& e) override
     {
         if (dragPlugin == nullptr || dragStarted || e.getMouseDownY() > headerH || e.getDistanceFromDragStart() < 6) return;
@@ -62,6 +71,57 @@ public:
 };
 
 //==============================================================================
+/** Settings tools for Pulse devices: snapshots for A/B, randomise, reset, copy / paste. */
+namespace DeviceTools
+{
+    using Values = std::vector<float>;
+
+    inline Values capture (pulse::PulsePlugin& p)
+    {
+        Values v;
+        for (int i = 0; i < p.numParams(); ++i) v.push_back (p.get (i));
+        return v;
+    }
+
+    inline void apply (pulse::PulsePlugin& p, const Values& v)
+    {
+        for (int i = 0; i < jmin (p.numParams(), (int) v.size()); ++i)
+            if (std::abs (p.get (i) - v[(size_t) i]) > 1.0e-7f) p.set (i, v[(size_t) i]);
+    }
+
+    /** Parameters left alone by Randomise (levels and routing, so it can't blast or silence you). */
+    inline bool keepsOnRandomise (te::AutomatableParameter& prm)
+    {
+        auto n = prm.getParameterName().toLowerCase();
+        for (auto word : { "gain", "volume", "level", "dry/wet", "mix", "output", "receive", "choke", "makeup", "freeze", "mute", "solo", "sync" })
+            if (n.contains (word)) return true;
+        return false;
+    }
+
+    inline void randomise (pulse::PulsePlugin& p, Random& rng, float amount = 1.0f)
+    {
+        for (int i = 0; i < p.numParams(); ++i)
+        {
+            auto* prm = p.param (i);
+            if (keepsOnRandomise (*prm)) continue;
+            const float cur = prm->valueRange.convertTo0to1 (p.get (i));
+            const float target = jlimit (0.0f, 1.0f, cur + (rng.nextFloat() - cur) * amount);
+            p.set (i, prm->valueRange.snapToLegalValue (prm->valueRange.convertFrom0to1 (target)));
+        }
+    }
+
+    inline void resetToDefaults (pulse::PulsePlugin& p)
+    {
+        for (int i = 0; i < p.numParams(); ++i)
+            if (auto def = p.param (i)->getDefaultValue()) p.set (i, *def);
+    }
+
+    /** Copy / paste between devices of the same type. */
+    struct Clipboard { String type; Values values; };
+    inline Clipboard& clipboard() { static Clipboard c; return c; }
+}
+
+//==============================================================================
 /** One device in the chain: header (power / name / presets / editor / move / remove) + quick knobs. */
 class PluginCard : public CardBase,
                    private Timer
@@ -92,8 +152,16 @@ public:
         presetBtn.setTooltip ("Device presets");
         editBtn.setTooltip (dynamic_cast<te::ExternalPlugin*> (plugin.get()) != nullptr ? "Open plugin window" : "Open all parameters");
 
-        for (auto* c : std::initializer_list<Component*> { &power, &title, &presetBtn, &editBtn, &leftBtn, &rightBtn, &removeBtn })
+        for (auto* c : std::initializer_list<Component*> { &power, &title, &presetBtn, &editBtn, &leftBtn, &rightBtn, &removeBtn, &collapseBtn })
             addAndMakeVisible (c);
+        collapseBtn.setFlat (true);
+        collapseBtn.onClick = [this] { setCollapsed (! collapsed); };
+        if (dynamic_cast<pulse::PulsePlugin*> (plugin.get()) != nullptr)
+        {
+            abBtn.setTooltip ("A/B compare: switch between two versions of this device's settings");
+            abBtn.onClick = [this] { switchAB(); };
+            addAndMakeVisible (abBtn);
+        }
         for (auto* b : { &presetBtn, &leftBtn, &rightBtn, &removeBtn }) b->setFlat (true);
         addChildComponent (restartBtn);
         restartBtn.setColour (TextButton::buttonColourId, Theme::red.withAlpha (0.6f));
@@ -118,6 +186,7 @@ public:
         {
             buildPulseLayout (*pp);
             startTimerHz (4);
+            if ((bool) plugin->state.getProperty ("pulseCollapsed")) MessageManager::callAsync ([sp = SafePointer<PluginCard> (this)] { if (sp != nullptr) sp->setCollapsed (true); });
             return;
         }
 
@@ -164,21 +233,83 @@ public:
         const int cols = jmax (2, jmin (4, knobs.size()));
         setSize (jmax (290, cols * knobW + 16), 0);
         startTimerHz (4);
+        if ((bool) plugin->state.getProperty ("pulseCollapsed")) MessageManager::callAsync ([sp = SafePointer<PluginCard> (this)] { if (sp != nullptr) sp->setCollapsed (true); });
     }
 
-    void paint (Graphics& g) override { paintCard (g, plugin->isSynth() ? Theme::orange : Theme::accent, plugin->isEnabled()); }
+    void paint (Graphics& g) override
+    {
+        paintCard (g, plugin->isSynth() ? Theme::orange : Theme::accent, plugin->isEnabled());
+        if (collapsed)   // name written down the strip
+        {
+            g.setColour (Theme::text);
+            g.setFont (FontOptions (12.5f, Font::bold));
+            Graphics::ScopedSaveState ss (g);
+            g.addTransform (AffineTransform::rotation (-MathConstants<float>::halfPi, 0.0f, 0.0f).translated (8.0f, (float) getHeight() - 10.0f));
+            g.drawText (plugin->getName(), 0, 0, getHeight() - 70, 18, Justification::centredLeft, true);
+        }
+    }
+
+    /** Folds the card to a slim strip (stored in the project). */
+    void setCollapsed (bool c)
+    {
+        if (c == collapsed) return;
+        collapsed = c;
+        plugin->state.setProperty ("pulseCollapsed", c, nullptr);
+        collapseBtn.setIcon (c ? Icons::Type::chevronRight : Icons::Type::chevronLeft);
+        collapseBtn.setTooltip (c ? "Expand" : "Collapse");
+        if (c)
+        {
+            hiddenByCollapse.clear();
+            for (auto* ch : getChildren())
+                if (ch != &power && ch != &collapseBtn && ch->isVisible()) { hiddenByCollapse.add (ch); ch->setVisible (false); }
+            expandedWidth = getWidth();
+            setWidthAndNotify (34);
+        }
+        else
+        {
+            for (auto* ch : hiddenByCollapse) ch->setVisible (true);
+            hiddenByCollapse.clear();
+            setWidthAndNotify (sections.empty() ? jmax (290, expandedWidth) : computeWidth (getHeight()));
+        }
+        resized();
+        repaint();
+    }
+
+    void switchAB()
+    {
+        auto* pp = dynamic_cast<pulse::PulsePlugin*> (plugin.get());
+        if (pp == nullptr) return;
+        abSlots[(size_t) abIndex] = DeviceTools::capture (*pp);
+        abIndex = 1 - abIndex;
+        if (abSlots[(size_t) abIndex].empty()) abSlots[(size_t) abIndex] = abSlots[(size_t) (1 - abIndex)];
+        plugin->edit.getUndoManager().beginNewTransaction ("A/B compare");
+        DeviceTools::apply (*pp, abSlots[(size_t) abIndex]);
+        abBtn.setButtonText (abIndex == 0 ? "A" : "B");
+        abBtn.setToggleState (abIndex == 1, dontSendNotification);
+    }
 
     void resized() override
     {
+        if (collapsed)
+        {
+            auto r = getLocalBounds().reduced (6, 6);
+            power.setBounds (r.removeFromTop (22));
+            r.removeFromTop (4);
+            collapseBtn.setBounds (r.removeFromTop (22));
+            return;
+        }
         auto r = getLocalBounds().reduced (6, 0);
         auto head = r.removeFromTop (headerH).reduced (0, 6);
         power.setBounds (head.removeFromLeft (22));
-        head.removeFromLeft (6);
+        head.removeFromLeft (2);
+        collapseBtn.setBounds (head.removeFromLeft (20));
+        head.removeFromLeft (4);
         removeBtn.setBounds (head.removeFromRight (24)); head.removeFromRight (2);
         rightBtn.setBounds (head.removeFromRight (24));  head.removeFromRight (2);
         leftBtn.setBounds (head.removeFromRight (24));   head.removeFromRight (4);
         editBtn.setBounds (head.removeFromRight (38));   head.removeFromRight (2);
         presetBtn.setBounds (head.removeFromRight (24));
+        if (abBtn.isVisible()) { head.removeFromRight (2); abBtn.setBounds (head.removeFromRight (26)); }
         if (scBtn.isVisible()) { head.removeFromRight (2); scBtn.setBounds (head.removeFromRight (30)); }
         if (restartBtn.isVisible()) { head.removeFromRight (2); restartBtn.setBounds (head.removeFromRight (58)); }
         title.setBounds (head);
@@ -187,20 +318,7 @@ public:
 
         if (! sections.empty())
         {
-            r.removeFromBottom (4);
-            if (display != nullptr)
-            {
-                display->setBounds (r.removeFromLeft (displayWidth));
-                r.removeFromLeft (8);
-            }
-            for (auto& sec : sections)
-            {
-                auto area = r.removeFromLeft (sec.cols * knobW);
-                r.removeFromLeft (sectionGap);
-                sec.label->setBounds (area.removeFromTop (14));
-                for (int i = 0; i < (int) sec.knobs.size(); ++i)
-                    sec.knobs[(size_t) i]->setBounds (area.getX() + (i / pulseRows) * knobW, area.getY() + (i % pulseRows) * knobH, knobW, knobH);
-            }
+            layoutPulse (r);
             return;
         }
 
@@ -280,6 +398,20 @@ private:
                 sandbox::moveInProcess (*sb);
             });
         m.addItem ("Show presets folder", [p = plugin] { Presets::deviceFolder (*p).revealToUser(); });
+        if (auto* pp = dynamic_cast<pulse::PulsePlugin*> (plugin.get()))
+        {
+            m.addSeparator();
+            m.addItem ("Randomise", [p = plugin, pp] { p->edit.getUndoManager().beginNewTransaction ("Randomise"); Random r; DeviceTools::randomise (*pp, r); });
+            m.addItem ("Randomise a little", [p = plugin, pp] { p->edit.getUndoManager().beginNewTransaction ("Randomise"); Random r; DeviceTools::randomise (*pp, r, 0.2f); });
+            m.addItem ("Reset to defaults", [p = plugin, pp] { p->edit.getUndoManager().beginNewTransaction ("Reset device"); DeviceTools::resetToDefaults (*pp); });
+            m.addItem ("Copy settings", [p = plugin, pp] { DeviceTools::clipboard() = { p->getPluginType(), DeviceTools::capture (*pp) }; });
+            const bool canPaste = DeviceTools::clipboard().type == plugin->getPluginType() && ! DeviceTools::clipboard().values.empty();
+            m.addItem ("Paste settings", canPaste, false, [p = plugin, pp]
+            {
+                p->edit.getUndoManager().beginNewTransaction ("Paste settings");
+                DeviceTools::apply (*pp, DeviceTools::clipboard().values);
+            });
+        }
         m.showMenuAsync (PopupMenu::Options().withTargetComponent (&presetBtn));
     }
 
@@ -293,23 +425,25 @@ private:
 
     void buildPulseLayout (pulse::PulsePlugin& pp)
     {
-        displayWidth = pp.getDisplayWidth();
+        displayWidth = jmin (pp.getDisplayWidth(), 220);
         display = DeviceDisplays::create (evs, pp);
         if (display != nullptr)
             addAndMakeVisible (*display);
 
-        int width = 12 + (display != nullptr ? displayWidth + 8 : 0);
+        const auto accent = plugin->isSynth() ? Theme::orange : Theme::accent;
         for (auto& sec : pp.getSections())
         {
             PulseSection ps;
+            ps.name = sec.name;
             ps.label = std::make_unique<Label> (String(), sec.name.toUpperCase());
-            ps.label->setFont (FontOptions (11.0f, Font::bold));
+            ps.label->setFont (FontOptions (10.0f, Font::bold));
             ps.label->setColour (Label::textColourId, Theme::muted);
             ps.label->setJustificationType (Justification::centredLeft);
             addAndMakeVisible (*ps.label);
             for (auto idx : sec.params)
             {
                 auto* k = new ParamKnob (evs, *pp.param (idx));
+                k->setCompact (accent);
                 knobs.add (k);
                 // drop the section prefix ("Osc 1 Position" in "Osc 1" -> "Position")
                 auto name = k->name.getText();
@@ -317,18 +451,131 @@ private:
                 addAndMakeVisible (k);
                 ps.knobs.push_back (k);
             }
-            ps.cols = jmax (1, ((int) ps.knobs.size() + pulseRows - 1) / pulseRows);
-            width += ps.cols * knobW + sectionGap;
             sections.push_back (std::move (ps));
         }
-        setSize (jmax (290, width), 0);
+        setSize (jmax (220, computeWidth (300)), 0);
     }
 
-    struct PulseSection { std::unique_ptr<Label> label; std::vector<Component*> knobs; int cols = 1; };
+    //==============================================================================
+    // Compact layout: knobs stack in as many rows as fit; sections that don't fit side by side
+    // go on pages with tabs.
+    struct PulseSection { String name; std::unique_ptr<Label> label; std::vector<Component*> knobs; int cols = 1; };
+    struct Page { std::vector<int> sections; int width = 0; };
     std::vector<PulseSection> sections;
+    std::vector<Page> pages;
+    OwnedArray<TextButton> pageTabs;
+    int currentPage = 0, layoutRows = 2;
     std::unique_ptr<Component> display;
     int displayWidth = 0;
-    static constexpr int pulseRows = 2, sectionGap = 10;
+    static constexpr int sectionGap = 10, cKnobW = 54, cKnobH = 64, maxPageW = 6 * 54 + 2 * 10, tabH = 20;
+
+    int rowsFor (int height, bool withTabs) const
+    {
+        const int avail = height - headerH - 6 - 6 - 14 - (withTabs ? tabH + 4 : 0);
+        return jlimit (1, 4, avail / cKnobH);
+    }
+
+    /** Groups the sections into pages for `rows` rows. Returns the widest page. */
+    int buildPages (int rows)
+    {
+        pages.clear();
+        Page page;
+        for (int i = 0; i < (int) sections.size(); ++i)
+        {
+            auto& sec = sections[(size_t) i];
+            sec.cols = jmax (1, ((int) sec.knobs.size() + rows - 1) / rows);
+            const int w = sec.cols * cKnobW;
+            if (! page.sections.empty() && page.width + sectionGap + w > maxPageW)
+            {
+                pages.push_back (page);
+                page = {};
+            }
+            page.width += (page.sections.empty() ? 0 : sectionGap) + w;
+            page.sections.push_back (i);
+        }
+        if (! page.sections.empty()) pages.push_back (page);
+        int widest = 0;
+        for (auto& p : pages) widest = jmax (widest, p.width);
+        return widest;
+    }
+
+    int computeWidth (int height)
+    {
+        if (sections.empty()) return getWidth();
+        layoutRows = rowsFor (height, false);
+        int widest = buildPages (layoutRows);
+        if (pages.size() > 1)   // tabs take some height: maybe fewer rows
+        {
+            layoutRows = rowsFor (height, true);
+            widest = buildPages (layoutRows);
+        }
+        currentPage = jlimit (0, (int) pages.size() - 1, currentPage);
+        rebuildTabs();
+        return 16 + (display != nullptr ? displayWidth + 8 : 0) + jmax (widest, pages.size() > 1 ? 200 : 0);
+    }
+
+    void rebuildTabs()
+    {
+        if (pageTabs.size() == (int) pages.size() || pages.size() <= 1)
+        {
+            if (pages.size() <= 1) pageTabs.clear();
+            return;
+        }
+        pageTabs.clear();
+        for (int i = 0; i < (int) pages.size(); ++i)
+        {
+            StringArray names;
+            for (int s : pages[(size_t) i].sections) names.add (sections[(size_t) s].name);
+            auto* t = pageTabs.add (new TextButton (names.joinIntoString (" / ")));
+            t->setTooltip (names.joinIntoString (", "));
+            t->onClick = [this, i] { currentPage = i; resized(); repaint(); };
+            addAndMakeVisible (t);
+        }
+    }
+
+    void layoutPulse (Rectangle<int> r)
+    {
+        const int w = computeWidth (getHeight());
+        if (w != getWidth()) setWidthAndNotify (w);
+        r.removeFromBottom (4);
+        if (display != nullptr)
+        {
+            display->setBounds (r.removeFromLeft (displayWidth));
+            r.removeFromLeft (8);
+        }
+        if (pages.size() > 1)
+        {
+            auto tabs = r.removeFromTop (tabH);
+            const int tw = tabs.getWidth() / (int) pages.size();
+            for (int i = 0; i < pageTabs.size(); ++i)
+            {
+                pageTabs[i]->setBounds (tabs.removeFromLeft (tw).reduced (1, 0));
+                pageTabs[i]->setToggleState (i == currentPage, dontSendNotification);
+                pageTabs[i]->setColour (TextButton::buttonOnColourId, (plugin->isSynth() ? Theme::orange : Theme::accent).withAlpha (0.45f));
+            }
+            r.removeFromTop (4);
+        }
+        // hide everything, then show the current page
+        for (auto& sec : sections)
+        {
+            sec.label->setVisible (false);
+            for (auto* k : sec.knobs) k->setVisible (false);
+        }
+        if (pages.empty()) return;
+        for (int si : pages[(size_t) currentPage].sections)
+        {
+            auto& sec = sections[(size_t) si];
+            auto area = r.removeFromLeft (sec.cols * cKnobW);
+            r.removeFromLeft (sectionGap);
+            sec.label->setVisible (true);
+            sec.label->setBounds (area.removeFromTop (14));
+            for (int i = 0; i < (int) sec.knobs.size(); ++i)
+            {
+                sec.knobs[(size_t) i]->setVisible (true);
+                sec.knobs[(size_t) i]->setBounds (area.getX() + (i / layoutRows) * cKnobW, area.getY() + (i % layoutRows) * cKnobH, cKnobW, cKnobH);
+            }
+        }
+    }
 
     static constexpr int knobW = 64, knobH = 78;
     EditViewState& evs;
@@ -337,7 +584,12 @@ private:
     IconButton power { Icons::Type::power, "Device on / off", Theme::green },
                leftBtn { Icons::Type::chevronLeft, "Move left" }, rightBtn { Icons::Type::chevronRight, "Move right" },
                removeBtn { Icons::Type::close, "Remove device" }, presetBtn { Icons::Type::menu, "Device presets" };
-    TextButton editBtn { "Edit" }, scBtn { "SC" }, restartBtn { "Restart" };
+    TextButton editBtn { "Edit" }, scBtn { "SC" }, restartBtn { "Restart" }, abBtn { "A" };
+    IconButton collapseBtn { Icons::Type::chevronLeft, "Collapse" };
+    bool collapsed = false;
+    int expandedWidth = 290, abIndex = 0;
+    std::array<DeviceTools::Values, 2> abSlots;
+    Array<Component*> hiddenByCollapse;
     Label title, more;
     OwnedArray<Component> knobs;   // state controls, the Delay's Sync button, then parameter knobs
 };
@@ -866,6 +1118,7 @@ private:
                 c = new PluginCard (evs, p, [this] (te::Plugin& pl, int dir) { movePlugin (pl, dir); });
             rack.addAndMakeVisible (cards.add (c));
             pluginCards.push_back ({ c, p });
+            if (auto* cb = dynamic_cast<CardBase*> (c)) cb->onSizeChanged = [this] { layoutRack(); };
         }
 
         if (showMaster)

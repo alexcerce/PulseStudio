@@ -54,9 +54,10 @@ public:
     void resized() override
     {
         auto r = getLocalBounds();
-        if (name.isVisible()) name.setBounds (r.removeFromTop (14));
-        value.setBounds (r.removeFromBottom (14));
-        slider.setBounds (r.reduced (8, 0));
+        const int textH = compact ? 12 : 14;
+        if (name.isVisible()) name.setBounds (r.removeFromTop (textH));
+        value.setBounds (r.removeFromBottom (textH));
+        slider.setBounds (r.reduced (compact ? 4 : 8, 0));
     }
 
     void paintOverChildren (Graphics& g) override
@@ -100,6 +101,17 @@ public:
 
     te::AutomatableParameter& getParam() { return *param; }
 
+    /** Smaller text for dense device cards, and the device's accent colour on the ring. */
+    void setCompact (Colour accent)
+    {
+        compact = true;
+        name.setFont (FontOptions (10.5f));
+        value.setFont (FontOptions (10.5f, Font::bold));
+        value.setColour (Label::textColourId, Theme::text.withAlpha (0.9f));
+        slider.setColour (Slider::rotarySliderFillColourId, accent);
+        resized();
+    }
+
     /** Optional value text (e.g. names for choice parameters). */
     std::function<String (float)> formatter;
     Label name;
@@ -117,5 +129,6 @@ private:
     te::AutomatableParameter::Ptr param;
     Slider slider;
     Label value;
+    bool compact = false;
 };
 
