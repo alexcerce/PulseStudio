@@ -4,7 +4,7 @@ A native Windows DAW built with C++, [JUCE](https://juce.com) and [Tracktion Eng
 
 ## Install
 
-Run `dist/PulseStudio-0.7.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
+Run `dist/PulseStudio-0.8.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
 
 ## Build
 
@@ -138,6 +138,11 @@ Pulse's own devices have cards with labelled sections and a live display. Every 
 
 ### Safety
 - **Autosave every minute**, with recovery after a crash.
+- **Crash reports:** if Pulse Studio crashes, it saves a log with a stack trace. It also notes which plugin the crash happened in, or which plugin was loading at the time.
+- **After a crash:** the next launch offers to *disable that plugin*, start in **safe mode**, or continue. Disabled plugins aren't loaded, but their settings stay in your projects. Re-enable them in **Audio Settings → Safety**, which also opens the crash-log folder.
+- **Safe mode:** hold **Shift** while starting, or run with `--safe-mode`. No plugins load, and the title bar says so.
+- **Per-project view:** zoom, scroll, snap, arrangement/session view, browser, bottom panel, panel size, selected track and collapsed groups are saved in the project. The window size and position are remembered too.
+- **Undo:** each knob drag is one undo step, and the Undo/Redo tooltips name the action.
 
 ## Shortcuts
 
@@ -170,7 +175,7 @@ Pulse's own devices have cards with labelled sections and a live display. Every 
 ## Command line
 
 - `--render out.wav` renders the last project offline and exits.
-- `--selftest report.txt` builds a scratch project and runs 80 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--selftest report.txt` builds a scratch project and runs 82 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
 - `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
 
 ## Code layout
@@ -201,6 +206,7 @@ All app code is header-only in `Source/` and compiled through `Main.cpp`.
 | `ExportDialog.h`, `AudioSettings.h` | Export and audio/recording settings |
 | `Mixer.h`, `Routing.h` | Mixer strips, sends/returns |
 | `ClipImport.h`, `ClipProperties.h` | File import, audio clip panel |
+| `CrashGuard.h`, `CrashGuardWin.cpp` | Crash reports, plugin blocklist, safe mode |
 | `PluginWindow.h`, `PluginMenu.h` | Plugin windows, task runner, plugin menu |
 | `SelfTest.h` | `--selftest` |
 | `PulseLookAndFeel.h` | Dark theme |

@@ -24,7 +24,11 @@ public:
                                       [pp = param] (double, double, double v) { return (double) pp->valueRange.snapToLegalValue ((float) v); });
         slider.setNormalisableRange (nr);
         slider.setValue (p.getCurrentValue(), dontSendNotification);
-        slider.onDragStart = [this] { param->parameterChangeGestureBegin(); };
+        slider.onDragStart = [this]
+        {
+            param->getEdit().getUndoManager().beginNewTransaction ("Change " + param->getParameterName());
+            param->parameterChangeGestureBegin();
+        };
         slider.onDragEnd   = [this] { param->parameterChangeGestureEnd(); };
         slider.onValueChange = [this] { param->setParameter ((float) slider.getValue(), sendNotificationSync); };
         if (auto def = p.getDefaultValue())

@@ -1658,6 +1658,9 @@ public:
         playhead.setBounds (r.withTrimmedLeft (headerWidth).withTrimmedRight (viewport.getScrollBarThickness()));
     }
 
+    int getSnapIndex() const        { return snapBox.getSelectedId(); }
+    void setSnapIndex (int id)      { snapBox.setSelectedId (jlimit (1, 5, id), sendNotificationSync); }
+
     /** Zooms and scrolls so the beat range fills the visible lanes. */
     void zoomToBeats (double b0, double b1)
     {

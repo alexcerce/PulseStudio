@@ -19,6 +19,7 @@
 #include "DrumRack.h"
 #include "AudioSettings.h"
 #include "Push2.h"
+#include "CrashGuard.h"
 
 //==============================================================================
 /** Owns the current Edit and lays out transport, browser, arrangement/session and the
@@ -66,6 +67,8 @@ public:
         setSize (1440, 900);
         startTimer (60 * 1000);   // autosave
     }
+
+    te::Engine& getEngine() { return engine; }
 
     ~MainComponent() override
     {
@@ -440,6 +443,8 @@ private:
         }
 
         showTab (currentTab);
+        restoreViewState();
+        CrashGuard::endLoading();   // the project's plugins are loaded
         settings().setValue ("lastEdit", file.getFullPathName());
         updateWindowTitle();
         resized();
@@ -470,7 +475,8 @@ private:
     void updateWindowTitle()
     {
         if (auto* w = findParentComponentOfClass<DocumentWindow>())
-            w->setName (engine.getPropertyStorage().getApplicationName() + " - " + editFile.getFileNameWithoutExtension());
+            w->setName (engine.getPropertyStorage().getApplicationName() + " - " + editFile.getFileNameWithoutExtension()
+                        + (CrashGuard::safeMode() ? "   [SAFE MODE - plugins not loaded]" : ""));
     }
 
     void parentHierarchyChanged() override { updateWindowTitle(); }
@@ -605,8 +611,52 @@ private:
     }
 
     //==============================================================================
+    //==============================================================================
+    // Per-project view state (zoom, scroll, panels, selection) saved inside the project
+    static inline const Identifier viewStateID { "PULSEVIEW" };
+
+    void saveViewState()
+    {
+        if (edit == nullptr || evs == nullptr) return;
+        auto v = edit->state.getOrCreateChildWithName (viewStateID, nullptr);
+        v.setProperty ("pixelsPerBeat", evs->pixelsPerBeat, nullptr);
+        v.setProperty ("viewStartBeat", evs->viewStartBeat, nullptr);
+        v.setProperty ("snap", arrangement != nullptr ? arrangement->getSnapIndex() : 2, nullptr);
+        v.setProperty ("showBrowser", showBrowser, nullptr);
+        v.setProperty ("showSession", showSession, nullptr);
+        v.setProperty ("tab", (int) currentTab, nullptr);
+        v.setProperty ("bottomHeight", bottomHeight, nullptr);
+        if (auto t = EngineHelpers::getSelectedTrack (selectionManager))
+            v.setProperty ("selectedTrack", t->itemID.toString(), nullptr);
+        StringArray collapsed;
+        for (auto& id : evs->collapsed) collapsed.add (id.toString());
+        v.setProperty ("collapsed", collapsed.joinIntoString (","), nullptr);
+    }
+
+    void restoreViewState()
+    {
+        auto v = edit->state.getChildWithName (viewStateID);
+        if (! v.isValid() || evs == nullptr) return;
+        evs->pixelsPerBeat = jlimit (2.0, 600.0, (double) v.getProperty ("pixelsPerBeat", evs->pixelsPerBeat));
+        evs->viewStartBeat = jmax (0.0, (double) v.getProperty ("viewStartBeat", 0.0));
+        if (arrangement != nullptr) arrangement->setSnapIndex ((int) v.getProperty ("snap", 2));
+        showBrowser = (bool) v.getProperty ("showBrowser", showBrowser);
+        showSession = (bool) v.getProperty ("showSession", false);
+        bottomHeight = jlimit (120, 900, (int) v.getProperty ("bottomHeight", bottomHeight));
+        for (auto& id : StringArray::fromTokens (v["collapsed"].toString(), ",", {}))
+            if (id.isNotEmpty()) evs->collapsed.insert (te::EditItemID::fromString (id));
+        if (auto id = v["selectedTrack"].toString(); id.isNotEmpty())
+            if (auto t = dynamic_cast<te::AudioTrack*> (te::findTrackForID (*edit, te::EditItemID::fromString (id))))
+                selectionManager.selectOnly (t);
+        showTab ((Tab) jlimit (0, 2, (int) v.getProperty ("tab", (int) currentTab)));
+        evs->viewChanged.sendChangeMessage();
+        evs->layoutChanged.sendChangeMessage();
+        resized();
+    }
+
     void saveIfNeeded()
     {
+        saveViewState();
         if (edit != nullptr)
         {
             te::EditFileOperations ops (*edit);

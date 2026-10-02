@@ -229,8 +229,11 @@ private:
         }
         if (actions.isBrowserShown) browserBtn.setToggleState (actions.isBrowserShown(), dontSendNotification);
         if (actions.isSessionShown) viewBtn.setButtonText (actions.isSessionShown() ? "Arrange" : "Session");
-        undoBtn.setEnabled (edit->getUndoManager().canUndo());
-        redoBtn.setEnabled (edit->getUndoManager().canRedo());
+        auto& um = edit->getUndoManager();
+        undoBtn.setEnabled (um.canUndo());
+        redoBtn.setEnabled (um.canRedo());
+        undoBtn.setTooltip (um.canUndo() ? "Undo " + um.getUndoDescription() + " (Ctrl+Z)" : String ("Nothing to undo"));
+        redoBtn.setTooltip (um.canRedo() ? "Redo " + um.getRedoDescription() + " (Ctrl+Y)" : String ("Nothing to redo"));
 
         auto cpu = engine.getDeviceManager().getCpuUsage();
         cpuLabel.setText ("CPU " + String (roundToInt (cpu * 100.0)) + "%", dontSendNotification);

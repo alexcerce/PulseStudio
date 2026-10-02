@@ -18,6 +18,7 @@
 #include "Push2Display.h"
 #include "AudioToMidi.h"
 #include "Stems.h"
+#include "CrashGuard.h"
 
 /** "Pulse Studio.exe --selftest report.txt"
     Builds a scratch project in the temp folder, exercises the editing / routing / device
@@ -720,6 +721,28 @@ namespace SelfTest
 
             rep.check (JUCE_PLUGINHOST_ARA == 1 && TRACKTION_ENABLE_ARA == 1 && te::TimeStretcher::isARA (te::TimeStretcher::ara),
                        "ARA hosting compiled in", String (engine.getPluginManager().getARACompatiblePlugDescriptions().size()) + " ARA plugins known");
+        }
+
+        // --- crash guard: blocklist, real crash in a child process ---------------------------------
+        {
+            const String fake = "C:/VST3/Test Synth.vst3";
+            CrashGuard::setDisabled (fake, true);
+            const bool blocked = CrashGuard::isDisabled (fake) && CrashGuard::isDisabled (fake + "/Contents/x86_64-win/Test Synth.vst3");
+            CrashGuard::setDisabled (fake, false);
+            rep.check (blocked && ! CrashGuard::isDisabled (fake)
+                         && CrashGuard::pluginPathFromModule ("D:/P/X.vst3/Contents/x86_64-win/X.vst3") == "D:/P/X.vst3",
+                       "Plugin blocklist");
+
+            CrashGuard::takeLastCrash();   // clear any old marker
+            ChildProcess child;
+            const bool started = child.start (StringArray { File::getSpecialLocation (File::currentExecutableFile).getFullPathName(), "--crash-test" });
+            if (started) child.waitForProcessToFinish (30000);
+            auto crash = CrashGuard::takeLastCrash();
+            rep.check (started && crash.has_value() && crash->pluginName == "Crashy" && crash->log.existsAsFile()
+                         && crash->log.loadFileAsString().contains ("Exception 0xc0000005"),
+                       "Crash handler logs a crash and blames the plugin",
+                       crash ? crash->pluginName + ", " + crash->description : String ("no crash report"));
+            if (crash) crash->log.deleteFile();
         }
 
         // --- undo -------------------------------------------------------------------------------

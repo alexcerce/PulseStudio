@@ -9,6 +9,7 @@
 #include "MidiLearn.h"
 #include "DrumRack.h"
 #include "StateControls.h"
+#include "CrashGuard.h"
 #include "ParamKnob.h"
 #include "DeviceDisplays.h"
 
@@ -108,7 +109,15 @@ public:
         for (int i = 0; i < jmin (maxKnobs, params.size()); ++i)
             addAndMakeVisible (knobs.add (new ParamKnob (evs, *params[i])));
 
-        if (knobs.isEmpty() && dynamic_cast<te::ExternalPlugin*> (plugin.get()) == nullptr)
+        if (auto ext = dynamic_cast<te::ExternalPlugin*> (plugin.get()); ext != nullptr && ext->getAudioPluginInstance() == nullptr)
+        {
+            more.setText (CrashGuard::safeMode() ? "Not loaded (safe mode)"
+                          : CrashGuard::isDisabled (ext->desc.fileOrIdentifier) ? "Disabled after a crash - re-enable in Audio Settings > Safety"
+                          : "Plugin not found or failed to load", dontSendNotification);
+            more.setColour (Label::textColourId, Theme::orange);
+            addAndMakeVisible (more);
+        }
+        else if (knobs.isEmpty() && dynamic_cast<te::ExternalPlugin*> (plugin.get()) == nullptr)
         {
             more.setText ("No adjustable settings", dontSendNotification);
             more.setColour (Label::textColourId, Theme::muted);
