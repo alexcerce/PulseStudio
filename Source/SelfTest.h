@@ -745,6 +745,34 @@ namespace SelfTest
             if (crash) crash->log.deleteFile();
         }
 
+        // --- mixing: limiter, pre/post sends ---------------------------------------------------------
+        {
+            auto loud = ClipImport::createContentTrack (*edit, "Loud", false);
+            ClipImport::importFile (*loud, *edit, writeTestWav (dir.getChildFile ("loud.wav"), 1.0, 110.0), te::TimePosition());
+            auto lim = edit->getPluginCache().createNewPlugin (pulse::Limiter::xmlTypeName, {});
+            loud->pluginList.insertPlugin (lim, 0, nullptr);
+            if (auto l = dynamic_cast<pulse::Limiter*> (lim.get()))
+            {
+                l->set (pulse::Limiter::pGain, 24.0f);
+                l->set (pulse::Limiter::pCeiling, -1.0f);
+                const float peak = peakDb (engine, EditingOps::renderTrack (*loud, { te::TimePosition(), te::TimePosition::fromSeconds (1.0) }, "limited"));
+                rep.check (peak <= -0.95f && peak > -3.0f && std::abs (l->getLatencySeconds() - 0.0015) < 1.0e-6,
+                           "Limiter holds the ceiling (+24 dB in, -1 dB ceiling)", String (peak, 2) + " dBFS peak, 1.5 ms look-ahead");
+            }
+
+            if (auto ret = Routing::getReturnTracks (*edit).getFirst())
+            {
+                const int bus = Routing::getReturnBus (*ret);
+                Routing::setSendDb (*loud, bus, -6.0f);
+                const bool postFirst = ! Routing::isPreFader (*loud, bus);
+                Routing::setPreFader (*loud, bus, true);
+                const bool pre = Routing::isPreFader (*loud, bus);
+                Routing::setPreFader (*loud, bus, false);
+                rep.check (postFirst && pre && ! Routing::isPreFader (*loud, bus) && std::abs (Routing::getSendDb (*loud, bus) + 6.0f) < 0.1f,
+                           "Pre / post-fader sends");
+            }
+        }
+
         // --- undo -------------------------------------------------------------------------------
         rep.check (um.canUndo(), "Undo history recorded");
 

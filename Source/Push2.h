@@ -64,7 +64,9 @@ private:
     //==============================================================================
     enum class Mode { session, note };
     enum class EncoderMode { device, mix };
-    enum class MixParam { volume, pan, sendA, sendB };
+    // Mix mode page: 0 = volume, 1 = pan, 2+ = send to return N (any number of returns)
+    int numMixPages() { return 2 + (view != nullptr ? Routing::getReturnTracks (edit()).size() : 0); }
+    te::AudioTrack* mixReturn() { return mixPage >= 2 ? Routing::getReturnTracks (edit())[mixPage - 2] : nullptr; }
 
     // Push 2 control numbers
     enum CC
@@ -312,7 +314,7 @@ private:
             case ccUp:        navigate (0, -1); break;
             case ccDown:      navigate (0, 1); break;
             case ccDevice:    encoderMode = EncoderMode::device; break;
-            case ccMix:       if (encoderMode == EncoderMode::mix) mixParam = (MixParam) (((int) mixParam + 1) % 4);
+            case ccMix:       if (encoderMode == EncoderMode::mix) mixPage = (mixPage + (shift ? numMixPages() - 1 : 1)) % numMixPages();
                               encoderMode = EncoderMode::mix; break;
             case ccPageLeft:  deviceIndex = jmax (0, deviceIndex - 1); break;
             case ccPageRight: deviceIndex = jmin (7, deviceIndex + 1); break;
@@ -443,29 +445,22 @@ private:
 
         auto t = tracks()[trackOffset + i];
         if (t == nullptr) return;
-        switch (mixParam)
+        if (mixPage == 0)      { if (auto vp = t->getVolumePlugin()) nudge (*vp->volParam, delta, shift); }
+        else if (mixPage == 1) { if (auto vp = t->getVolumePlugin()) nudge (*vp->panParam, delta, shift); }
+        else if (auto r = mixReturn())
         {
-            case MixParam::volume: if (auto vp = t->getVolumePlugin()) nudge (*vp->volParam, delta, shift); break;
-            case MixParam::pan:    if (auto vp = t->getVolumePlugin()) nudge (*vp->panParam, delta, shift); break;
-            case MixParam::sendA:
-            case MixParam::sendB:
-            {
-                auto returns = Routing::getReturnTracks (edit());
-                if (auto r = returns[mixParam == MixParam::sendA ? 0 : 1])
-                {
-                    const int bus = Routing::getReturnBus (*r);
-                    Routing::setSendDb (*t, bus, jlimit (Routing::sendOffDb, 6.0f, Routing::getSendDb (*t, bus) + (float) delta * (shift ? 0.1f : 0.75f)));
-                }
-                break;
-            }
+            const int bus = Routing::getReturnBus (*r);
+            Routing::setSendDb (*t, bus, jlimit (Routing::sendOffDb, 6.0f, Routing::getSendDb (*t, bus) + (float) delta * (shift ? 0.1f : 0.75f)));
         }
     }
 
-    String mixModeName() const
+    String mixModeName()
     {
-        switch (mixParam) { case MixParam::volume: return "Volume"; case MixParam::pan: return "Pan";
-                            case MixParam::sendA: return "Send A"; case MixParam::sendB: return "Send B"; }
-        return {};
+        if (mixPage == 0) return "Volume";
+        if (mixPage == 1) return "Pan";
+        if (auto r = mixReturn()) return "Send " + r->getName();
+        mixPage = 0;
+        return "Volume";
     }
 
     //==============================================================================
@@ -907,12 +902,12 @@ private:
             }
             else if (auto t = all[trackOffset + i])
             {
-                if (mixParam == MixParam::volume)   { if (auto vp = t->getVolumePlugin()) param = vp->volParam.get(); }
-                else if (mixParam == MixParam::pan) { if (auto vp = t->getVolumePlugin()) param = vp->panParam.get(); bipolar = true; }
+                if (mixPage == 0)      { if (auto vp = t->getVolumePlugin()) param = vp->volParam.get(); }
+                else if (mixPage == 1) { if (auto vp = t->getVolumePlugin()) param = vp->panParam.get(); bipolar = true; }
                 else
                 {
                     auto returns = Routing::getReturnTracks (edit());
-                    if (auto ret = returns[mixParam == MixParam::sendA ? 0 : 1])
+                    if (auto ret = mixReturn())
                     {
                         const float db = Routing::getSendDb (*t, Routing::getReturnBus (*ret));
                         name = "Send " + ret->getName();
@@ -970,7 +965,7 @@ private:
 
     Mode mode = Mode::session;
     EncoderMode encoderMode = EncoderMode::mix;
-    MixParam mixParam = MixParam::volume;
+    int mixPage = 0;
     int trackOffset = 0, sceneOffset = 0, deviceIndex = 0;
     int octave = 2, root = 0, scaleIndex = 0;
     bool shift = false, deleteHeld = false, dupHeld = false, dupUsed = false;

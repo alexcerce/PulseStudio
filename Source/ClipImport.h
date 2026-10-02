@@ -78,6 +78,7 @@ namespace ClipImport
             { "Glue Compressor", pulse::GlueCompressor::xmlTypeName, false },
             { "Saturator",    pulse::Saturator::xmlTypeName,       false },
             { "Auto Filter",  pulse::AutoFilter::xmlTypeName,      false },
+            { "Limiter",      pulse::Limiter::xmlTypeName,         false },
             { "Equaliser",    te::EqualiserPlugin::xmlTypeName,    false },
             { "Compressor",   te::CompressorPlugin::xmlTypeName,   false },
             { "Reverb",       te::ReverbPlugin::xmlTypeName,       false },

@@ -91,6 +91,31 @@ namespace Routing
         send->setGainDb (db <= sendOffDb ? -100.0f : db);
     }
 
+    /** Is this send placed before the track's fader? */
+    inline bool isPreFader (te::AudioTrack& t, int bus)
+    {
+        auto send = findSend (t, bus);
+        auto vp = t.getVolumePlugin();
+        return send != nullptr && vp != nullptr && t.pluginList.indexOf (send) < t.pluginList.indexOf (vp);
+    }
+
+    /** Moves a send before (pre) or after (post) the fader, creating it if needed. */
+    inline void setPreFader (te::AudioTrack& t, int bus, bool pre)
+    {
+        if (findSend (t, bus) == nullptr)
+        {
+            setSendDb (t, bus, -59.0f);
+            if (auto s = findSend (t, bus)) s->setGainDb (-100.0f);
+        }
+        auto send = findSend (t, bus);
+        auto vp = t.getVolumePlugin();
+        if (send == nullptr || vp == nullptr || isPreFader (t, bus) == pre) return;
+
+        auto parent = send->state.getParent();
+        const int from = parent.indexOf (send->state), fader = parent.indexOf (vp->state);
+        parent.moveChild (from, pre ? fader : fader, &t.edit.getUndoManager());   // either side of the fader
+    }
+
     /** Adds a return track at the end of the track list, optionally with an effect on it. */
     inline te::AudioTrack* createReturnTrack (te::Edit& e, const String& name, const char* effectType = nullptr)
     {

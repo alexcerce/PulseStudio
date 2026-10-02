@@ -65,6 +65,7 @@ namespace PluginMenu
         addBuiltIn<pulse::GlueCompressor> (effects, edit, cb);
         addBuiltIn<pulse::Saturator> (effects, edit, cb);
         addBuiltIn<pulse::AutoFilter> (effects, edit, cb);
+        addBuiltIn<pulse::Limiter> (effects, edit, cb);
         effects.addSeparator();
         addBuiltIn<te::EqualiserPlugin> (effects, edit, cb);
         addBuiltIn<te::CompressorPlugin> (effects, edit, cb);

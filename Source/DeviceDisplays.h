@@ -85,10 +85,11 @@ namespace DeviceDisplays
     };
 
     //==============================================================================
-    class GlueMeter : public Polled
+    template <typename Device>
+    class GRMeter : public Polled
     {
     public:
-        explicit GlueMeter (pulse::GlueCompressor& c) : Polled (c, 30), comp (c) {}
+        explicit GRMeter (Device& c) : Polled (c, 30), comp (c) {}
 
         void paint (Graphics& g) override
         {
@@ -110,7 +111,7 @@ namespace DeviceDisplays
 
     private:
         bool alwaysRepaint() const override { return true; }
-        pulse::GlueCompressor& comp;
+        Device& comp;
     };
 
     //==============================================================================
@@ -582,7 +583,8 @@ namespace DeviceDisplays
     {
         if (auto s = dynamic_cast<pulse::WavetableSynth*> (&p)) return std::make_unique<WavetableDisplay> (*s);
         if (auto s = dynamic_cast<pulse::Simpler*> (&p))        return std::make_unique<SimplerDisplay> (*s);
-        if (auto s = dynamic_cast<pulse::GlueCompressor*> (&p)) return std::make_unique<GlueMeter> (*s);
+        if (auto s = dynamic_cast<pulse::GlueCompressor*> (&p)) return std::make_unique<GRMeter<pulse::GlueCompressor>> (*s);
+        if (auto s = dynamic_cast<pulse::Limiter*> (&p))        return std::make_unique<GRMeter<pulse::Limiter>> (*s);
         if (auto s = dynamic_cast<pulse::Saturator*> (&p))      return std::make_unique<SaturatorCurve> (*s);
         if (auto s = dynamic_cast<pulse::PulseEQ*> (&p))        return std::make_unique<EQDisplay> (evs, *s);
         if (auto s = dynamic_cast<pulse::AutoFilter*> (&p))     return std::make_unique<AutoFilterDisplay> (*s);

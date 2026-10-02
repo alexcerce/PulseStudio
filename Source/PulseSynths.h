@@ -770,6 +770,7 @@ namespace pulse
         pm.createBuiltInType<Saturator>();
         pm.createBuiltInType<PulseEQ>();
         pm.createBuiltInType<AutoFilter>();
+        pm.createBuiltInType<Limiter>();
         engine.getGrooveTemplateManager().useParameterizedGrooves (true);
     }
 }

@@ -2,6 +2,8 @@
 
 #include "EditViewState.h"
 #include "Routing.h"
+#include "EditingOps.h"
+#include "PulseSynths.h"
 #include "MidiLearn.h"
 
 //==============================================================================
@@ -127,6 +129,7 @@ public:
                 s->knob.setColour (Slider::rotarySliderFillColourId, Theme::orange);
                 s->knob.setTooltip ("Send to " + ret->getName());
                 s->knob.onValueChange = [this, s] { Routing::setSendDb (*audioTrack(), s->bus, (float) s->knob.getValue()); };
+                s->knob.addMouseListener (this, false);
                 s->label.setText (ret->getName().substring (0, 6), dontSendNotification);
                 s->label.setFont (FontOptions (9.5f));
                 s->label.setColour (Label::textColourId, Theme::muted);
@@ -144,7 +147,31 @@ public:
             soloBtn.onClick = [this] { track->setSolo (! track->isSolo (false)); };
             addAndMakeVisible (muteBtn);
             addAndMakeVisible (soloBtn);
+
+            if (auto at = audioTrack(); at != nullptr && ! Routing::isReturnTrack (*at))
+            {
+                freezeBtn.setColour (TextButton::buttonOnColourId, Theme::accent);
+                freezeBtn.setTooltip ("Freeze: render the track to audio and switch its plugins off to save CPU (click again to unfreeze)");
+                freezeBtn.onClick = [this]
+                {
+                    if (auto t = audioTrack())
+                        EditingOps::toggleFreeze (*t);
+                };
+                addAndMakeVisible (freezeBtn);
+            }
         }
+        else
+        {
+            limiterBtn.setColour (TextButton::buttonOnColourId, Theme::orange);
+            limiterBtn.setTooltip ("Master limiter (look-ahead brickwall). Its settings are in the master device chain.");
+            limiterBtn.onClick = [this] { toggleMasterLimiter(); };
+            addAndMakeVisible (limiterBtn);
+        }
+
+        latency.setJustificationType (Justification::centred);
+        latency.setFont (FontOptions (9.5f));
+        latency.setColour (Label::textColourId, Theme::muted);
+        addAndMakeVisible (latency);
 
         refresh();
         startTimerHz (8);
@@ -185,9 +212,16 @@ public:
         auto bottom = r.removeFromBottom (24);
         if (track != nullptr)
         {
-            muteBtn.setBounds (bottom.removeFromLeft (bottom.getWidth() / 2).reduced (2, 0));
-            soloBtn.setBounds (bottom.reduced (2, 0));
+            const int w = bottom.getWidth() / (freezeBtn.isVisible() ? 3 : 2);
+            muteBtn.setBounds (bottom.removeFromLeft (w).reduced (2, 0));
+            soloBtn.setBounds (bottom.removeFromLeft (w).reduced (2, 0));
+            if (freezeBtn.isVisible()) freezeBtn.setBounds (bottom.reduced (2, 0));
         }
+        else
+        {
+            limiterBtn.setBounds (bottom.reduced (2, 0));
+        }
+        latency.setBounds (r.removeFromBottom (13));
         db.setBounds (r.removeFromBottom (18));
         auto faderArea = r.reduced (0, 4);
         if (meter != nullptr)
@@ -198,6 +232,18 @@ public:
 
     void mouseDown (const MouseEvent& e) override
     {
+        // right-click a send: pre / post fader
+        for (auto* snd : sends)
+            if (e.eventComponent == &snd->knob && e.mods.isPopupMenu())
+            {
+                const bool pre = Routing::isPreFader (*audioTrack(), snd->bus);
+                PopupMenu m;
+                m.addItem ("Post-fader (follows the volume fader)", true, ! pre, [this, b = snd->bus] { Routing::setPreFader (*audioTrack(), b, false); });
+                m.addItem ("Pre-fader (independent of the fader)", true, pre, [this, b = snd->bus] { Routing::setPreFader (*audioTrack(), b, true); });
+                m.showMenuAsync (PopupMenu::Options().withTargetComponent (&snd->knob));
+                return;
+            }
+
         // right-click on the fader or pan knob: MIDI Learn
         if (e.mods.isPopupMenu() && volPlugin != nullptr && evs.midiLearn != nullptr
             && (e.eventComponent == &fader || e.eventComponent == &pan))
@@ -233,10 +279,50 @@ private:
             name.setText (track->getName(), dontSendNotification);
 
             for (auto* s : sends)
+            {
                 if (! s->knob.isMouseButtonDown())
                     s->knob.setValue (Routing::getSendDb (*audioTrack(), s->bus), dontSendNotification);
+                const bool pre = Routing::isPreFader (*audioTrack(), s->bus);
+                s->label.setColour (Label::textColourId, pre ? Theme::orange : Theme::muted);
+                s->knob.setTooltip (String (pre ? "Pre-fader" : "Post-fader") + " send (right-click to change)");
+            }
+
+            if (auto at = audioTrack())
+                freezeBtn.setToggleState (at->isFrozen (te::Track::individualFreeze), dontSendNotification);
         }
+        else
+        {
+            limiterBtn.setToggleState (findMasterLimiter() != nullptr, dontSendNotification);
+        }
+
+        // plugin latency (the engine compensates; shown so you know what's adding delay)
+        double secs = 0;
+        if (auto at = audioTrack())
+            for (auto p : at->pluginList) { if (p->isEnabled()) secs += p->getLatencySeconds(); }
+        if (track == nullptr)
+            for (auto p : evs.edit.getMasterPluginList()) { if (p->isEnabled()) secs += p->getLatencySeconds(); }
+        latency.setText (secs > 0.00005 ? "latency " + String (secs * 1000.0, 1) + " ms" : String(), dontSendNotification);
+        latency.setTooltip ("Plugin latency on this channel. Pulse delays the other tracks to keep everything in time.");
         repaint();
+    }
+
+    te::Plugin* findMasterLimiter()
+    {
+        for (auto p : evs.edit.getMasterPluginList())
+            if (dynamic_cast<pulse::Limiter*> (p) != nullptr) return p;
+        return nullptr;
+    }
+
+    void toggleMasterLimiter()
+    {
+        auto& list = evs.edit.getMasterPluginList();
+        evs.edit.getUndoManager().beginNewTransaction ("Master limiter");
+        if (auto l = findMasterLimiter()) { l->deleteFromParent(); return; }
+
+        int index = list.size();
+        if (auto meter = list.findFirstPluginOfType<te::LevelMeterPlugin>())
+            index = list.indexOf (meter);   // limit before the master meter
+        list.insertPlugin (evs.edit.getPluginCache().createNewPlugin (pulse::Limiter::xmlTypeName, {}), index, nullptr);
     }
 
     struct Send
@@ -254,7 +340,8 @@ private:
     Label name, db;
     Slider pan, fader;
     std::unique_ptr<LevelMeter> meter;
-    TextButton muteBtn { "M" }, soloBtn { "S" };
+    TextButton muteBtn { "M" }, soloBtn { "S" }, freezeBtn { "F" }, limiterBtn { "Limiter" };
+    Label latency;
 };
 
 //==============================================================================
