@@ -12,7 +12,7 @@ public:
     {
         std::function<void()> newProject, openProject, saveProject, saveProjectAs, exportWav, exportSelection, exportMidi,
                               audioSettings, pluginManager, addInstrumentTrack, addAudioTrack,
-                              toggleBrowser, toggleSession, collectAll, saveTemplate;
+                              toggleBrowser, toggleSession, collectAll, saveTemplate, openPalette, editShortcuts;
         std::function<bool()> isBrowserShown, isSessionShown;
         std::function<String()> controllerStatus;
         std::function<void()> toggleLink, cancelRender;
@@ -118,6 +118,9 @@ public:
             add ("Export audio / stems...", "Ctrl+Shift+R", actions.exportWav);
             add ("Export selection...", "Ctrl+Shift+E", actions.exportSelection);
             add ("Export MIDI...", "Ctrl+Shift+M", actions.exportMidi);
+            m.addSeparator();
+            add ("Command palette...", "Ctrl+P", actions.openPalette);
+            add ("Keyboard shortcuts...", {}, actions.editShortcuts);
             m.showMenuAsync (PopupMenu::Options().withTargetComponent (&fileBtn));
         };
         addAndMakeVisible (fileBtn);

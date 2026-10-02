@@ -1667,6 +1667,18 @@ public:
             PopupMenu m;
             m.addItem ("Rename", [this] { name.showEditor(); });
             m.addItem ("Ungroup", [f = folder] { f->edit.getUndoManager().beginNewTransaction ("Ungroup"); EditingOps::ungroup (*f); });
+            m.addSeparator();
+            const bool frozen = EditingOps::isGroupFrozen (*folder);
+            m.addItem (frozen ? "Unfreeze group" : "Freeze group (render to audio, saves CPU)", [f = folder, frozen]
+            {
+                f->edit.getUndoManager().beginNewTransaction (frozen ? "Unfreeze group" : "Freeze group");
+                if (frozen) EditingOps::unfreezeGroup (*f); else EditingOps::freezeGroup (*f);
+            });
+            m.addItem ("Flatten group (replace with audio)", [f = folder]
+            {
+                f->edit.getUndoManager().beginNewTransaction ("Flatten group");
+                EditingOps::flattenGroup (*f);
+            });
             m.showMenuAsync (PopupMenu::Options().withTargetComponent (this));
         }
     }

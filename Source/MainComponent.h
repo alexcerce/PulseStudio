@@ -23,6 +23,7 @@
 #include "CrashGuard.h"
 #include "Sharing.h"
 #include "BackgroundRender.h"
+#include "Commands.h"
 
 //==============================================================================
 /** Owns the current Edit and lays out transport, browser, arrangement/session and the
@@ -65,6 +66,8 @@ public:
         push->onToggleBrowser = [this] { toggleBrowser(); };
 
         setWantsKeyboardFocus (true);
+        commands = std::make_unique<CommandRegistry> (settings());
+        registerCommands();
         enableInputs();
         openStartupProject();
         setSize (1440, 900);
@@ -132,52 +135,11 @@ public:
             midiLearn->cancelLearning();
             return true;
         }
-        auto& tc = edit->getTransport();
         const bool shift = k.getModifiers().isShiftDown();
 
-        if (k == KeyPress::spaceKey)                       { EngineHelpers::togglePlay (*edit); return true; }
-        if (isCtrlKey (k, 'r') && shift)                   { exportWav(); return true; }
-        if (isCtrlKey (k, 'e') && shift)                   { exportSelection(); return true; }
-        if (isCtrlKey (k, 'm') && shift)                   { exportMidi(); return true; }
-        if (isCtrlKey (k, 'z') && ! shift)                 { edit->undo(); return true; }
-        if (isCtrlKey (k, 'y') || (isCtrlKey (k, 'z') && shift)) { edit->redo(); return true; }
-        if (isCtrlKey (k, 's'))                            { saveProject(); return true; }
-        if (k == KeyPress ('r'))                           { EngineHelpers::toggleRecord (*edit); return true; }
-        if (k == KeyPress ('l'))                           { tc.looping = ! tc.looping.get(); return true; }
-        if (k == KeyPress ('m'))                           { edit->clickTrackEnabled = ! edit->clickTrackEnabled.get(); return true; }
-        if (k == KeyPress ('1'))                           { showTab (Tab::devices); return true; }
-        if (k == KeyPress ('2'))                           { showTab (Tab::mixer); return true; }
-        if (k == KeyPress ('3'))                           { showTab (Tab::pianoRoll); return true; }
-        if (k == KeyPress::homeKey)                        { tc.setPosition (0s); return true; }
-        if (isCtrlKey (k, 'l'))                            { loopSelection(); return true; }
-        if (isCtrlKey (k, 'k'))
-        {
-            edit->getUndoManager().beginNewTransaction ("Add marker");
-            Timeline::addMarker (*edit, tc.getPosition());
+        if (isCtrlKey (k, 'z') && shift) { edit->redo(); return true; }   // alternative redo
+        if (commands->dispatch (k))
             return true;
-        }
-        if (k.getModifiers().isCommandDown() && (k.isKeyCode (KeyPress::leftKey) || k.isKeyCode (KeyPress::rightKey)))
-        {
-            Timeline::jumpToMarker (*edit, k.isKeyCode (KeyPress::rightKey));
-            return true;
-        }
-        if (CharacterFunctions::toUpperCase ((juce_wchar) k.getKeyCode()) == 'Z' && ! k.getModifiers().isCommandDown() && arrangement != nullptr)
-        {
-            arrangement->zoomToFit (shift);   // Z = selection, Shift+Z = whole song
-            return true;
-        }
-        if ((k.getTextCharacter() == '=' || k.getTextCharacter() == '+') && ! k.getModifiers().isCommandDown())
-        {
-            evs->zoom (1.4, 0);
-            return true;
-        }
-        if (k.getTextCharacter() == '-' && ! k.getModifiers().isCommandDown())
-        {
-            evs->zoom (1.0 / 1.4, 0);
-            return true;
-        }
-        if (k == KeyPress::tabKey)                         { toggleSession(); return true; }
-        if (k == KeyPress ('b'))                           { toggleBrowser(); return true; }
 
         auto& um = edit->getUndoManager();
 
@@ -220,33 +182,133 @@ public:
             return true;
         }
 
-        if (isCtrlKey (k, 'd')) { um.beginNewTransaction ("Duplicate");  EditingOps::duplicate (selectionManager); return true; }
-        if (isCtrlKey (k, 'c')) { EditingOps::copy (selectionManager); return true; }
-        if (isCtrlKey (k, 'x')) { um.beginNewTransaction ("Cut");        EditingOps::cut (selectionManager); return true; }
-        if (isCtrlKey (k, 'v')) { um.beginNewTransaction ("Paste");      EditingOps::paste (*edit, selectionManager); return true; }
-        if (isCtrlKey (k, 'e')) { um.beginNewTransaction ("Split");      EditingOps::splitAtPlayhead (*edit, selectionManager); return true; }
-        if (isCtrlKey (k, 'a')) { EditingOps::selectAllClips (*edit, selectionManager); return true; }
 
-        if (isCtrlKey (k, 'g'))
+        return false;
+    }
+
+    //==============================================================================
+    void registerCommands()
+    {
+        auto& c = *commands;
+        auto key = [] (int code, ModifierKeys m = {}) { return KeyPress (code, m, 0); };
+        const auto ctrl = ModifierKeys::commandModifier, shiftM = ModifierKeys::shiftModifier;
+        auto withEdit = [this] (std::function<void (te::Edit&)> fn) { return [this, fn] { if (edit != nullptr) fn (*edit); }; };
+        auto um = [this] (const char* name) { edit->getUndoManager().beginNewTransaction (name); };
+
+        c.add ("transport.play", "Play / stop", "Transport", key (KeyPress::spaceKey), withEdit ([] (te::Edit& e) { EngineHelpers::togglePlay (e); }));
+        c.add ("transport.record", "Record", "Transport", key ('R'), withEdit ([] (te::Edit& e) { EngineHelpers::toggleRecord (e); }));
+        c.add ("transport.loop", "Loop on / off", "Transport", key ('L'), withEdit ([] (te::Edit& e) { e.getTransport().looping = ! e.getTransport().looping.get(); }));
+        c.add ("transport.metronome", "Metronome on / off", "Transport", key ('M'), withEdit ([] (te::Edit& e) { e.clickTrackEnabled = ! e.clickTrackEnabled.get(); }));
+        c.add ("transport.home", "Go to start", "Transport", key (KeyPress::homeKey), withEdit ([] (te::Edit& e) { e.getTransport().setPosition (0s); }));
+        c.add ("transport.capture", "Capture MIDI (what you just played)", "Transport", key ('C', ctrl | shiftM), [this] { captureMidi(); });
+
+        c.add ("edit.undo", "Undo", "Edit", key ('Z', ctrl), withEdit ([] (te::Edit& e) { e.undo(); }));
+        c.add ("edit.redo", "Redo", "Edit", key ('Y', ctrl), withEdit ([] (te::Edit& e) { e.redo(); }));
+        c.add ("edit.copy", "Copy", "Edit", key ('C', ctrl), [this] { EditingOps::copy (selectionManager); });
+        c.add ("edit.cut", "Cut", "Edit", key ('X', ctrl), [this, um] { um ("Cut"); EditingOps::cut (selectionManager); });
+        c.add ("edit.paste", "Paste at playhead", "Edit", key ('V', ctrl), [this, um] { um ("Paste"); EditingOps::paste (*edit, selectionManager); });
+        c.add ("edit.duplicate", "Duplicate", "Edit", key ('D', ctrl), [this, um] { um ("Duplicate"); EditingOps::duplicate (selectionManager); });
+        c.add ("edit.split", "Split at playhead", "Edit", key ('E', ctrl), [this, um] { um ("Split"); EditingOps::splitAtPlayhead (*edit, selectionManager); });
+        c.add ("edit.selectAll", "Select all clips", "Edit", key ('A', ctrl), [this] { EditingOps::selectAllClips (*edit, selectionManager); });
+        c.add ("edit.loopSelection", "Loop the selection", "Edit", key ('L', ctrl), [this] { loopSelection(); });
+        c.add ("edit.group", "Group selected tracks", "Edit", key ('G', ctrl), [this, um]
         {
             auto tracks = selectionManager.getItemsOfType<te::AudioTrack>();
-            if (! tracks.isEmpty())
-            {
-                um.beginNewTransaction ("Group tracks");
-                EditingOps::groupTracks (*edit, tracks, "Group");
-            }
-            return true;
-        }
-
-        if (isCtrlKey (k, 'j'))   // bounce the selected clips' time range of the selected track
+            if (! tracks.isEmpty()) { um ("Group tracks"); EditingOps::groupTracks (*edit, tracks, "Group"); }
+        });
+        c.add ("edit.bounce", "Bounce selection to a new track", "Edit", key ('J', ctrl), [this]
         {
             auto clips = EditingOps::selectedClips (selectionManager);
             if (auto t = EngineHelpers::getSelectedTrack (selectionManager))
                 EditingOps::bounceToNewTrack (*t, clips.isEmpty() ? std::optional<te::TimeRange>() : EditingOps::rangeOf (clips));
-            return true;
-        }
+        });
 
-        return false;
+        c.add ("marker.add", "Add marker at playhead", "Markers", key ('K', ctrl), [this, um] { um ("Add marker"); Timeline::addMarker (*edit, edit->getTransport().getPosition()); });
+        c.add ("marker.next", "Next marker", "Markers", key (KeyPress::rightKey, ctrl), [this] { Timeline::jumpToMarker (*edit, true); });
+        c.add ("marker.prev", "Previous marker", "Markers", key (KeyPress::leftKey, ctrl), [this] { Timeline::jumpToMarker (*edit, false); });
+
+        c.add ("view.devices", "Show devices", "View", key ('1'), [this] { showTab (Tab::devices); });
+        c.add ("view.mixer", "Show mixer", "View", key ('2'), [this] { showTab (Tab::mixer); });
+        c.add ("view.pianoRoll", "Show piano roll", "View", key ('3'), [this] { showTab (Tab::pianoRoll); });
+        c.add ("view.session", "Arrangement / Session", "View", key (KeyPress::tabKey), [this] { toggleSession(); });
+        c.add ("view.browser", "Show / hide browser", "View", key ('B'), [this] { toggleBrowser(); });
+        c.add ("view.zoomSelection", "Zoom to selection", "View", key ('Z'), [this] { if (arrangement) arrangement->zoomToFit (false); });
+        c.add ("view.zoomSong", "Zoom to whole song", "View", key ('Z', shiftM), [this] { if (arrangement) arrangement->zoomToFit (true); });
+        c.add ("view.zoomIn", "Zoom in", "View", key ('='), [this] { evs->zoom (1.4, 0); });
+        c.add ("view.zoomOut", "Zoom out", "View", key ('-'), [this] { evs->zoom (1.0 / 1.4, 0); });
+        c.add ("view.palette", "Command palette", "View", key ('P', ctrl), [this] { openPalette(); });
+
+        c.add ("track.addInstrument", "New instrument track", "Tracks", key ('T', ctrl), [this] { addTrack (true); });
+        c.add ("track.addAudio", "New audio track", "Tracks", key ('T', ctrl | shiftM), [this] { addTrack (false); });
+
+        c.add ("file.new", "New project", "File", key ('N', ctrl), [this] { newProject(); });
+        c.add ("file.open", "Open project", "File", key ('O', ctrl), [this] { openProject(); });
+        c.add ("file.save", "Save", "File", key ('S', ctrl), [this] { saveProject(); });
+        c.add ("file.collect", "Collect all and save", "File", {}, [this] { collectAll(); });
+        c.add ("file.template", "Save as template", "File", {}, [this] { saveAsTemplate(); });
+        c.add ("file.exportAudio", "Export audio / stems", "File", key ('R', ctrl | shiftM), [this] { exportWav(); });
+        c.add ("file.exportSelection", "Export selection", "File", key ('E', ctrl | shiftM), [this] { exportSelection(); });
+        c.add ("file.exportMidi", "Export MIDI", "File", key ('M', ctrl | shiftM), [this] { exportMidi(); });
+
+        c.add ("app.audioSettings", "Audio settings", "App", {}, [this] { showAudioSettings(); });
+        c.add ("app.plugins", "Plugin manager", "App", {}, [this] { showPluginManager(); });
+        c.add ("app.shortcuts", "Keyboard shortcuts", "App", {}, [this] { showShortcutEditor(); });
+    }
+
+    void openPalette()
+    {
+        if (edit == nullptr) return;
+        std::vector<CommandPalette::Entry> entries;
+        for (auto& c : commands->all())
+            entries.push_back ({ c.name, CommandRegistry::describe (commands->keyFor (c)), c.run });
+
+        // devices for the selected track
+        for (auto& b : ClipImport::builtIns())
+            entries.push_back ({ String ("Add ") + b.name, b.synth ? "instrument" : b.midiFx ? "MIDI effect" : "audio effect",
+                                 [this, type = String ("plugin:builtin:") + b.type]
+                                 {
+                                     if (auto t = EngineHelpers::getSelectedTrack (selectionManager))
+                                         Presets::applyDescription (t, t->pluginList, type);
+                                 } });
+        // markers and tracks
+        for (auto m : Timeline::markers (*edit))
+            entries.push_back ({ "Go to " + m->getName(), "marker", [this, t = m->getPosition().getStart()] { edit->getTransport().setPosition (t); } });
+        for (auto t : EngineHelpers::getUserTracks (*edit))
+            entries.push_back ({ "Select " + t->getName(), "track", [this, id = t->itemID]
+                                 {
+                                     if (auto tr = dynamic_cast<te::AudioTrack*> (te::findTrackForID (*edit, id))) selectionManager.selectOnly (tr);
+                                 } });
+
+        palette = std::make_unique<CommandPalette> (std::move (entries));
+        palette->onDismiss = [this] { palette = nullptr; grabKeyboardFocus(); };
+        addAndMakeVisible (*palette);
+        palette->setBounds (getLocalBounds().withSizeKeepingCentre (560, 420).withY (70));
+        palette->focus();
+    }
+
+    void showShortcutEditor()
+    {
+        DialogWindow::LaunchOptions o;
+        o.dialogTitle = "Keyboard shortcuts";
+        o.dialogBackgroundColour = Theme::panel;
+        o.useNativeTitleBar = true;
+        o.resizable = true;
+        o.content.setOwned (new ShortcutEditor (*commands));
+        o.launchAsync();
+    }
+
+    /** Ableton-style Capture: turns what was just played on a MIDI keyboard into a clip. */
+    void captureMidi()
+    {
+        if (edit == nullptr) return;
+        edit->getUndoManager().beginNewTransaction ("Capture MIDI");
+        int made = 0;
+        for (auto* inst : edit->getAllInputDevices())
+            if (dynamic_cast<te::MidiInputDevice*> (&inst->owner) != nullptr)
+                made += inst->applyRetrospectiveRecord (false).size();
+        if (made == 0)
+            AlertWindow::showMessageBoxAsync (MessageBoxIconType::InfoIcon, "Capture MIDI",
+                                              "Nothing to capture yet - play something on your MIDI keyboard first (Pulse keeps the last 2 minutes).");
     }
 
 private:
@@ -273,6 +335,8 @@ private:
         a.saveProject    = [this] { saveProject(); };
         a.exportWav      = [this] { exportWav(); };
         a.collectAll     = [this] { collectAll(); };
+        a.openPalette    = [this] { openPalette(); };
+        a.editShortcuts  = [this] { showShortcutEditor(); };
         a.cancelRender   = [] { BackgroundRender::instance().cancel(); };
         a.renderProgress = [] { auto& r = BackgroundRender::instance(); return r.isBusy() ? r.getProgress() : -1.0f; };
         a.renderStatus   = [] { return BackgroundRender::instance().getStatus(); };
@@ -333,6 +397,7 @@ private:
         {
             midiIn->setMonitorMode (te::InputDevice::MonitorMode::automatic);
             midiIn->setEnabled (true);
+            midiIn->updateRetrospectiveBufferLength (120.0);   // for Capture MIDI
         }
 
         for (int i = 0; i < dm.getNumWaveInDevices(); ++i)
@@ -849,6 +914,8 @@ private:
     std::unique_ptr<EditViewState> evs;
     std::unique_ptr<MidiLearn> midiLearn;
     std::unique_ptr<LinkSync> linkSync;
+    std::unique_ptr<CommandRegistry> commands;
+    std::unique_ptr<CommandPalette> palette;
     Label learnBanner;
 
     std::unique_ptr<Push2Controller> push;   // declared before transport: transport polls its status

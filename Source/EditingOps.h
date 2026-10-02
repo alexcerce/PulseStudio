@@ -224,6 +224,78 @@ namespace EditingOps
         return t.get();
     }
 
+    //==============================================================================
+    // Groups: freeze (render the submix to an audio track and mute the group) and flatten
+    static inline const Identifier frozenGroupID { "pulseFrozenGroup" };
+
+    /** Renders a group's whole submix (its tracks and its own devices) to a file. */
+    inline File renderFolder (te::FolderTrack& folder, te::TimeRange range, const String& suffix)
+    {
+        auto& e = folder.edit;
+        waitForClipProxies (e);
+        juce::Array<te::Track*> tracks { &folder };
+        for (auto t : folder.getAllSubTracks (true)) tracks.add (t);
+        te::Renderer::Parameters p (e);
+        p.tracksToDo = te::toBitSet (tracks);
+        p.destFile = bounceFolder (e).getNonexistentChildFile (File::createLegalFileName (folder.getName() + " " + suffix), ".wav", false);
+        p.audioFormat = e.engine.getAudioFileFormatManager().getWavFormat();
+        p.bitDepth = 24;
+        p.sampleRateForAudio = 48000.0;
+        p.time = range;
+        p.usePlugins = true;
+        p.useMasterPlugins = false;
+        p.checkNodesForAudio = false;
+        return te::Renderer::renderToFile ("Rendering " + folder.getName(), p);
+    }
+
+    inline te::AudioTrack* frozenTrackOf (te::FolderTrack& folder)
+    {
+        for (auto t : te::getAudioTracks (folder.edit))
+            if (t->state[frozenGroupID].toString() == folder.itemID.toString()) return t;
+        return nullptr;
+    }
+
+    inline bool isGroupFrozen (te::FolderTrack& folder) { return frozenTrackOf (folder) != nullptr; }
+
+    /** Freeze: the group plays from one rendered audio track (saving CPU); its own tracks are muted but kept. */
+    inline te::AudioTrack* freezeGroup (te::FolderTrack& folder)
+    {
+        auto& e = folder.edit;
+        auto r = songRange (e);
+        auto f = renderFolder (folder, r, "freeze");
+        if (! f.existsAsFile()) return nullptr;
+
+        auto t = e.insertNewAudioTrack (te::TrackInsertPoint (folder, false), nullptr);
+        if (t == nullptr) return nullptr;
+        t->setName (folder.getName() + " (frozen)");
+        t->setColour (folder.getColour());
+        t->state.setProperty (frozenGroupID, folder.itemID.toString(), nullptr);
+        te::AudioFile af (e.engine, f);
+        t->insertWaveClip (folder.getName(), f, { { r.getStart(), te::TimeDuration::fromSeconds (af.getLength()) }, {} }, false);
+        folder.setMute (true);
+        return t.get();
+    }
+
+    inline void unfreezeGroup (te::FolderTrack& folder)
+    {
+        if (auto t = frozenTrackOf (folder)) folder.edit.deleteTrack (t);
+        folder.setMute (false);
+    }
+
+    /** Flatten: replace the whole group with one rendered audio track. */
+    inline te::AudioTrack* flattenGroup (te::FolderTrack& folder)
+    {
+        unfreezeGroup (folder);
+        auto t = freezeGroup (folder);
+        if (t == nullptr) return nullptr;
+        t->state.removeProperty (frozenGroupID, nullptr);
+        t->setName (folder.getName());
+        auto& e = folder.edit;
+        for (auto sub : folder.getAllSubTracks (true)) e.deleteTrack (sub);
+        e.deleteTrack (&folder);
+        return t;
+    }
+
     /** Ableton-style flatten: replaces the track's clips and devices with one rendered audio clip. */
     inline bool flatten (te::AudioTrack& track)
     {

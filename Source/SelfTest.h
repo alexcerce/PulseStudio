@@ -24,6 +24,7 @@
 #include "Sharing.h"
 #include "Sandbox.h"
 #include "BackgroundRender.h"
+#include "Commands.h"
 
 /** "Pulse Studio.exe --selftest report.txt"
     Builds a scratch project in the temp folder, exercises the editing / routing / device
@@ -1051,6 +1052,87 @@ namespace SelfTest
             for (int i = 0; i < 1200 && cancelOk < 0; ++i)
                 MessageManager::getInstance()->runDispatchLoopUntil (25);
             rep.check (cancelled && cancelOk < 4 && ! br.isBusy(), "Cancel a background export", String (cancelOk) + " of 4 finished before cancelling");
+        }
+
+        // --- workflow: command registry, group freeze/flatten, capture MIDI --------------------------
+        {
+            auto& props = engine.getPropertyStorage().getPropertiesFile();
+            CommandRegistry reg (props);
+            int dupRuns = 0, zoomRuns = 0;
+            reg.add ("test.dup", "Duplicate", "Edit", KeyPress ('D', ModifierKeys::commandModifier, 0), [&] { ++dupRuns; });
+            reg.add ("test.zoom", "Zoom", "View", KeyPress ('Z', {}, 0), [&] { ++zoomRuns; });
+            reg.resetAll();
+            const bool ctrlCode = reg.dispatch (KeyPress (4, ModifierKeys::commandModifier, 0));   // Windows sends Ctrl+D as code 4
+            const bool lower = reg.dispatch (KeyPress ('z', {}, 0));
+            reg.setKey ("test.zoom", KeyPress ('Q', ModifierKeys::shiftModifier, 0));
+            const bool oldKeyGone = ! reg.dispatch (KeyPress ('z', {}, 0));
+            const bool newKey = reg.dispatch (KeyPress ('q', ModifierKeys::shiftModifier, 0));
+            auto conflict = reg.commandUsing (KeyPress ('D', ModifierKeys::commandModifier, 0), "test.zoom");
+            reg.resetAll();
+            rep.check (ctrlCode && lower && oldKeyGone && newKey && dupRuns == 1 && zoomRuns == 2 && conflict != nullptr && conflict->id == "test.dup",
+                       "Command registry (custom shortcuts, Ctrl+letter codes, conflicts)");
+
+            // group freeze / unfreeze / flatten
+            auto g1 = ClipImport::createContentTrack (*edit, "GroupA", false);
+            auto g2 = ClipImport::createContentTrack (*edit, "GroupB", false);
+            ClipImport::importFile (*g1, *edit, writeTestWav (dir.getChildFile ("ga.wav"), 1.0, 150.0), te::TimePosition());
+            ClipImport::importFile (*g2, *edit, writeTestWav (dir.getChildFile ("gb.wav"), 1.0, 250.0), te::TimePosition());
+            auto folder = EditingOps::groupTracks (*edit, { g1, g2 }, "FreezeMe");
+            bool froze = false, unfroze = false, flat = false;
+            String detail;
+            if (folder != nullptr)
+            {
+                auto frozen = EditingOps::freezeGroup (*folder);
+                float lvl = -200.0f;
+                if (frozen != nullptr && ! frozen->getClips().isEmpty())
+                    if (auto w = dynamic_cast<te::WaveAudioClip*> (frozen->getClips()[0])) lvl = peakDb (engine, w->getOriginalFile());
+                froze = frozen != nullptr && folder->isMuted (false) && EditingOps::isGroupFrozen (*folder) && lvl > -40.0f;
+                detail = "frozen at " + String (lvl, 1) + " dBFS";
+                EditingOps::unfreezeGroup (*folder);
+                unfroze = ! EditingOps::isGroupFrozen (*folder) && ! folder->isMuted (false);
+                const int before = te::getAudioTracks (*edit).size();
+                auto flatTrack = EditingOps::flattenGroup (*folder);
+                flat = flatTrack != nullptr && te::getAudioTracks (*edit).size() == before - 1 && flatTrack->getClips().size() == 1;
+            }
+            rep.check (froze && unfroze && flat, "Group freeze, unfreeze and flatten", detail);
+
+            // capture MIDI from a (virtual) keyboard
+            auto& dm = engine.getDeviceManager();
+            dm.createVirtualMidiDevice ("Pulse Capture Test");
+            te::VirtualMidiInputDevice* vmi = nullptr;
+            for (int i = 0; i < 120 && vmi == nullptr; ++i)   // devices are registered asynchronously
+            {
+                for (auto& d : dm.getMidiInDevices())
+                    if (d->getName() == "Pulse Capture Test") vmi = dynamic_cast<te::VirtualMidiInputDevice*> (d.get());
+                if (vmi == nullptr) MessageManager::getInstance()->runDispatchLoopUntil (25);
+            }
+            int captured = 0;
+            String captureInfo;
+            if (vmi != nullptr)
+            {
+                vmi->setEnabled (true);
+                vmi->updateRetrospectiveBufferLength (30.0);
+                auto capTrack = ClipImport::createContentTrack (*edit, "Capture", true);
+                edit->getTransport().ensureContextAllocated();
+                edit->getTransport().ensureContextAllocated (true);
+                EngineHelpers::routeMidiInputsTo (*capTrack);
+                for (int i = 0; i < 4; ++i)
+                {
+                    vmi->handleIncomingMidiMessage (MidiMessage::noteOn (1, 60 + i, (uint8) 100), te::MPESourceID {});
+                    Thread::sleep (20);
+                    vmi->handleIncomingMidiMessage (MidiMessage::noteOff (1, 60 + i), te::MPESourceID {});
+                }
+                for (auto* inst : edit->getAllInputDevices())
+                    if (&inst->owner == vmi)
+                        captureInfo << "instance, targets " << inst->getTargets().size() << ", ";
+                captureInfo << "buffer " << (vmi->getRetrospectiveMidiBuffer() != nullptr ? "yes" : "no");
+                for (auto* inst : edit->getAllInputDevices())
+                    if (&inst->owner == vmi)
+                        for (auto c : inst->applyRetrospectiveRecord (false))
+                            if (auto mc = dynamic_cast<te::MidiClip*> (c)) captured += mc->getSequence().getNumNotes();
+                dm.deleteVirtualMidiDevice (*vmi);
+            }
+            rep.check (captured == 4, "Capture MIDI (recover what was just played)", String (captured) + " notes captured; " + captureInfo);
         }
 
         // --- undo -------------------------------------------------------------------------------

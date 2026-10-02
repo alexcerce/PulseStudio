@@ -4,7 +4,7 @@ A native Windows DAW built with C++, [JUCE](https://juce.com) and [Tracktion Eng
 
 ## Install
 
-Run `dist/PulseStudio-0.14.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
+Run `dist/PulseStudio-0.15.0-Setup.exe`. It installs for your user only (no admin needed) or for all users, and adds a Start-menu entry and an optional desktop shortcut.
 
 ## Build
 
@@ -176,7 +176,18 @@ Pulse's own devices have cards with labelled sections and a live display. Every 
 - **Per-project view:** zoom, scroll, snap, arrangement/session view, browser, bottom panel, panel size, selected track and collapsed groups are saved in the project. The window size and position are remembered too.
 - **Undo:** each knob drag is one undo step, and the Undo/Redo tooltips name the action.
 
+## Workflow
+- **Command palette (Ctrl+P):** type to find any command, device ("add saturator"), marker or track, then press Enter.
+- **Custom shortcuts:** *File → Keyboard shortcuts*. Select a command, click *Assign*, then press the keys. A key that's already in use moves to the new command.
+- **Capture MIDI (Ctrl+Shift+C):** played something good without recording? Capture turns the last two minutes of MIDI keyboard input into a clip on the selected track.
+- **Groups:** right-click a group header.
+  - *Freeze group* renders the submix to an audio track and mutes the group, to save CPU. *Unfreeze* undoes it.
+  - *Flatten group* replaces the group with that audio track.
+
 ## Shortcuts
+
+All of these can be changed in *File → Keyboard shortcuts*. New: **Ctrl+P** command palette, **Ctrl+Shift+C** capture MIDI, **Ctrl+T** / **Ctrl+Shift+T** new instrument / audio track, **Ctrl+N** / **Ctrl+O** new / open project.
+
 
 | Key | Action |
 | --- | --- |
@@ -209,7 +220,7 @@ Pulse's own devices have cards with labelled sections and a live display. Every 
 ## Command line
 
 - `--render out.wav` renders the last project offline and exits.
-- `--selftest report.txt` builds a scratch project and runs 100 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--selftest report.txt` builds a scratch project and runs 104 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
 - `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
 
 ## Code layout
@@ -235,6 +246,7 @@ All app code is header-only in `Source/` and compiled through `Main.cpp`.
 | `DrumRack.h`, `Presets.h`, `Macros.h`, `MidiLearn.h` | Sound design and controller features |
 | `MidiFx.h`, `Scales.h` | MIDI effects (Arpeggiator, Chord, Scale, Note Echo), shared scales |
 | `Sandbox.h`, `BackgroundRender.h` | Plugin sandbox (helper process), background exports |
+| `Commands.h` | Command registry, command palette, shortcut editor |
 | `Sharing.h` | Collect All and Save, project templates |
 | `Timeline.h` | Markers, tempo / time signature maths, crossfades, comping |
 | `EditingOps.h` | Clipboard, split, time edits, bounce/flatten/freeze, grouping |
