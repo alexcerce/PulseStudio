@@ -3301,6 +3301,85 @@ namespace SelfTest
             edit->deleteTrack (t);
         }
 
+        // --- v0.43: built-in sounds, return / master automation --------------------------------------------
+        {
+            rep.step ("factory sounds");
+            const auto t0 = Time::getMillisecondCounterHiRes();
+            const int written = FactorySounds::renderAll (engine);
+            const double secs = (Time::getMillisecondCounterHiRes() - t0) / 1000.0;
+            auto all = FactorySounds::folder (engine).findChildFiles (File::findFiles, true, "*.wav");
+            int silent = 0;
+            AudioFormatManager afm;
+            afm.registerBasicFormats();
+            double houseLen = 0;
+            for (auto& f : all)
+                if (std::unique_ptr<AudioFormatReader> r (afm.createReaderFor (f)); r != nullptr)
+                {
+                    float lo[2] {}, hi[2] {};
+                    r->readMaxLevels (0, r->lengthInSamples, lo[0], hi[0], lo[1], hi[1]);
+                    if (jmax (std::abs (lo[0]), hi[0]) < 0.05f) ++silent;
+                    if (f.getFileName().startsWith ("House")) houseLen = r->lengthInSamples / r->sampleRate;
+                }
+                else ++silent;
+            const double expectHouse = 60.0 / 124.0 * 8.0;   // two bars
+            rep.check (written >= 100 && (int) all.size() == written && silent == 0 && std::abs (houseLen - expectHouse) < 0.01 && FactorySounds::isReady (engine),
+                       "Built-in sounds rendered (kits, loops, multisampled instruments)",
+                       String (written) + " files in " + String (secs, 1) + " s, " + String (silent) + " silent, House loop " + String (houseLen, 3) + " s");
+
+            // an empty Simpler gets a factory instrument and plays it; a sampled kit loads and plays
+            auto st = ClipImport::createContentTrack (*edit, "FactorySimpler", false);
+            auto sp = ClipImport::createPluginFromDescription (*edit, FactoryPresets::description (pulse::Simpler::xmlTypeName, "Mono Bass"));
+            st->pluginList.insertPlugin (sp, 0, nullptr);
+            auto* simpler = dynamic_cast<pulse::Simpler*> (sp.get());
+            const int zones = simpler != nullptr ? simpler->numZones() : 0;
+            const bool isBass = simpler != nullptr && zones > 0 && simpler->getZone (0).file.getParentDirectory().getFileName() == "Bass";
+            auto mcS = dynamic_cast<te::MidiClip*> (st->insertNewClip (te::TrackItem::Type::midi, "n", { te::TimePosition(), te::TimePosition::fromSeconds (1.0) }, nullptr));
+            mcS->getSequence().addNote (40, te::BeatPosition(), te::BeatDuration::fromBeats (1.0), 100, 0, nullptr);
+            const te::TimeRange one { te::TimePosition(), te::TimePosition::fromSeconds (1.0) };
+            const float simplerPeak = peakDb (engine, EditingOps::renderTrack (*st, one, "factory-simpler"));
+
+            auto dt = ClipImport::createContentTrack (*edit, "FactoryKit", false);
+            auto dk = ClipImport::createPluginFromDescription (*edit, "plugin:builtin:drumracksamples");
+            dt->pluginList.insertPlugin (dk, 0, nullptr);
+            int pads = 0;
+            if (auto ri = dynamic_cast<te::RackInstance*> (dk.get()); ri != nullptr && ri->type != nullptr)
+                for (auto p : ri->type->getPlugins()) if (dynamic_cast<pulse::DrumPad*> (p) != nullptr) ++pads;
+            auto mcD = dynamic_cast<te::MidiClip*> (dt->insertNewClip (te::TrackItem::Type::midi, "d", { te::TimePosition(), te::TimePosition::fromSeconds (1.0) }, nullptr));
+            mcD->getSequence().addNote (36, te::BeatPosition(), te::BeatDuration::fromBeats (0.5), 110, 0, nullptr);
+            mcD->getSequence().addNote (38, te::BeatPosition::fromBeats (1.0), te::BeatDuration::fromBeats (0.5), 110, 0, nullptr);
+            const float kitPeak = peakDb (engine, EditingOps::renderTrack (*dt, one, "factory-kit"));
+            rep.check (zones >= 5 && isBass && simplerPeak > -30.0f && pads >= 11 && kitPeak > -30.0f, "Simpler presets and sampled kits use the built-in sounds",
+                       String (zones) + " zones (" + (isBass ? "bass" : "other") + "), " + String (simplerPeak, 1) + " dBFS; kit " + String (pads) + " pads, " + String (kitPeak, 1) + " dBFS");
+            edit->deleteTrack (st);
+            edit->deleteTrack (dt);
+
+            // return / master automation lanes
+            {
+                EditViewState evs (*edit, sm);
+                BusLanes::Area area (evs, 230);
+                const int h0 = area.idealHeight();
+                auto* master = edit->getMasterTrack();
+                bool ok = master != nullptr;
+                if (ok)
+                {
+                    evs.setAutomationVisible (*master, true);
+                    if (auto r = Routing::getReturnTracks (*edit).getFirst()) evs.setAutomationVisible (*r, true);
+                    area.rebuild();
+                    auto* vol = evs.getAutomationParam (*master);
+                    ok = area.idealHeight() >= h0 + 2 * EditViewState::automationHeight && vol == edit->getMasterVolumePlugin()->volParam.get();
+                    // a master device's parameter can be chosen and stays chosen
+                    auto eq = edit->getPluginCache().createNewPlugin (pulse::PulseEQ::xmlTypeName, {});
+                    edit->getMasterPluginList().insertPlugin (eq, 0, nullptr);
+                    evs.setAutomationParam (*master, eq->getAutomatableParameters()[2]);
+                    ok = ok && evs.getAutomationParam (*master) == eq->getAutomatableParameters()[2]
+                            && EditViewState::pluginsOf (*master).contains (eq.get());
+                    evs.setAutomationVisible (*master, false);
+                    eq->deleteFromParent();
+                }
+                rep.check (ok, "Automation lanes for returns and the master");
+            }
+        }
+
         // --- sharing: project zip, crash bundle, update check -----------------------------------------
         {
             rep.step ("sharing tools");

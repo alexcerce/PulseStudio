@@ -826,7 +826,8 @@ private:
             File::getSpecialLocation (File::userDesktopDirectory),
             File::getSpecialLocation (File::userDocumentsDirectory),
             File::getSpecialLocation (File::userHomeDirectory).getChildFile ("Downloads"),
-            File::getSpecialLocation (File::userDocumentsDirectory).getChildFile ("Pulse Studio")
+            File::getSpecialLocation (File::userDocumentsDirectory).getChildFile ("Pulse Studio"),
+            FactorySounds::folder (evs.edit.engine)
         };
 
         for (auto& p : StringArray::fromLines (settings.getValue ("browserFolders")))

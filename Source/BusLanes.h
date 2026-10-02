@@ -7,6 +7,7 @@
 #include "Meters.h"
 #include "Routing.h"
 #include "Loudness.h"
+#include "AutomationLane.h"
 
 //==============================================================================
 /** Slim rows pinned under the arrangement for every return track and the master: click a row to
@@ -43,6 +44,15 @@ namespace BusLanes
             name.setInterceptsMouseClicks (false, false);
             addAndMakeVisible (name);
 
+            autoBtn.setClickingTogglesState (false);
+            autoBtn.setTooltip ("Show / hide an automation lane for " + name.getText());
+            autoBtn.setColour (TextButton::buttonOnColourId, Theme::accentDim);
+            autoBtn.onClick = [this]
+            {
+                if (auto* t = automationTrack())
+                    evs.setAutomationVisible (*t, ! evs.isAutomationVisible (*t));
+            };
+            addAndMakeVisible (autoBtn);
             addBtn.setTooltip ("Add a device to " + name.getText());
             addBtn.onClick = [this] { addDevice(); };
             addAndMakeVisible (addBtn);
@@ -92,6 +102,9 @@ namespace BusLanes
 
         te::AudioTrack* getTrack() const { return track; }
 
+        /** The track whose automation this row shows (the master track for the master row). */
+        te::Track* automationTrack() const { return track != nullptr ? (te::Track*) track : (te::Track*) evs.edit.getMasterTrack(); }
+
         void paint (Graphics& g) override
         {
             const bool sel = isShowing() && isSelected();
@@ -128,6 +141,7 @@ namespace BusLanes
             if (meter != nullptr) { meter->setBounds (r.removeFromRight (30).reduced (0, 6)); r.removeFromRight (4); }
             volume.setBounds (r.removeFromRight (56).reduced (0, 2)); r.removeFromRight (4);
             addBtn.setBounds (r.removeFromRight (22)); r.removeFromRight (3);
+            autoBtn.setBounds (r.removeFromRight (20)); r.removeFromRight (3);
             if (track != nullptr)
             {
                 soloBtn.setBounds (r.removeFromRight (20)); r.removeFromRight (2);
@@ -332,6 +346,7 @@ namespace BusLanes
                 soloBtn.setToggleState (track->isSolo (false), dontSendNotification);
             }
             if (signature() != lastSig) rebuildChips();
+            if (auto* t = automationTrack()) autoBtn.setToggleState (evs.isAutomationVisible (*t), dontSendNotification);
             if (auto vp = volumePlugin(); vp != nullptr && ! volume.isMouseButtonDown())
                 volume.setValue (vp->getVolumeDb(), dontSendNotification);
             const bool sel = isSelected();
@@ -344,7 +359,7 @@ namespace BusLanes
         const int headerWidth;
         Label name;
         Slider volume { Slider::LinearHorizontal, Slider::NoTextBox };
-        TextButton muteBtn { "M" }, soloBtn { "S" }, addBtn { "+" };
+        TextButton muteBtn { "M" }, soloBtn { "S" }, addBtn { "+" }, autoBtn { "A" };
         std::unique_ptr<LevelMeter> meter;
         OwnedArray<Chip> chips;
         String lastSig;
@@ -360,14 +375,31 @@ namespace BusLanes
 
         void rebuild()
         {
+            autoHeaders.clear();
+            autoLanes.clear();
             rows.clear();
             for (auto t : Routing::getReturnTracks (evs.edit))
                 addAndMakeVisible (rows.add (new Row (evs, t, headerWidth)));
             addAndMakeVisible (rows.add (new Row (evs, nullptr, headerWidth)));
+            for (auto* r : rows)
+            {
+                auto* t = r->automationTrack();
+                const bool show = t != nullptr && evs.isAutomationVisible (*t);
+                autoHeaders.add (show ? new AutomationHeader (evs, t) : nullptr);
+                autoLanes.add (show ? new AutomationLane (evs, t) : nullptr);
+                if (show) { addAndMakeVisible (autoHeaders.getLast()); addAndMakeVisible (autoLanes.getLast()); }
+            }
             resized();
         }
 
-        int idealHeight() const { return 18 + rows.size() * Row::height; }
+        void repaintLanes() { for (auto* l : autoLanes) if (l != nullptr) l->repaint(); }
+
+        int idealHeight() const
+        {
+            int h = 18 + rows.size() * Row::height;
+            for (auto* l : autoLanes) if (l != nullptr) h += EditViewState::automationHeight;
+            return h;
+        }
         int numRows() const { return rows.size(); }
         Row* row (int i) const { return rows[i]; }
 
@@ -384,12 +416,24 @@ namespace BusLanes
         void resized() override
         {
             int y = 18;
-            for (auto* r : rows) { r->setBounds (0, y, getWidth(), Row::height); y += Row::height; }
+            for (int i = 0; i < rows.size(); ++i)
+            {
+                rows[i]->setBounds (0, y, getWidth(), Row::height);
+                y += Row::height;
+                if (auto* l = autoLanes[i])
+                {
+                    autoHeaders[i]->setBounds (0, y, headerWidth, EditViewState::automationHeight);
+                    l->setBounds (headerWidth, y, getWidth() - headerWidth, EditViewState::automationHeight);
+                    y += EditViewState::automationHeight;
+                }
+            }
         }
 
     private:
         EditViewState& evs;
         const int headerWidth;
         OwnedArray<Row> rows;
+        OwnedArray<AutomationHeader> autoHeaders;
+        OwnedArray<AutomationLane> autoLanes;
     };
 }

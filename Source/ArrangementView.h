@@ -2446,7 +2446,7 @@ public:
         tools.removeFromRight (8);
         snapBox.setBounds (tools.removeFromRight (70));
         ruler.setBounds (top);
-        buses.setBounds (r.removeFromBottom (jmin (buses.idealHeight(), r.getHeight() / 3)));
+        buses.setBounds (r.removeFromBottom (jmin (buses.idealHeight(), r.getHeight() / 2)));
         viewport.setBounds (r);
         layoutContent();
         playhead.setBounds (r.withTrimmedLeft (headerWidth).withTrimmedRight (viewport.getScrollBarThickness()));
@@ -2813,6 +2813,7 @@ private:
         for (auto* l : lanes) { l->resized(); l->repaint(); }
         for (auto* h : headers) h->repaint();
         for (auto* a : autoLanes) a->repaint();
+        buses.repaintLanes();
     }
 
     EditViewState& evs;

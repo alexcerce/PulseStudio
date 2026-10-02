@@ -4,6 +4,7 @@
 #include "DrumRack.h"
 #include "PulseSynths.h"
 #include "FactoryPresets.h"
+#include "FactorySounds.h"
 
 /** Shared helpers for turning files / plugin IDs into clips, tracks and devices. */
 namespace ClipImport
@@ -72,6 +73,7 @@ namespace ClipImport
         {
             { "Drum Rack",    "drumrack",                          true },
             { "Drum Rack (synth kit)", "drumrackkit",              true },
+            { "Drum Rack (sampled kit)", "drumracksamples",        true },
             { "Drum Synth",   pulse::DrumSynth::xmlTypeName,       true },
             { "Wavetable",    pulse::WavetableSynth::xmlTypeName,  true },
             { "FM Synth",     pulse::FMSynth::xmlTypeName,         true },
@@ -113,7 +115,7 @@ namespace ClipImport
     /** A readable track name for a device dragged from the browser. */
     inline String trackNameFor (te::Engine& engine, const String& d)
     {
-        if (d == "plugin:builtin:drumrack" || d == "plugin:builtin:drumrackkit") return "Drums";
+        if (d == "plugin:builtin:drumrack" || d == "plugin:builtin:drumrackkit" || d == "plugin:builtin:drumracksamples") return "Drums";
         if (d.startsWith ("plugin:builtin:"))
         {
             const auto type = d.fromFirstOccurrenceOf ("plugin:builtin:", false, false);
@@ -195,12 +197,27 @@ namespace ClipImport
             return DrumRack::create (edit);
         if (d == "plugin:builtin:drumrackkit")
             return DrumRack::create (edit, true);
+        if (d == "plugin:builtin:drumracksamples")
+        {
+            auto p = DrumRack::create (edit);
+            if (auto ri = dynamic_cast<te::RackInstance*> (p.get()); ri != nullptr && ri->type != nullptr)
+            {
+                FactorySounds::loadKit (*ri->type, 0);
+                DrumRack::rewire (*ri->type);
+            }
+            return p;
+        }
 
         if (d.startsWith ("plugin:factory:"))   // plugin:factory:<type>:<preset>
         {
             auto rest = d.fromFirstOccurrenceOf ("plugin:factory:", false, false);
             auto p = edit.getPluginCache().createNewPlugin (rest.upToFirstOccurrenceOf (":", false, false), {});
-            if (p != nullptr) FactoryPresets::apply (*p, rest.fromFirstOccurrenceOf (":", false, false));
+            if (p != nullptr)
+            {
+                const auto name = rest.fromFirstOccurrenceOf (":", false, false);
+                FactoryPresets::apply (*p, name);
+                if (auto s = dynamic_cast<pulse::Simpler*> (p.get())) FactorySounds::fillSimpler (*s, FactorySounds::instrumentFor (name));
+            }
             return p;
         }
 

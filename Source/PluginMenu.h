@@ -136,6 +136,10 @@ namespace PluginMenu
         return list.size();
     }
 
+    /** Called for every device inserted from a menu or the browser (e.g. gives an empty
+        Simpler a factory sound). */
+    inline std::function<void (te::Plugin&)> onInserted;
+
     /** Instruments go at the very front of the chain. */
     inline void insertPlugin (te::Track* track, te::PluginList& list, te::Plugin::Ptr p, te::SelectionManager* sm)
     {
@@ -151,5 +155,6 @@ namespace PluginMenu
             return;
         }
         list.insertPlugin (p, p->isSynth() ? (isReturn ? 1 : 0) : insertIndexFor (list, track), sm);
+        if (onInserted && p != nullptr) onInserted (*p);
     }
 }

@@ -1031,6 +1031,17 @@ private:
                 select (DrumRack::baseNote);
             });
         m.addSubMenu ("Load synth kit (GM layout)", kits);
+        PopupMenu sampled;
+        for (int st = 0; st < DrumRack::kitStyles().size(); ++st)
+            sampled.addItem (DrumRack::kitStyles()[st], [this, st]
+            {
+                begin ("Sampled kit");
+                FactorySounds::loadKit (*rack, st);
+                DrumRack::rewire (*rack);
+                setBank (DrumRack::baseNote);
+                select (DrumRack::baseNote);
+            });
+        m.addSubMenu ("Load sampled kit (built-in sounds)", sampled);
         m.addItem ("Randomise kit (from your sample folders)", [this]
         {
             Array<File> folders;

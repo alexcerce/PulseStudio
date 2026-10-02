@@ -89,6 +89,7 @@ public:
         {
             splash = std::make_unique<Splash>();
             splash->setStatus ("Starting the audio engine...");
+            StartupTimer::status() = [this] (const String& s) { if (splash != nullptr) splash->setStatus (s); };
         }
         StartupTimer::mark ("look and feel, crash guard");
         auto behaviour = std::make_unique<PulseEngineBehaviour>();
@@ -106,7 +107,7 @@ public:
         lookAndFeel->applyTheme();
         mainWindow = std::make_unique<MainWindow> (*engine);
         StartupTimer::mark ("main window shown");
-        MessageManager::callAsync ([this] { StartupTimer::mark ("first message loop"); StartupTimer::save(); splash = nullptr; });
+        MessageManager::callAsync ([this] { StartupTimer::mark ("first message loop"); StartupTimer::save(); StartupTimer::status() = nullptr; splash = nullptr; });
 
         // Pulse Studio.exe --snapshots <dir> : screenshots of the main views (for UI work), then exit
         if (auto i = args.indexOf ("--snapshots"); i >= 0 && i + 1 < args.size())

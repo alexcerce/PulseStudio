@@ -136,3 +136,5 @@ when you start, touch it after each step, and delete it when you stop.
 - 2026-10-02: v0.42.0 Prism EQ (PrismEQ.h DSP: 10 shapes, Butterworth cascades to 96 dB/oct, dynamic bands, LFO /
   envelope movement, St/L/R/M/S placement, solo, auto gain, pre/post analyser; PrismEQDisplay.h editor) + 15 presets.
   193 checks pass.
+- 2026-10-02: v0.43.0 FactorySounds.h (113 files rendered on first run in ~1 s: kits, loops, multisamples; Simpler and
+  sampled Drum Rack use them), automation lanes for returns and the master (AutomationLane takes any track). 196 checks pass.

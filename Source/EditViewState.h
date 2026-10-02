@@ -68,13 +68,36 @@ public:
     }
 
     /** The parameter shown in a track's lane (defaults to the track's volume). */
-    te::AutomatableParameter* getAutomationParam (te::AudioTrack& t)
+    te::AutomatableParameter* getAutomationParam (te::Track& t)
     {
         auto& av = automation[t.itemID];
-        if (av.param == nullptr || av.param->getPlugin() == nullptr || av.param->getPlugin()->getOwnerTrack() != &t)
-            if (auto vp = t.getVolumePlugin())
+        if (av.param == nullptr || av.param->getPlugin() == nullptr || ! pluginsOf (t).contains (av.param->getPlugin()))
+            if (auto vp = volumeOf (t))
                 av.param = vp->volParam;
         return av.param.get();
+    }
+
+    /** The devices whose parameters a track's automation lane can show (the master's devices
+        and fader for the master track). */
+    static juce::Array<te::Plugin*> pluginsOf (te::Track& t)
+    {
+        juce::Array<te::Plugin*> out;
+        if (dynamic_cast<te::MasterTrack*> (&t) != nullptr)
+        {
+            if (auto vp = t.edit.getMasterVolumePlugin()) out.add (vp.get());
+            for (auto p : t.edit.getMasterPluginList()) out.add (p);
+        }
+        else
+            for (auto p : t.pluginList) out.add (p);
+        return out;
+    }
+
+    /** A track's fader (the master's for the master track). */
+    static te::VolumeAndPanPlugin* volumeOf (te::Track& t)
+    {
+        if (auto at = dynamic_cast<te::AudioTrack*> (&t)) return at->getVolumePlugin();
+        if (dynamic_cast<te::MasterTrack*> (&t) != nullptr) return t.edit.getMasterVolumePlugin().get();
+        return nullptr;
     }
 
     void setAutomationParam (te::Track& t, te::AutomatableParameter* p)

@@ -8,7 +8,7 @@ class AutomationHeader : public Component,
                          private Timer
 {
 public:
-    AutomationHeader (EditViewState& e, te::AudioTrack::Ptr t) : evs (e), track (t)
+    AutomationHeader (EditViewState& e, te::Track::Ptr t) : evs (e), track (t)
     {
         chooseBtn.setTooltip ("Choose which parameter this lane automates");
         chooseBtn.onClick = [this] { showParamMenu(); };
@@ -67,9 +67,9 @@ private:
         PopupMenu m;
         auto current = evs.getAutomationParam (*track);
 
-        for (auto plugin : track->pluginList)
+        for (auto plugin : EditViewState::pluginsOf (*track))
         {
-            if (dynamic_cast<te::LevelMeterPlugin*> (plugin) != nullptr)
+            if (dynamic_cast<te::LevelMeterPlugin*> (plugin) != nullptr || plugin->getPluginType() == "pulseLoudness")
                 continue;
 
             PopupMenu sub;
@@ -82,14 +82,14 @@ private:
             }
 
             if (sub.getNumItems() > 0)
-                m.addSubMenu (plugin == track->getVolumePlugin() ? "Mixer (volume / pan)" : plugin->getName(), sub);
+                m.addSubMenu (plugin == EditViewState::volumeOf (*track) ? "Mixer (volume / pan)" : plugin->getName(), sub);
         }
 
         m.showMenuAsync (PopupMenu::Options().withTargetComponent (&chooseBtn));
     }
 
     EditViewState& evs;
-    te::AudioTrack::Ptr track;
+    te::Track::Ptr track;
     TextButton chooseBtn, clearBtn { "Clear" };
     Label value;
 };
@@ -102,7 +102,7 @@ class AutomationLane : public Component,
                        private Timer
 {
 public:
-    AutomationLane (EditViewState& e, te::AudioTrack::Ptr t) : evs (e), track (t)
+    AutomationLane (EditViewState& e, te::Track::Ptr t) : evs (e), track (t)
     {
         startTimerHz (15);
     }
@@ -365,7 +365,7 @@ private:
     }
 
     EditViewState& evs;
-    te::AudioTrack::Ptr track;
+    te::Track::Ptr track;
     int hoverIndex = -1, dragIndex = -1, bendIndex = -1;
     float bendStart = 0.0f;
     double lastDrawBeat = -1.0;

@@ -294,5 +294,7 @@ namespace StartupTimer
         const double ms = Time::getMillisecondCounterHiRes() - origin();
         lines().add (String (roundToInt (ms)).paddedLeft (' ', 6) + " ms  " + what);
     }
+    /** Shows a line on the startup splash (when there is one). */
+    inline std::function<void (const String&)>& status() { static std::function<void (const String&)> f; return f; }
     inline void save() { File::getSpecialLocation (File::tempDirectory).getChildFile ("pulse-startup.log").replaceWithText (lines().joinIntoString ("\n")); }
 }

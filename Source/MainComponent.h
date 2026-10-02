@@ -67,6 +67,7 @@ public:
         addChildComponent (learnBanner);
 
         PluginMenu::drumRackFactory = [] (te::Edit& ed, bool kit) { return DrumRack::create (ed, kit); };
+        PluginMenu::onInserted = [] (te::Plugin& p) { if (auto s = dynamic_cast<pulse::Simpler*> (&p)) FactorySounds::fillSimpler (*s); };
         drumLibraryFolders = [this]
         {
             Array<File> f { File::getSpecialLocation (File::userMusicDirectory),
@@ -632,6 +633,11 @@ private:
             loadEdit (projectsFolder().getNonexistentChildFile ("Demo Song", ".tracktionedit", false), true);
 
         StartupTimer::mark ("project loaded");
+        if (! FactorySounds::isReady (engine))   // first run: render the built-in sounds (a few seconds, once)
+        {
+            FactorySounds::renderAll (engine, [] (const String& s) { if (StartupTimer::status()) StartupTimer::status() ("Creating the built-in sounds (first run only): " + s); });
+            StartupTimer::mark ("factory sounds rendered");
+        }
         FactoryContent::ensureTemplates (engine);
         StartupTimer::mark ("factory templates");
         if (! JUCEApplication::getCommandLineParameters().contains ("--snapshots")) checkForUpdates (false);   // only if an address was set
