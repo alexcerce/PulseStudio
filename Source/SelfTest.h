@@ -151,7 +151,7 @@ namespace SelfTest
             feed (*pl, 3.0);
             {
                 DeviceEditors::Editor ed (evs, *pp);
-                ed.setSize (1100, 760);
+                ed.setSize (jmax (1100, ed.getWidth()), jmax (760, ed.getHeight()));
                 MessageManager::getInstance()->runDispatchLoopUntil (120);
                 auto img = ed.createComponentSnapshot (ed.getLocalBounds());
                 auto f = dir.getChildFile (file);
@@ -196,6 +196,18 @@ namespace SelfTest
             w.setRoute (2, "cutoff", 0.4f);
             w.setRoute (5, "pos1", -0.3f);
         }, "shot_wavetable.png");
+        for (int tb = 1; tb < 4; ++tb)
+        {
+            DeviceEditors::WavetablePanel::startTab = tb;
+            shoot (pulse::WavetableSynth::xmlTypeName, [] (pulse::PulsePlugin& p)
+            {
+                auto& w = dynamic_cast<pulse::WavetableSynth&> (p);
+                w.setRoute (2, "cutoff", 0.4f); w.setRoute (5, "pos1", -0.3f); w.setRoute (14, "reso", 0.5f);
+                p.set (pulse::WavetableSynth::pDrive, 0.4f); p.set (pulse::WavetableSynth::pDelayMix, 0.3f); p.set (pulse::WavetableSynth::pReverbMix, 0.3f);
+                p.set (pulse::WavetableSynth::pChorusMix, 0.5f);
+            }, "shot_wavetable_tab" + String (tb) + ".png");
+        }
+        DeviceEditors::WavetablePanel::startTab = 0;
         // a light theme: the device windows follow it
         Theme::apply (Theme::indexOf ("Daylight"));
         if (auto* laf = dynamic_cast<PulseLookAndFeel*> (&LookAndFeel::getDefaultLookAndFeel())) laf->applyTheme();
@@ -3973,6 +3985,83 @@ namespace SelfTest
                        String (refused.size()) + " refused: " + refused[0].upToFirstOccurrenceOf (":", false, false));
             edit->deleteTrack (ret);
             edit->deleteTrack (plain);
+        }
+
+        // --- v0.55: Wavetable overhaul (tables, noise, sub, macros, effects, tabbed window) ------------------
+        {
+            rep.step ("wavetable 2");
+            using W = pulse::WavetableSynth;
+            auto wp = edit->getPluginCache().createNewPlugin (W::xmlTypeName, {});
+            auto* w = dynamic_cast<W*> (wp.get());
+            auto note = [&] (int n, double hold) { return FactorySounds::renderNote (*w, n, hold); };
+            auto reset = [&] { for (auto* prm : w->getAutomatableParameters()) if (auto d = prm->getDefaultValue()) prm->setParameter (*d, sendNotificationSync);
+                               FactoryPresets::clearRoutes (*w); w->set (W::pMix, 0.0f); w->set (W::pVoices, 1.0f); };
+            auto rms = [] (const AudioBuffer<float>& b) { return b.getRMSLevel (0, 0, jmin (b.getNumSamples(), 14000)); };
+            auto crossings = [] (const AudioBuffer<float>& b)
+            {
+                int c = 0;
+                for (int i = 2400; i < jmin (b.getNumSamples(), 12000); ++i) if (b.getSample (0, i - 1) <= 0.0f && b.getSample (0, i) > 0.0f) ++c;
+                return c;
+            };
+            // every table makes sound
+            reset();
+            int sounding = 0;
+            for (int set = 0; set < pulse::WavetableBank::numSets(); ++set)
+            {
+                w->set (W::pSet1, (float) set); w->set (W::pPos1, 0.7f);
+                if (rms (note (48, 0.3)) > 0.01f) ++sounding;
+            }
+            rep.check (sounding == pulse::WavetableBank::numSets() && sounding == 17, "Wavetable: 17 wavetables, all sounding", String (sounding) + " tables");
+            // noise and sub on their own
+            reset(); w->set (W::pLevel1, 0.0f);
+            const float silent = rms (note (48, 0.3));
+            w->set (W::pNoise, 1.0f);
+            const float noisy = rms (note (48, 0.3));
+            w->set (W::pNoise, 0.0f); w->set (W::pSub, 1.0f); w->set (W::pFilterType, 0.0f); w->set (W::pCutoff, 20000.0f); w->set (W::pFilterEnv, 0.0f);
+            const int subOne = crossings (note (60, 0.3));
+            w->set (W::pSubOct, 1.0f);
+            const int subTwo = crossings (note (60, 0.3));
+            rep.check (silent < 0.001f && noisy > 0.02f && subOne > 20 && std::abs (subOne - 2 * subTwo) <= 3, "Wavetable: noise oscillator, sub one or two octaves down",
+                       "noise rms " + String (noisy, 3) + ", sub crossings " + String (subOne) + " / " + String (subTwo));
+            // octave switch, macro as a source, EQ
+            reset(); w->set (W::pFilterType, 0.0f); w->set (W::pCutoff, 20000.0f); w->set (W::pFilterEnv, 0.0f); w->set (W::pSet1, 0.0f); w->set (W::pPos1, 0.0f);
+            const int base = crossings (note (48, 0.3));
+            w->set (W::pOct1, 1.0f);
+            const int up = crossings (note (48, 0.3));
+            reset(); w->set (W::pLevel, -30.0f);
+            w->setRoute (14, "level", 1.0f);
+            const float quiet = rms (note (48, 0.3));
+            w->set (W::pMacro1, 1.0f);
+            const float loud = rms (note (48, 0.3));
+            reset();
+            const float flat = rms (note (36, 0.3));
+            w->set (W::pEqLow, 12.0f);
+            const float bassy = rms (note (36, 0.3));
+            rep.check (std::abs (up - 2 * base) <= 3 && loud > quiet * 4.0f && bassy > flat * 1.5f, "Wavetable: octave switch, macros as modulation sources, EQ",
+                       "crossings " + String (base) + " -> " + String (up) + ", macro " + String (Decibels::gainToDecibels (loud / jmax (1e-6f, quiet)), 1) + " dB, low +12: x" + String (bassy / flat, 2));
+            // the window: four tabs, the keyboard plays the synth
+            {
+                reset();
+                EditViewState pevs (*edit, sm);
+                DeviceEditors::WavetablePanel panel (pevs, *w);
+                panel.setSize (1260, 800);
+                panel.showTab (2);
+                const bool tabsOk = panel.currentTab() == 2 && panel.numTabs() == 4;
+                panel.showTab (0);
+                w->keyboard.noteOn (1, 60, 0.9f);
+                AudioBuffer<float> buf (2, 4800);
+                float kbRms = 0;
+                for (int k = 0; k < 4; ++k)
+                {
+                    buf.clear();
+                    te::MidiMessageArray midi;
+                    te::PluginRenderContext fc (&buf, 0, buf.getNumSamples(), &midi, 0.0, { te::TimePosition::fromSeconds (k * 0.1), te::TimePosition::fromSeconds ((k + 1) * 0.1) }, true, false, true, false);
+                    w->applyToBuffer (fc);
+                    kbRms = jmax (kbRms, buf.getRMSLevel (0, 0, buf.getNumSamples()));
+                }
+                w->keyboard.noteOff (1, 60, 0.0f);
+                rep.check (tabsOk && kbRms > 0.01f, "Wavetable window: four tabs; notes sent to it from outside the MIDI stream play", "note rms " + String (kbRms, 3));
+            }
         }
 
         // --- v0.53: graph-first Reverb, Delay and Saturator editors ---------------------------------------

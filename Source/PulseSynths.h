@@ -81,6 +81,7 @@ namespace pulse
                 }
             }
 
+            addExtraMidi (midi, fc.bufferStartSample, fc.bufferNumSamples);
             beforeBlock();
             synth.renderNextBlock (buffer, midi, fc.bufferStartSample, fc.bufferNumSamples);
             afterBlock (buffer, fc.bufferStartSample, fc.bufferNumSamples);
@@ -89,6 +90,7 @@ namespace pulse
 
     protected:
         virtual void beforeBlock() {}
+        virtual void addExtraMidi (MidiBuffer&, int /*start*/, int /*num*/) {}
         virtual void afterBlock (AudioBuffer<float>&, int /*start*/, int /*num*/) {}
         PulseSynthesiser synth;
     };
@@ -103,7 +105,9 @@ namespace pulse
     struct WavetableBank
     {
         static constexpr int order = 11, tableSize = 1 << order, numFrames = 16, numLevels = 11;
-        static inline const StringArray setNames { "Basic shapes", "Pulse width", "Harmonics", "Vowels", "Sync saw", "User (drawn)" };
+        static inline const StringArray setNames { "Basic shapes", "Pulse width", "Harmonics", "Vowels", "Sync saw", "User (drawn)",
+                                                   "Resonant saw", "Organ", "FM bell", "FM bright", "Wavefold", "Phase reso", "Digital steps",
+                                                   "Hollow to full", "Comb sweep", "Growl", "Glass" };
         static constexpr int userSet = 5;
 
         /** Band-limited frames morphing between two drawn single cycles (one per Wavetable instance). */
@@ -304,22 +308,101 @@ namespace pulse
                     }
                     break;
                 }
+                case 6:   // resonant saw: a saw through a sweeping resonant low pass
+                {
+                    const float c = 1.5f + t * t * 70.0f, q = 5.0f;
+                    for (int h = 1; h < 1024; ++h)
+                    {
+                        const float x = (float) h / c;
+                        sine (h, 1.0f / (float) h / std::sqrt (square (1.0f - x * x) + square (x / q)));
+                    }
+                    break;
+                }
+                case 7:   // organ: drawbars coming in one after another
+                {
+                    const int bars[] = { 1, 2, 3, 4, 6, 8, 10, 12, 16 };
+                    for (int k = 0; k < 9; ++k)
+                    {
+                        const float in = jlimit (0.0f, 1.0f, t * 9.0f - (float) k * 0.8f + 1.0f);
+                        sine (bars[k], in * (k == 0 ? 1.0f : 0.7f) * ((k % 2) ? 0.8f : 1.0f));
+                    }
+                    break;
+                }
+                case 8:   // FM bell: a sine modulated by a sine twice as fast, index 0 → 8
+                    fromTime (fft, s, [t] (float ph) { return std::sin (ph + t * 8.0f * std::sin (2.0f * ph)); });
+                    break;
+                case 9:   // FM bright: two modulators (x3 and x7)
+                    fromTime (fft, s, [t] (float ph) { return std::sin (ph + t * 5.0f * std::sin (3.0f * ph) + t * 2.0f * std::sin (7.0f * ph)); });
+                    break;
+                case 10:  // wavefold: a sine pushed through a folder
+                    fromTime (fft, s, [t] (float ph) { return std::sin ((1.0f + t * 9.0f) * MathConstants<float>::halfPi * std::sin (ph)); });
+                    break;
+                case 11:  // phase reso: a windowed sine at a rising multiple (the "resonant" sound of phase distortion synths)
+                    fromTime (fft, s, [t] (float ph)
+                    {
+                        const float x = ph / MathConstants<float>::twoPi;
+                        return (1.0f - x) * std::sin (ph * (1.0f + t * 15.0f));
+                    });
+                    break;
+                case 12:  // digital steps: a sine held at fewer and fewer levels
+                    fromTime (fft, s, [t] (float ph)
+                    {
+                        const float steps = 2.0f + (1.0f - t) * 30.0f;
+                        const float held = std::floor (ph / MathConstants<float>::twoPi * steps * 2.0f) / (steps * 2.0f) * MathConstants<float>::twoPi;
+                        return std::round (std::sin (held) * steps) / steps;
+                    });
+                    break;
+                case 13:  // hollow to full: odd harmonics only, the even ones fading in
+                    for (int h = 1; h < 1024; ++h) sine (h, ((h % 2) ? 1.0f : t) / (float) h);
+                    break;
+                case 14:  // comb sweep: a saw with moving notches
+                {
+                    const float period = 2.0f + t * 14.0f;
+                    for (int h = 1; h < 1024; ++h)
+                        sine (h, (0.08f + 0.92f * square (std::cos (MathConstants<float>::pi * (float) h / period))) / (float) h);
+                    break;
+                }
+                case 15:  // growl: two strong formants crossing over a saw
+                {
+                    const float f1 = 2.0f + t * 11.0f, f2 = 22.0f - t * 14.0f;
+                    for (int h = 1; h < 400; ++h)
+                        sine (h, 0.15f / (float) h + std::exp (-0.5f * square (((float) h - f1) / 1.4f)) + 0.7f * std::exp (-0.5f * square (((float) h - f2) / 2.0f)));
+                    break;
+                }
+                case 16:  // glass: harmonics with scattered levels and phases, brighter as the position rises
+                {
+                    Random rnd (4242);
+                    for (int h = 1; h < 300; ++h)
+                    {
+                        const float a = (0.3f + 0.7f * rnd.nextFloat()) / std::pow ((float) h, 1.6f - t * 0.9f);
+                        const float phi = rnd.nextFloat() * MathConstants<float>::twoPi;
+                        s[(size_t) h] += std::complex<float> (a * std::cos (phi), a * std::sin (phi));
+                    }
+                    break;
+                }
                 default:  // hard-synced saw (ratio 1 → 8), made in the time domain
                 {
                     const float ratio = 1.0f + t * 7.0f;
-                    std::vector<float> buf ((size_t) tableSize * 2, 0.0f);
-                    for (int i = 0; i < tableSize; ++i)
+                    fromTime (fft, s, [ratio] (float ph)
                     {
-                        const float ph = (float) i / tableSize * ratio;
-                        buf[(size_t) i] = 2.0f * (ph - std::floor (ph)) - 1.0f;
-                    }
-                    fft.performRealOnlyForwardTransform (buf.data());
-                    for (int h = 1; h < 1024; ++h)
-                        s[(size_t) h] = std::complex<float> (buf[(size_t) h * 2], -buf[(size_t) h * 2 + 1]);
+                        const float x = ph / MathConstants<float>::twoPi * ratio;
+                        return 2.0f * (x - std::floor (x)) - 1.0f;
+                    });
                     break;
                 }
             }
             return s;
+        }
+
+        /** A spectrum from one cycle given as a function of the phase (0..2 pi). */
+        template <typename F> static void fromTime (dsp::FFT& fft, Spectrum& s, F&& f)
+        {
+            std::vector<float> buf ((size_t) tableSize * 2, 0.0f);
+            for (int i = 0; i < tableSize; ++i)
+                buf[(size_t) i] = f ((float) i / tableSize * MathConstants<float>::twoPi);
+            fft.performRealOnlyForwardTransform (buf.data());
+            for (int h = 1; h < 1024; ++h)
+                s[(size_t) h] = std::complex<float> (buf[(size_t) h * 2], -buf[(size_t) h * 2 + 1]);
         }
     };
 
@@ -344,10 +427,17 @@ namespace pulse
                pMA, pMD, pMS, pMR,
                pDrive, pChorusMix, pChorusRate, pChorusDepth, pDelayMix, pDelayTime, pDelayFb, pReverbMix, pReverbSize,
                pSemi1, pFine1,   // v0.54
+               // v0.55
+               pOct1, pOct2, pLevel1, pLevel2, pPan1, pPan2, pSpread, pSubShape, pSubOct, pNoise, pNoiseColour,
+               pFDrive, pKeyTrack, pMode, pMacro1, pMacro2, pMacro3, pMacro4,
+               pDriveType, pPhaserMix, pPhaserRate, pPhaserDepth, pEqLow, pEqHigh,
                numParamsTotal };
         static inline const char* xmlTypeName = "pulseWavetable";
         static const char* getPluginName() { return "Wavetable"; }
-        static inline const StringArray filterNames { "Low pass 12", "Low pass 24", "Band pass", "High pass" };
+        static inline const StringArray filterNames { "Low pass 12", "Low pass 24", "Band pass", "High pass", "Notch" };
+        static inline const StringArray subShapes { "Sine", "Triangle", "Saw", "Square" };
+        static inline const StringArray driveTypes { "Soft", "Hard", "Fold", "Crush" };
+        static constexpr int numMacros = 4;
         static inline const StringArray filter2Names { "Off", "Low pass 12", "Low pass 24", "Band pass", "High pass", "Notch" };
         static inline const StringArray routingNames { "Serial (1 then 2)", "Parallel", "Split (osc 1 > F1, osc 2 > F2)" };
         static inline const StringArray warpNames { "Off", "Bend +", "Bend -", "Sync", "Mirror", "Quantize", "FM from Osc 2" };
@@ -360,7 +450,8 @@ namespace pulse
 
         /** Modulation sources (index 0 = none). */
         static inline const StringArray sourceNames { "None", "LFO 1", "LFO 2", "LFO 3", "LFO 4", "Mod Env", "Filter Env", "Amp Env",
-                                                      "Velocity", "Mod Wheel", "Pressure", "Key", "Random", "Slide" };
+                                                      "Velocity", "Mod Wheel", "Pressure", "Key", "Random", "Slide",
+                                                      "Macro 1", "Macro 2", "Macro 3", "Macro 4" };
 
         explicit WavetableSynth (te::PluginCreationInfo info) : PulseSynth (info)
         {
@@ -432,6 +523,29 @@ namespace pulse
             add ("reverbsize", "Reverb Size", { 0.0f, 1.0f }, 0.6f, fmt::pct);
             add ("semi1", "Osc 1 Semitones", { -24.0f, 24.0f, 1.0f }, 0.0f, fmt::st);
             add ("fine1", "Osc 1 Fine", { -50.0f, 50.0f }, 0.0f, fmt::ct);
+            auto octText = [] (float v) { const int o = roundToInt (v); return (o > 0 ? "+" : "") + String (o) + " oct"; };
+            add ("oct1", "Osc 1 Octave", { -3.0f, 3.0f, 1.0f }, 0.0f, octText);
+            add ("oct2", "Osc 2 Octave", { -3.0f, 3.0f, 1.0f }, 0.0f, octText);
+            add ("level1", "Osc 1 Level", { 0.0f, 1.0f }, 1.0f, fmt::pct);
+            add ("level2", "Osc 2 Level", { 0.0f, 1.0f }, 1.0f, fmt::pct);
+            auto panText = [] (float v) { return std::abs (v) < 0.01f ? String ("C") : String (roundToInt (std::abs (v) * 50)) + (v < 0 ? "L" : "R"); };
+            add ("pan1", "Osc 1 Pan", { -1.0f, 1.0f }, 0.0f, panText);
+            add ("pan2", "Osc 2 Pan", { -1.0f, 1.0f }, 0.0f, panText);
+            add ("spread", "Unison Width", { 0.0f, 1.0f }, 0.8f, fmt::pct);
+            add ("subshape", "Sub Shape", steps (subShapes.size()), 0.0f, fmt::choice (subShapes));
+            add ("suboct", "Sub Octave", steps (2), 0.0f, fmt::choice ({ "-1 oct", "-2 oct" }));
+            add ("noise", "Noise", { 0.0f, 1.0f }, 0.0f, fmt::pct);
+            add ("noisecolour", "Noise Colour", { -1.0f, 1.0f }, 0.0f, [] (float v) { return v < -0.02f ? "Dark " + fmt::pct (-v) : v > 0.02f ? "Bright " + fmt::pct (v) : String ("White"); });
+            add ("fdrive", "Filter Drive", { 0.0f, 1.0f }, 0.0f, fmt::pct);
+            add ("keytrack", "Key Tracking", { 0.0f, 1.0f }, 0.0f, fmt::pct);
+            add ("mode", "Voice Mode", steps (2), 0.0f, fmt::choice ({ "Poly", "Mono" }));
+            for (int m = 1; m <= numMacros; ++m) add ("macro" + String (m), "Macro " + String (m), { 0.0f, 1.0f }, 0.0f, fmt::pct);
+            add ("drivetype", "Drive Type", steps (driveTypes.size()), 0.0f, fmt::choice (driveTypes));
+            add ("phasermix", "Phaser", { 0.0f, 1.0f }, 0.0f, fmt::pct);
+            add ("phaserrate", "Phaser Rate", skewed (0.02f, 8.0f, 0.5f), 0.3f, [] (float v) { return String (v, 2) + " Hz"; });
+            add ("phaserdepth", "Phaser Depth", { 0.0f, 1.0f }, 0.6f, fmt::pct);
+            add ("eqlow", "EQ Low", { -12.0f, 12.0f }, 0.0f, fmt::db);
+            add ("eqhigh", "EQ High", { -12.0f, 12.0f }, 0.0f, fmt::db);
             jassert (numParams() == numParamsTotal);
 
             WavetableBank::get();   // build the tables now rather than on the audio thread
@@ -439,6 +553,7 @@ namespace pulse
                 synth.addVoice (new Voice (*this));
             synth.addSound (new AnySound());
             synth.setNoteStealingEnabled (true);
+            synth.isMono = [this] { return getInt (pMode) > 0; };
             userWatcher.owner = this;
             state.addListener (&userWatcher);
             rebuildUserTable();
@@ -487,7 +602,7 @@ namespace pulse
         const float* tableFor (int set, int frame, int level, const WavetableBank::UserTable* user) const
         {
             if (set == WavetableBank::userSet && user != nullptr) return user->table (frame, level);
-            return WavetableBank::get().table (jmin (set, WavetableBank::userSet - 1), frame, level);
+            return WavetableBank::get().table (set == WavetableBank::userSet ? 0 : set, frame, level);
         }
 
         //==============================================================================
@@ -565,6 +680,7 @@ namespace pulse
                 case pL1Sync: case pL1Shape: case pL1Retrig: case pL2Sync: case pL2Shape: case pL2Retrig:
                 case pL3Sync: case pL3Shape: case pL3Retrig: case pL4Sync: case pL4Shape: case pL4Retrig:
                 case pDelayTime: case pBendRange: case pGlide:
+                case pOct1: case pOct2: case pSubShape: case pSubOct: case pMode: case pDriveType:
                     return false;
                 default: return true;
             }
@@ -638,17 +754,20 @@ namespace pulse
 
         std::vector<Section> getSections() const override
         {
-            return { { "Osc 1", { pSet1, pPos1, pSemi1, pFine1, pWarp1, pWarpAmt1 } }, { "Osc 2", { pSet2, pPos2, pSemi2, pFine2, pWarp2, pWarpAmt2 } },
-                     { "Unison / Sub", { pMix, pVoices, pDetune, pSub } },
-                     { "Filter", { pFilterType, pCutoff, pReso, pFilterEnv } },
+            return { { "Osc 1", { pSet1, pPos1, pOct1, pSemi1, pFine1, pLevel1, pPan1, pWarp1, pWarpAmt1 } },
+                     { "Osc 2", { pSet2, pPos2, pOct2, pSemi2, pFine2, pLevel2, pPan2, pWarp2, pWarpAmt2 } },
+                     { "Unison / Sub", { pMix, pVoices, pDetune, pSpread, pSub, pSubShape, pSubOct, pNoise, pNoiseColour } },
+                     { "Filter", { pFilterType, pCutoff, pReso, pFilterEnv, pFDrive, pKeyTrack } },
                      { "Filter 2", { pF2Type, pF2Cutoff, pF2Reso, pF2Env, pRouting } },
                      { "Filter env", { pFA, pFD, pFS, pFR } }, { "Amp env", { pA, pD, pS, pR } },
                      { "Mod env", { pMA, pMD, pMS, pMR } },
                      { "LFO 1", { pLfoRate, pL1Sync, pL1Shape, pL1Retrig, pLfoPos, pLfoCut } },
                      { "LFO 2", { pL2Rate, pL2Sync, pL2Shape, pL2Retrig } }, { "LFO 3", { pL3Rate, pL3Sync, pL3Shape, pL3Retrig } },
                      { "LFO 4", { pL4Rate, pL4Sync, pL4Shape, pL4Retrig } },
-                     { "Effects", { pDrive, pChorusMix, pChorusRate, pChorusDepth, pDelayMix, pDelayTime, pDelayFb, pReverbMix, pReverbSize } },
-                     { "Play", { pGlide, pBendRange, pPressure, pSlide, pLevel } } };
+                     { "Effects", { pDrive, pDriveType, pPhaserMix, pPhaserRate, pPhaserDepth, pChorusMix, pChorusRate, pChorusDepth,
+                                    pDelayMix, pDelayTime, pDelayFb, pReverbMix, pReverbSize, pEqLow, pEqHigh } },
+                     { "Macros", { pMacro1, pMacro2, pMacro3, pMacro4 } },
+                     { "Play", { pMode, pGlide, pBendRange, pPressure, pSlide, pLevel } } };
         }
 
         void initialise (const te::PluginInitialisationInfo& info) override
@@ -711,9 +830,12 @@ namespace pulse
             }
         }
 
+        void addExtraMidi (MidiBuffer& midi, int start, int num) override { keyboard.processNextMidiBuffer (midi, start, num, true); }
+
         void afterBlock (AudioBuffer<float>& b, int start, int n) override
         {
             fx.process (*this, b, start, n);
+            activeVoices.store (countActive());
             // the output for the panel's scope and meter
             const float* l = b.getReadPointer (0, start);
             const float* r = b.getNumChannels() > 1 ? b.getReadPointer (1, start) : l;
@@ -730,7 +852,17 @@ namespace pulse
             outPeak[1].store (pr);
         }
 
+        int countActive() const
+        {
+            int c = 0;
+            for (int i = 0; i < synth.getNumVoices(); ++i) if (synth.getVoice (i)->isVoiceActive()) ++c;
+            return c;
+        }
+
     public:
+        MidiKeyboardState keyboard;   // the window's keyboard: its notes join the incoming MIDI (and it lights up with it)
+        std::atomic<int> activeVoices { 0 };
+        std::atomic<float> lastNoteHz { 0.0f };
         static constexpr int scopeSize = 1024;
         std::array<std::atomic<float>, scopeSize> scope {};
         std::atomic<int> scopePos { 0 };
@@ -756,7 +888,8 @@ namespace pulse
             std::array<int, 4> revPos {}, revLen {};
             float revLp[4] {}, delayLp[2] {};
             int chorusPos = 0, delayPos = 0;
-            double chorusPhase = 0.0;
+            double chorusPhase = 0.0, phaserPhase = 0.0;
+            float apState[2][6] {}, phaserFb[2] {}, eqLp[2] {}, eqLp2[2] {};
 
             void prepare (double sampleRate)
             {
@@ -779,7 +912,24 @@ namespace pulse
             {
                 if (b.getNumChannels() < 2 || chorusBuf[0].empty()) return;
                 const float drive = o.get (pDrive), chMix = o.get (pChorusMix), dMix = o.get (pDelayMix), rMix = o.get (pReverbMix);
-                if (drive < 0.001f && chMix < 0.001f && dMix < 0.001f && rMix < 0.001f) return;
+                const float phMix = o.get (pPhaserMix), eqLo = o.get (pEqLow), eqHi = o.get (pEqHigh);
+                const bool eqOn = std::abs (eqLo) > 0.05f || std::abs (eqHi) > 0.05f;
+                if (drive < 0.001f && chMix < 0.001f && dMix < 0.001f && rMix < 0.001f && phMix < 0.001f && ! eqOn) return;
+                const int driveType = o.getInt (pDriveType);
+                const double phInc = o.get (pPhaserRate) / sr;
+                const float phDepth = o.get (pPhaserDepth);
+                const float gLo = Decibels::decibelsToGain (eqLo) - 1.0f, gHi = Decibels::decibelsToGain (eqHi) - 1.0f;
+                const float kLo = 1.0f - std::exp (-MathConstants<float>::twoPi * 220.0f / (float) sr), kHi = 1.0f - std::exp (-MathConstants<float>::twoPi * 4500.0f / (float) sr);
+                auto shapeDrive = [driveType, drive] (float x, float dg, float comp)
+                {
+                    switch (driveType)
+                    {
+                        case 1:  return jlimit (-1.0f, 1.0f, x * dg) * (0.6f + 0.4f * comp);
+                        case 2:  return std::sin (x * dg * MathConstants<float>::halfPi) ;
+                        case 3:  { const float steps = std::pow (2.0f, 7.0f - drive * 5.5f); return std::round (std::tanh (x * (1.0f + drive * 3.0f)) * steps) / steps; }
+                        default: return std::tanh (x * dg) * comp;
+                    }
+                };
                 auto* L = b.getWritePointer (0, start);
                 auto* R = b.getWritePointer (1, start);
                 const float dg = 1.0f + drive * 12.0f, comp = 1.0f / std::tanh (dg);
@@ -795,7 +945,31 @@ namespace pulse
                 for (int i = 0; i < n; ++i)
                 {
                     float l = L[i], r = R[i];
-                    if (drive > 0.001f) { l = std::tanh (l * dg) * comp; r = std::tanh (r * dg) * comp; }
+                    if (drive > 0.001f) { l = shapeDrive (l, dg, comp); r = shapeDrive (r, dg, comp); }
+                    if (phMix > 0.001f)
+                    {
+                        // six all-pass stages swept by an LFO (the right channel a quarter cycle later)
+                        float in[2] = { l, r };
+                        for (int c = 0; c < 2; ++c)
+                        {
+                            const float m = 0.5f + 0.5f * (float) std::sin ((phaserPhase + c * 0.25) * MathConstants<double>::twoPi);
+                            const float fc = 200.0f * std::pow (2.0f, (0.5f + (m - 0.5f) * phDepth) * 5.0f);
+                            const float tn = std::tan (MathConstants<float>::pi * jmin (fc, (float) sr * 0.45f) / (float) sr);
+                            const float a = (tn - 1.0f) / (tn + 1.0f);
+                            float x = in[c] + phaserFb[c] * 0.5f;
+                            for (int st = 0; st < 6; ++st)
+                            {
+                                const float y = a * x + apState[c][st];
+                                apState[c][st] = x - a * y;
+                                x = y;
+                            }
+                            phaserFb[c] = x;
+                            in[c] = in[c] * (1.0f - phMix * 0.5f) + x * phMix * 0.5f;
+                        }
+                        phaserPhase += phInc;
+                        phaserPhase -= std::floor (phaserPhase);
+                        l = in[0]; r = in[1];
+                    }
                     if (chMix > 0.001f)
                     {
                         chorusBuf[0][(size_t) chorusPos] = l;
@@ -852,6 +1026,13 @@ namespace pulse
                         l += (outs[0] + outs[2]) * rMix * 0.6f;
                         r += (outs[1] + outs[3]) * rMix * 0.6f;
                     }
+                    if (eqOn)
+                    {
+                        eqLp[0] += kLo * (l - eqLp[0]);  eqLp[1] += kLo * (r - eqLp[1]);
+                        eqLp2[0] += kHi * (l - eqLp2[0]); eqLp2[1] += kHi * (r - eqLp2[1]);
+                        l += gLo * eqLp[0] + gHi * (l - eqLp2[0]);
+                        r += gLo * eqLp[1] + gHi * (r - eqLp2[1]);
+                    }
                     L[i] = l;
                     R[i] = r;
                 }
@@ -868,8 +1049,11 @@ namespace pulse
             void startNote (int note, float vel, SynthesiserSound*, int pitchWheel) override
             {
                 const float target = (float) MidiMessage::getMidiNoteInHertz (note);
-                const bool glide = o.get (pGlide) > 0.5f && lastFreq > 0.0f && isVoiceActive();
-                freq = glide ? lastFreq : target;
+                // glide comes from the last note played (on any voice), or from this voice's pitch when it is retaken
+                const float from = isVoiceActive() && lastFreq > 0.0f ? lastFreq : o.lastNoteHz.load();
+                const bool glide = o.get (pGlide) > 0.5f && from > 0.0f;
+                freq = glide ? from : target;
+                o.lastNoteHz.store (target);
                 targetFreq = target;
                 velocity = vel;
                 noteNumber = note;
@@ -975,7 +1159,8 @@ namespace pulse
                     const float modEnv = menv.getNextSample();
                     for (int i = 1; i < n; ++i) menv.getNextSample();
                     const float src[] = { 0.0f, lfo[0], lfo[1], lfo[2], lfo[3], modEnv, envNow, lastAmp, velocity, modWheel, pressure,
-                                          (noteNumber - 60) / 60.0f, randomValue, (slide - 0.5f) * 2.0f };
+                                          (noteNumber - 60) / 60.0f, randomValue, (slide - 0.5f) * 2.0f,
+                                          o.get (pMacro1), o.get (pMacro2), o.get (pMacro3), o.get (pMacro4) };
                     std::fill (offsets.begin(), offsets.end(), 0.0f);
                     if (routes != nullptr)
                         for (auto& r : *routes)
@@ -985,9 +1170,19 @@ namespace pulse
                     const float slideOffset = (slide - 0.5f) * 2.0f * slideAmt;
                     const float basePos[2] = { jlimit (0.0f, 1.0f, mv (pPos1) + slideOffset), jlimit (0.0f, 1.0f, mv (pPos2) + slideOffset) };
                     const float mixV = mv (pMix);
-                    const float oscGain[2] = { 1.0f - mixV, mixV };
-                    const double osc2Ratio = std::pow (2.0, (mv (pSemi2) + mv (pFine2) / 100.0) / 12.0);
-                    const double osc1Ratio = std::pow (2.0, (mv (pSemi1) + mv (pFine1) / 100.0) / 12.0);
+                    const float oscGain[2] = { (1.0f - mixV) * mv (pLevel1), mixV * mv (pLevel2) };
+                    const double osc2Ratio = std::pow (2.0, o.getInt (pOct2) + (mv (pSemi2) + mv (pFine2) / 100.0) / 12.0);
+                    const double osc1Ratio = std::pow (2.0, o.getInt (pOct1) + (mv (pSemi1) + mv (pFine1) / 100.0) / 12.0);
+                    float oscPanL[2], oscPanR[2];
+                    for (int k = 0; k < 2; ++k)
+                    {
+                        const float ang = (jlimit (-1.0f, 1.0f, mv (k == 0 ? pPan1 : pPan2)) + 1.0f) * MathConstants<float>::pi * 0.25f;
+                        oscPanL[k] = std::cos (ang) * 1.41421f;
+                        oscPanR[k] = std::sin (ang) * 1.41421f;
+                    }
+                    const float spreadAmt = mv (pSpread), noiseLvl = mv (pNoise), noiseCol = mv (pNoiseColour);
+                    const float fdrive = mv (pFDrive), fdg = 1.0f + fdrive * 6.0f, fdc = 1.0f / (1.0f + fdrive * 1.5f);
+                    const float keyTrack = std::pow (2.0f, (noteNumber - 60) / 12.0f * mv (pKeyTrack));
                     const float detune = mv (pDetune), sub = mv (pSub);
                     const float warpAmt[2] = { mv (pWarpAmt1), mv (pWarpAmt2) };
                     const float level = Decibels::decibelsToGain (mv (pLevel)) * (0.3f + 0.7f * velocity) * (1.0f + pressure * pressureAmt * 0.6f);
@@ -998,7 +1193,7 @@ namespace pulse
                     {
                         const float spread = voices > 1 ? (float) u / (voices - 1) * 2.0f - 1.0f : 0.0f;
                         cents[u] = spread * detune * 50.0f;
-                        const float p = spread * 0.8f;
+                        const float p = spread * spreadAmt;
                         panL[u] = std::sqrt (0.5f * (1.0f - p));
                         panR[u] = std::sqrt (0.5f * (1.0f + p));
                     }
@@ -1022,7 +1217,7 @@ namespace pulse
 
                     // filters
                     const float octaves = mv (pFilterEnv) * envNow * 6.0f + lfo[0] * lfoCut * 3.0f + pressure * pressureAmt * 3.0f;
-                    const float fc = jlimit (30.0f, 20000.0f, mv (pCutoff) * std::pow (2.0f, octaves));
+                    const float fc = jlimit (30.0f, 20000.0f, mv (pCutoff) * keyTrack * std::pow (2.0f, octaves));
                     const float reso = mv (pReso);
                     filter[0].set (fc, reso, sr);
                     filter[1].set (fc, reso * 0.5f, sr);
@@ -1030,7 +1225,11 @@ namespace pulse
                     const float reso2 = mv (pF2Reso);
                     filter[2].set (fc2, reso2, sr);
                     filter[3].set (fc2, reso2 * 0.5f, sr);
-                    const double subInc = f * 0.5 / sr;
+                    const double subHz = f * (o.getInt (pSubOct) > 0 ? 0.25 : 0.5);
+                    const double subInc = subHz / sr;
+                    const int subFrames[] = { 0, 5, 10, 15 };   // sine, triangle, saw, square in the basic shapes
+                    const float* subTable = WavetableBank::get().table (0, subFrames[jlimit (0, 3, o.getInt (pSubShape))], WavetableBank::levelFor (subHz, sr));
+                    const float noiseK = 1.0f - std::exp (-MathConstants<float>::twoPi * 900.0f / (float) sr);
                     const float fmAmt = warp[0] == 6 ? warpAmt[0] : 0.0f;
 
                     for (int i = 0; i < n; ++i)
@@ -1063,11 +1262,24 @@ namespace pulse
                                 }
                                 advance (ph, inc[osc][u]);
                             }
+                            oL[osc] *= oscPanL[osc];
+                            oR[osc] *= oscPanR[osc];
                         }
                         float l = oL[0] + oL[1], r = oR[0] + oR[1];
+                        if (noiseLvl > 0.001f)
+                        {
+                            float nz[2];
+                            for (int ch = 0; ch < 2; ++ch)
+                            {
+                                const float w = rng.nextFloat() * 2.0f - 1.0f;
+                                noiseLp[ch] += noiseK * (w - noiseLp[ch]);
+                                nz[ch] = (noiseCol < 0.0f ? w + (noiseLp[ch] * 3.0f - w) * -noiseCol : w - noiseLp[ch] * noiseCol) * noiseLvl * 0.4f;
+                            }
+                            l += nz[0]; r += nz[1]; oL[0] += nz[0]; oR[0] += nz[1];
+                        }
                         if (sub > 0.001f)
                         {
-                            const float sv = (float) std::sin (subPhase * MathConstants<double>::twoPi) * sub * 0.7f;
+                            const float sv = WavetableBank::read (subTable, subPhase * WavetableBank::tableSize) * sub * 0.78f;
                             l += sv; r += sv; oL[0] += sv; oR[0] += sv;
                             subPhase += subInc;
                             subPhase -= std::floor (subPhase);
@@ -1075,6 +1287,8 @@ namespace pulse
 
                         auto f1 = [&] (float x, int ch)
                         {
+                            if (fdrive > 0.001f) x = std::tanh (x * fdg) * fdc * (1.0f + fdrive);
+                            if (ftype == 4) return x - filter[0].process (x, ch, 1);   // notch
                             x = filter[0].process (x, ch, mode);
                             if (ftype == 1) x = filter[1].process (x, ch, 0);
                             return x;
@@ -1116,6 +1330,7 @@ namespace pulse
             double phases[2][7] {};
             double subPhase = 0, lfoPhase[numLfos] {};
             float lfoRandom[numLfos] {};
+            float noiseLp[2] {};
             float freq = 440, targetFreq = 440, lastFreq = 0, velocity = 1, bend = 0, pressure = 0, slide = 0.5f, modWheel = 0, randomValue = 0, lastAmp = 0;
             int noteNumber = 60;
             ADSR amp, fenv, menv;

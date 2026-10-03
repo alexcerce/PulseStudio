@@ -103,7 +103,7 @@ namespace DeviceEditors
             const auto user = synth->getUserTable();
             auto a = b.reduced (14.0f, flat ? 14.0f : 22.0f);
             const int frames = pulse::WavetableBank::numFrames;
-            const float depthX = a.getWidth() * 0.2f, depthY = a.getHeight() * 0.46f;
+            const float depthX = a.getWidth() * 0.22f, depthY = a.getHeight() * 0.52f;
             const float w = a.getWidth() - depthX, h = a.getHeight() - depthY;
             const int current = roundToInt (pos * (frames - 1));
             auto frame = [&] (int f, Path& p, float& baseY, float& x0, float& x1)
@@ -119,22 +119,24 @@ namespace DeviceEditors
                 }
                 baseY = oy + h * 0.5f; x0 = ox; x1 = ox + w;
             };
-            for (int f = frames; --f >= 0;)   // back to front
+            // back to front, each frame a solid ridge: nearer frames hide the ones behind them
+            const Colour ground = flat ? Pro::deep() : Theme::well;
+            for (int f = frames; --f >= 0;)
             {
-                if (f == current) continue;
                 Path p; float by, x0, x1;
                 frame (f, p, by, x0, x1);
-                g.setColour (colour.withMultipliedSaturation (0.5f).withAlpha (0.10f + 0.20f * f / (float) frames));
-                g.strokePath (p, PathStrokeType (1.0f));
-            }
-            {
-                Path p; float by, x0, x1;
-                frame (current, p, by, x0, x1);
-                Path fill (p);
-                fill.lineTo (x1, by); fill.lineTo (x0, by); fill.closeSubPath();
-                g.setColour (colour.withAlpha (0.10f));
-                g.fillPath (fill);
-                Graphs::glowStroke (g, p, colour, 2.0f);
+                Path solid (p);
+                solid.lineTo (x1, by + h * 0.5f); solid.lineTo (x0, by + h * 0.5f); solid.closeSubPath();
+                const bool hot = f == current;
+                const float near = 1.0f - f / (float) (frames - 1);   // 1 at the front
+                g.setColour (hot ? ground.interpolatedWith (colour, 0.28f) : ground.interpolatedWith (colour, 0.03f + 0.07f * near));
+                g.fillPath (solid);
+                if (hot) Graphs::glowStroke (g, p, colour, 2.0f);
+                else
+                {
+                    g.setColour (colour.withMultipliedSaturation (0.7f).withAlpha (0.18f + 0.34f * near));
+                    g.strokePath (p, PathStrokeType (1.0f));
+                }
             }
             g.setColour (Theme::muted);
             g.setFont (FontOptions (10.5f, Font::bold));
@@ -373,15 +375,271 @@ namespace DeviceEditors
     };
 
     //==============================================================================
-    /** The Wavetable's full panel: oscillators with their wavetables in 3D, filters, envelopes,
-        LFOs, the modulation matrix, effects, and the play settings with a live scope, on dark cards. */
-    class WavetablePanel : public Component
+    /** A value in a small box (octave, semitones, cents): drag up / down, wheel, double-click resets. */
+    class ParamValueBox : public Component, private Timer
+    {
+    public:
+        ParamValueBox (te::AutomatableParameter& p, const String& l, Colour c) : param (&p), label (l), colour (c)
+        {
+            setMouseCursor (MouseCursor::UpDownResizeCursor);
+            startTimerHz (10);
+        }
+        void paint (Graphics& g) override
+        {
+            auto r = getLocalBounds().toFloat().reduced (1.0f);
+            g.setColour (Pro::deep());
+            g.fillRoundedRectangle (r, 4.0f);
+            g.setColour (dragging ? colour : Theme::ink.withAlpha (0.1f));
+            g.drawRoundedRectangle (r, 4.0f, 1.0f);
+            auto top = r.removeFromLeft (r.getWidth() * 0.4f);
+            g.setColour (Theme::muted);
+            g.setFont (FontOptions (9.5f, Font::bold));
+            g.drawText (label.toUpperCase(), top, Justification::centred);
+            g.setColour (colour.brighter (0.2f));
+            g.setFont (FontOptions (12.0f, Font::bold));
+            g.drawText (param->getCurrentValueAsString(), r, Justification::centred);
+        }
+        void mouseDown (const MouseEvent&) override
+        {
+            param->getEdit().getUndoManager().beginNewTransaction ("Change " + param->getParameterName());
+            start = Graphs::norm (param);
+            dragging = true;
+            Graphs::begin ({ param });
+        }
+        void mouseDrag (const MouseEvent& e) override { Graphs::setNorm (param, start - e.getDistanceFromDragStartY() / (e.mods.isShiftDown() ? 600.0f : 160.0f)); repaint(); }
+        void mouseUp (const MouseEvent&) override     { Graphs::end ({ param }); dragging = false; repaint(); }
+        void mouseDoubleClick (const MouseEvent&) override { Graphs::reset (param); }
+        void mouseWheelMove (const MouseEvent&, const MouseWheelDetails& w) override
+        {
+            const float step = param->valueRange.interval > 0.0f ? param->valueRange.interval : (param->valueRange.end - param->valueRange.start) / 100.0f;
+            Graphs::setValue (param, param->getCurrentBaseValue() + (w.deltaY > 0 ? step : -step));
+        }
+    private:
+        void timerCallback() override { repaint(); }
+        te::AutomatableParameter::Ptr param;
+        String label;
+        Colour colour;
+        float start = 0;
+        bool dragging = false;
+    };
+
+    /** A picture of what one of the Wavetable's effects is doing. */
+    class FxDisplay : public Component, private Timer
     {
     public:
         using W = pulse::WavetableSynth;
+        enum Kind { distortion, phaser, chorus, delay, reverb, eq };
+        FxDisplay (W& s, Kind k, Colour c) : holder (&s), synth (s), kind (k), colour (c) { startTimerHz (24); }
 
-        /** A dark rounded card with a small title; its header row can hold menus or tabs, and it can
-            draw captioned wells behind groups of knobs. */
+        bool active() const
+        {
+            switch (kind)
+            {
+                case distortion: return synth.get (W::pDrive) > 0.001f;
+                case phaser:     return synth.get (W::pPhaserMix) > 0.001f;
+                case chorus:     return synth.get (W::pChorusMix) > 0.001f;
+                case delay:      return synth.get (W::pDelayMix) > 0.001f;
+                case reverb:     return synth.get (W::pReverbMix) > 0.001f;
+                default:         return std::abs (synth.get (W::pEqLow)) > 0.05f || std::abs (synth.get (W::pEqHigh)) > 0.05f;
+            }
+        }
+
+        void paint (Graphics& g) override
+        {
+            auto b = getLocalBounds().toFloat().reduced (1.0f);
+            g.setColour (Pro::deep());
+            g.fillRoundedRectangle (b, 6.0f);
+            g.setColour (Theme::ink.withAlpha (0.06f));
+            g.drawRoundedRectangle (b, 6.0f, 1.0f);
+            const bool on = active();
+            const Colour c = on ? colour : Theme::muted.withAlpha (0.5f);
+            auto a = b.reduced (12.0f, 10.0f);
+            g.setColour (on ? colour : Theme::muted.withAlpha (0.4f));
+            g.fillEllipse (b.getRight() - 14.0f, b.getY() + 7.0f, 7.0f, 7.0f);
+            Graphs::label (g, on ? "ON" : kind == eq ? "FLAT" : kind == distortion ? "OFF (turn up the drive)" : "OFF (turn up its mix)", Rectangle<float> (b.getRight() - 150.0f, b.getY() + 4.0f, 132.0f, 12.0f), Justification::centredRight, 0.7f);
+            const double now = Time::getMillisecondCounterHiRes() * 0.001;
+            Path p;
+            auto plot = [&] (std::function<float (float)> f, int steps = 160)   // f: 0..1 -> -1..1
+            {
+                p.clear();
+                for (int i = 0; i <= steps; ++i)
+                {
+                    const float x = i / (float) steps, y = a.getCentreY() - jlimit (-1.0f, 1.0f, f (x)) * a.getHeight() * 0.5f;
+                    if (i == 0) p.startNewSubPath (a.getX(), y); else p.lineTo (a.getX() + x * a.getWidth(), y);
+                }
+            };
+            g.setColour (Theme::ink.withAlpha (0.07f));
+            g.drawHorizontalLine ((int) a.getCentreY(), a.getX(), a.getRight());
+            switch (kind)
+            {
+                case distortion:
+                {
+                    const float drive = synth.get (W::pDrive), dg = 1.0f + drive * 12.0f, comp = 1.0f / std::tanh (dg);
+                    const int type = synth.getInt (W::pDriveType);
+                    g.drawVerticalLine ((int) a.getCentreX(), a.getY(), a.getBottom());
+                    g.drawLine (a.getX(), a.getBottom(), a.getRight(), a.getY(), 1.0f);
+                    plot ([&] (float x)
+                    {
+                        const float in = x * 2.0f - 1.0f;
+                        switch (type)
+                        {
+                            case 1:  return jlimit (-1.0f, 1.0f, in * dg) * (0.6f + 0.4f * comp);
+                            case 2:  return std::sin (in * dg * MathConstants<float>::halfPi);
+                            case 3:  { const float steps = std::pow (2.0f, 7.0f - drive * 5.5f); return std::round (std::tanh (in * (1.0f + drive * 3.0f)) * steps) / steps; }
+                            default: return std::tanh (in * dg) * comp;
+                        }
+                    }, 300);
+                    Graphs::glowStroke (g, p, c, 2.0f);
+                    break;
+                }
+                case phaser:
+                {
+                    const float depth = synth.get (W::pPhaserDepth), mix = synth.get (W::pPhaserMix);
+                    const float m = 0.5f + 0.5f * (float) std::sin (now * synth.get (W::pPhaserRate) * MathConstants<double>::twoPi);
+                    const float fc = 200.0f * std::pow (2.0f, (0.5f + (m - 0.5f) * depth) * 5.0f);
+                    plot ([&] (float x)
+                    {
+                        const float f = 20.0f * std::pow (1000.0f, x);
+                        const float phi = -2.0f * std::atan (f / fc) * 6.0f;
+                        const float mag = std::sqrt (square (1.0f + mix * (std::cos (phi) - 1.0f) * 0.5f) + square (mix * std::sin (phi) * 0.5f));
+                        return jlimit (-1.0f, 1.0f, Decibels::gainToDecibels (mag, -30.0f) / 18.0f + 0.5f);
+                    }, 300);
+                    Graphs::glowStroke (g, p, c, 1.8f);
+                    break;
+                }
+                case chorus:
+                {
+                    const float depth = synth.get (W::pChorusDepth), rate = synth.get (W::pChorusRate);
+                    for (int ch = 0; ch < 2; ++ch)
+                    {
+                        plot ([&] (float x) { return (ch == 0 ? 1.0f : -1.0f) * depth * 0.8f * (float) std::sin ((x * 2.0 + now * rate) * MathConstants<double>::twoPi); });
+                        Graphs::glowStroke (g, p, ch == 0 ? c : c.withRotatedHue (0.08f), 1.6f);
+                    }
+                    break;
+                }
+                case delay:
+                {
+                    const float fb = synth.get (W::pDelayFb);
+                    const double beats = W::delayBeats[jlimit (0, 5, synth.getInt (W::pDelayTime))];
+                    const float gap = a.getWidth() * (float) (beats / 5.0);
+                    g.setColour (Theme::ink.withAlpha (0.8f));
+                    g.fillRect (Rectangle<float> (a.getX(), a.getY(), 2.5f, a.getHeight()));
+                    float amp = 1.0f;
+                    for (int k = 1; k < 40 && gap * k < a.getWidth() && amp > 0.02f; ++k, amp *= jmax (0.05f, fb))
+                    {
+                        const float h = amp * a.getHeight() * 0.5f, x = a.getX() + gap * k;
+                        g.setColour (c.withAlpha (0.85f));
+                        g.fillRoundedRectangle (k % 2 ? Rectangle<float> (x - 2.5f, a.getCentreY() - h, 5.0f, h) : Rectangle<float> (x - 2.5f, a.getCentreY(), 5.0f, h), 1.5f);
+                    }
+                    break;
+                }
+                case reverb:
+                {
+                    const float size = synth.get (W::pReverbSize);
+                    Path fill;
+                    fill.startNewSubPath (a.getX(), a.getBottom());
+                    for (int i = 0; i <= 120; ++i)
+                    {
+                        const float x = i / 120.0f;
+                        const float env = std::exp (-x * (7.0f - size * 6.2f));
+                        fill.lineTo (a.getX() + x * a.getWidth(), a.getBottom() - env * a.getHeight() * (0.75f + 0.25f * std::sin (x * 90.0f + i)));
+                    }
+                    fill.lineTo (a.getRight(), a.getBottom());
+                    fill.closeSubPath();
+                    g.setGradientFill (ColourGradient (c.withAlpha (0.6f), 0.0f, a.getY(), c.withAlpha (0.05f), 0.0f, a.getBottom(), false));
+                    g.fillPath (fill);
+                    break;
+                }
+                default:
+                {
+                    const float gLo = Decibels::decibelsToGain (synth.get (W::pEqLow)) - 1.0f, gHi = Decibels::decibelsToGain (synth.get (W::pEqHigh)) - 1.0f;
+                    plot ([&] (float x)
+                    {
+                        const float f = 20.0f * std::pow (1000.0f, x);
+                        const std::complex<float> lp = 1.0f / std::complex<float> (1.0f, f / 220.0f), jw (0.0f, f / 4500.0f);
+                        const std::complex<float> hp = jw / (1.0f + jw);
+                        return Decibels::gainToDecibels (std::abs (1.0f + gLo * lp + gHi * hp), -30.0f) / 14.0f;
+                    }, 200);
+                    Graphs::glowStroke (g, p, c, 2.0f);
+                    break;
+                }
+            }
+        }
+    private:
+        void timerCallback() override { repaint(); }
+        te::Plugin::Ptr holder;
+        W& synth;
+        Kind kind;
+        Colour colour;
+    };
+
+    /** Where the modulation sources are right now (LFOs and macros), as moving bars. */
+    class SourceMeters : public Component, private Timer
+    {
+    public:
+        using W = pulse::WavetableSynth;
+        explicit SourceMeters (W& s) : holder (&s), synth (s) { startTimerHz (30); }
+        void paint (Graphics& g) override
+        {
+            auto r = getLocalBounds().toFloat();
+            const int n = W::numLfos + W::numMacros;
+            const float rowH = jmin (34.0f, r.getHeight() / (float) n);
+            for (int i = 0; i < n; ++i)
+            {
+                auto row = r.removeFromTop (rowH).reduced (0.0f, 4.0f);
+                const bool isLfo = i < W::numLfos;
+                const int source = isLfo ? i + 1 : 14 + (i - W::numLfos);
+                const float v = isLfo ? synth.lfoShape (i, synth.lfoClockPhase (i), 0.5f) : synth.get (W::pMacro1 + (i - W::numLfos)) ;
+                const auto c = WavetableUI::sourceColour (source);
+                g.setColour (Theme::text.withAlpha (0.85f));
+                g.setFont (FontOptions (11.0f, Font::bold));
+                g.drawText (W::sourceNames[source], row.removeFromLeft (66.0f), Justification::centredLeft);
+                g.setColour (Pro::deep());
+                g.fillRoundedRectangle (row, 3.0f);
+                const float cx = isLfo ? row.getCentreX() : row.getX(), w = isLfo ? v * row.getWidth() * 0.5f : v * row.getWidth();
+                g.setColour (c.withAlpha (0.8f));
+                g.fillRoundedRectangle (Rectangle<float> (jmin (cx, cx + w), row.getY() + 2.0f, std::abs (w), row.getHeight() - 4.0f), 2.0f);
+                if (isLfo) { g.setColour (Theme::ink.withAlpha (0.25f)); g.drawVerticalLine ((int) cx, row.getY(), row.getBottom()); }
+            }
+        }
+    private:
+        void timerCallback() override { repaint(); }
+        te::Plugin::Ptr holder;
+        W& synth;
+    };
+
+    /** A text tab with a line under it when it is the open one. */
+    struct LineTab : public Button
+    {
+        Colour colour { Theme::orange };
+        explicit LineTab (const String& t) : Button (t) {}
+        void paintButton (Graphics& g, bool over, bool) override
+        {
+            const bool on = getToggleState();
+            auto r = getLocalBounds().toFloat();
+            g.setColour (on ? Theme::text : Theme::muted.withAlpha (over ? 1.0f : 0.75f));
+            g.setFont (FontOptions (12.5f, Font::bold));
+            g.drawText (getName(), r, Justification::centred);
+            if (on)
+            {
+                g.setColour (colour);
+                g.fillRoundedRectangle (r.removeFromBottom (2.5f).reduced (14.0f, 0.0f), 1.2f);
+            }
+        }
+    };
+
+    //==============================================================================
+    /** The Wavetable's window. Main tab: oscillators, filters, envelopes and LFOs in three columns;
+        then the effects rack, the modulation matrix and the wave drawing tab. Macros, the modulation
+        sources (drag one onto any knob) and the output stay along the bottom. */
+    class WavetablePanel : public Component, private Timer
+    {
+    public:
+        using W = pulse::WavetableSynth;
+        static inline int startTab = 0;   // the tab a new panel opens on
+
+        /** A quiet panel with a small title; its header row can hold menus or tabs, and it can draw
+            captioned wells behind groups of controls. */
         struct Card : public Component
         {
             struct Well { Rectangle<int> area; String name; };
@@ -392,43 +650,33 @@ namespace DeviceEditors
 
             Card (const String& t, Colour a) : title (t), accent (a) {}
             Rectangle<int> content() const { return getLocalBounds().reduced (10, 0).withTrimmedTop (headerH + 2).withTrimmedBottom (8); }
-            /** The header to the right of the title. */
             Rectangle<int> header() const
             {
-                const int tw = GlyphArrangement::getStringWidthInt (FontOptions (12.0f, Font::bold), title) + 34;
+                const int tw = GlyphArrangement::getStringWidthInt (FontOptions (11.5f, Font::bold), title) + 44;
                 return getLocalBounds().removeFromTop (headerH).withTrimmedLeft (tw).withTrimmedRight (8).reduced (0, 4);
             }
             void paint (Graphics& g) override
             {
-                auto r = getLocalBounds().toFloat().reduced (0.5f);
-                g.setGradientFill (ColourGradient (Pro::cardTop(), 0.0f, r.getY(), Pro::cardBot(), 0.0f, r.getBottom(), false));
-                g.fillRoundedRectangle (r, 8.0f);
-                // header band
-                {
-                    Graphics::ScopedSaveState ss (g);
-                    g.reduceClipRegion (getLocalBounds().removeFromTop (headerH));
-                    g.setColour (Theme::ink.withAlpha (0.035f));
-                    g.fillRoundedRectangle (r.withHeight ((float) headerH + 10.0f), 8.0f);
-                }
-                g.setColour (Pro::shade (0.35f));
-                g.drawHorizontalLine (headerH, r.getX() + 1.0f, r.getRight() - 1.0f);
-                g.setColour (Theme::ink.withAlpha (0.08f));
-                g.drawRoundedRectangle (r, 8.0f, 1.0f);
+                auto r = getLocalBounds().toFloat();
+                g.setGradientFill (ColourGradient (Pro::cardTop(), 0.0f, r.getY(), Pro::cardBot(), 0.0f, r.getY() + 60.0f, false));
+                g.fillRoundedRectangle (r, 9.0f);
+                g.setColour (Theme::ink.withAlpha (0.05f));
+                g.drawRoundedRectangle (r.reduced (0.5f), 9.0f, 1.0f);
                 g.setColour (accent);
-                g.fillRoundedRectangle (Rectangle<float> (r.getX() + 11.0f, r.getY() + 9.0f, 3.0f, 12.0f), 1.5f);
-                g.setColour (Theme::ink.withAlpha (0.9f));
-                g.setFont (FontOptions (12.0f, Font::bold));
-                g.drawText (title, Rectangle<float> (r.getX() + 20.0f, r.getY(), r.getWidth() - 30.0f, (float) headerH), Justification::centredLeft);
+                g.fillEllipse (r.getX() + 12.0f, r.getY() + 11.5f, 7.0f, 7.0f);
+                g.setColour (accent.withAlpha (0.25f));
+                g.fillEllipse (r.getX() + 9.5f, r.getY() + 9.0f, 12.0f, 12.0f);
+                g.setColour (Theme::text.withAlpha (0.92f));
+                g.setFont (FontOptions (11.5f, Font::bold).withKerningFactor (0.08f));
+                g.drawText (title, Rectangle<float> (r.getX() + 27.0f, r.getY(), r.getWidth() - 30.0f, (float) headerH), Justification::centredLeft);
                 for (auto& w : wells)
                 {
                     auto a = w.area.toFloat();
-                    g.setColour (Pro::shade (0.22f));
-                    g.fillRoundedRectangle (a, 6.0f);
-                    g.setColour (Theme::ink.withAlpha (0.05f));
-                    g.drawRoundedRectangle (a, 6.0f, 1.0f);
-                    g.setColour (accent.withAlpha (0.9f));
-                    g.setFont (FontOptions (9.5f, Font::bold));
-                    g.drawText (w.name, a.reduced (8.0f, 3.0f).removeFromTop (11.0f), Justification::centredLeft);
+                    g.setColour (Pro::shade (0.2f));
+                    g.fillRoundedRectangle (a, 7.0f);
+                    g.setColour (Theme::muted);
+                    g.setFont (FontOptions (9.5f, Font::bold).withKerningFactor (0.1f));
+                    g.drawText (w.name, a.reduced (9.0f, 4.0f).removeFromTop (11.0f), Justification::centredLeft);
                 }
             }
         };
@@ -436,70 +684,132 @@ namespace DeviceEditors
         WavetablePanel (EditViewState& e, W& w) : evs (e), synth (w), holder (&w), scope (w)
         {
             const auto oscA = Colour (0xff4dabf7), oscB = Colour (0xffffa94d), filt = Colour (0xffff6b6b), env = Colour (0xff69db7c),
-                       lfo = Colour (0xffda77f2), fxc = Colour (0xff38d9a9), voice = Colour (0xff748ffc);
-            auto card = [this] (const String& t, Colour c) { auto* k = cards.add (new Card (t, c)); addAndMakeVisible (k); return k; };
-            cOscA = card ("OSC A", oscA); cOscB = card ("OSC B", oscB); cVoice = card ("VOICE", voice);
-            cF1 = card ("FILTER 1", filt); cF2 = card ("FILTER 2", filt.withRotatedHue (0.05f)); cEnv = card ("ENVELOPES", env);
-            cLfo = card ("LFO", lfo); cMod = card ("MODULATION", lfo.withRotatedHue (0.1f)); cFx = card ("EFFECTS", fxc);
-
+                       lfo = Colour (0xffda77f2), voice = Colour (0xff748ffc), sub = Colour (0xff63e6be);
             using L = std::initializer_list<std::pair<int, const char*>>;
+
+            const char* tabNames[] = { "SYNTH", "EFFECTS", "MATRIX", "DRAW WAVE" };
+            for (int i = 0; i < 4; ++i)
+            {
+                auto* b = tabs.add (new LineTab (tabNames[i]));
+                b->onClick = [this, i] { showTab (i); };
+                addAndMakeVisible (b);
+                addChildComponent (pages.add (new Component()));
+            }
+            auto card = [this] (int page, const String& t, Colour c) { auto* k = cards.add (new Card (t, c)); pages[page]->addAndMakeVisible (k); return k; };
+
+            // ---- synth page
+            cOscA = card (0, "OSC A", oscA); cOscB = card (0, "OSC B", oscB); cMix = card (0, "SUB  /  NOISE  /  UNISON", sub);
+            cF1 = card (0, "FILTER 1", filt); cF2 = card (0, "FILTER 2", filt.withRotatedHue (0.05f)); cVoice = card (0, "VOICE", voice);
+            cEnv = card (0, "ENVELOPES", env); cLfo = card (0, "LFO", lfo);
+
             framesA = std::make_unique<FramesView> (w, 0); framesA->flat = true; framesA->colour = oscA; cOscA->addAndMakeVisible (*framesA);
             framesB = std::make_unique<FramesView> (w, 1); framesB->flat = true; framesB->colour = oscB; cOscB->addAndMakeVisible (*framesB);
             tableA = combo (*cOscA, W::pSet1); warpA = combo (*cOscA, W::pWarp1);
             tableB = combo (*cOscB, W::pSet2); warpB = combo (*cOscB, W::pWarp2);
-            for (auto [pi, l] : L { { W::pPos1, "Position" }, { W::pWarpAmt1, "Warp" }, { W::pSemi1, "Semi" }, { W::pFine1, "Fine" } }) knobsA.add (knob (*cOscA, pi, l, oscA));
-            for (auto [pi, l] : L { { W::pPos2, "Position" }, { W::pWarpAmt2, "Warp" }, { W::pSemi2, "Semi" }, { W::pFine2, "Fine" } }) knobsB.add (knob (*cOscB, pi, l, oscB));
-            for (auto [pi, l] : L { { W::pMix, "A / B" }, { W::pSub, "Sub" }, { W::pVoices, "Unison" }, { W::pDetune, "Detune" } }) knobsVoice.add (knob (*cVoice, pi, l, voice));
+            for (auto [pi, l] : L { { W::pPos1, "Position" }, { W::pWarpAmt1, "Warp" }, { W::pLevel1, "Level" }, { W::pPan1, "Pan" } }) knobsA.add (knob (*cOscA, pi, l, oscA));
+            for (auto [pi, l] : L { { W::pPos2, "Position" }, { W::pWarpAmt2, "Warp" }, { W::pLevel2, "Level" }, { W::pPan2, "Pan" } }) knobsB.add (knob (*cOscB, pi, l, oscB));
+            for (auto [pi, l] : L { { W::pOct1, "Oct" }, { W::pSemi1, "Semi" }, { W::pFine1, "Fine" } }) boxesA.add (box (*cOscA, pi, l, oscA));
+            for (auto [pi, l] : L { { W::pOct2, "Oct" }, { W::pSemi2, "Semi" }, { W::pFine2, "Fine" } }) boxesB.add (box (*cOscB, pi, l, oscB));
+
+            subKnob = knob (*cMix, W::pSub, "Level", sub);
+            subShape = combo (*cMix, W::pSubShape);
+            subOct = new ParamChoice (*w.param (W::pSubOct), sub, false); owned.add (subOct); cMix->addAndMakeVisible (subOct);
+            for (auto [pi, l] : L { { W::pNoise, "Level" }, { W::pNoiseColour, "Colour" } }) knobsNoise.add (knob (*cMix, pi, l, sub));
+            for (auto [pi, l] : L { { W::pMix, "A / B" }, { W::pVoices, "Voices" }, { W::pDetune, "Detune" }, { W::pSpread, "Width" } }) knobsUni.add (knob (*cMix, pi, l, voice));
 
             graphF1 = std::make_unique<Graphs::FilterGraph> (w.param (W::pCutoff), w.param (W::pReso), w.param (W::pFilterType),
-                                                             [] (int t) { const int m[] = { 1, 5, 2, 3 }; return m[jlimit (0, 3, t)]; }, filt, w.param (W::pFilterEnv));
+                                                             [] (int t) { const int m[] = { 1, 5, 2, 3, 4 }; return m[jlimit (0, 4, t)]; }, filt, w.param (W::pFilterEnv));
             cF1->addAndMakeVisible (*graphF1);
             typeF1 = combo (*cF1, W::pFilterType);
-            for (auto [pi, l] : L { { W::pCutoff, "Cutoff" }, { W::pReso, "Resonance" }, { W::pFilterEnv, "Envelope" } }) knobsF1.add (knob (*cF1, pi, l, filt));
+            for (auto [pi, l] : L { { W::pCutoff, "Cutoff" }, { W::pReso, "Reso" }, { W::pFilterEnv, "Env" }, { W::pFDrive, "Drive" }, { W::pKeyTrack, "Key" } })
+                knobsF1.add (knob (*cF1, pi, l, filt));
             graphF2 = std::make_unique<Graphs::FilterGraph> (w.param (W::pF2Cutoff), w.param (W::pF2Reso), w.param (W::pF2Type),
                                                              [] (int t) { const int m[] = { 0, 1, 5, 2, 3, 4 }; return m[jlimit (0, 5, t)]; }, filt.withRotatedHue (0.05f), w.param (W::pF2Env));
             cF2->addAndMakeVisible (*graphF2);
             typeF2 = combo (*cF2, W::pF2Type); routing = combo (*cF2, W::pRouting);
-            for (auto [pi, l] : L { { W::pF2Cutoff, "Cutoff" }, { W::pF2Reso, "Resonance" }, { W::pF2Env, "Envelope" } }) knobsF2.add (knob (*cF2, pi, l, filt.withRotatedHue (0.05f)));
+            for (auto [pi, l] : L { { W::pF2Cutoff, "Cutoff" }, { W::pF2Reso, "Reso" }, { W::pF2Env, "Env" } }) knobsF2.add (knob (*cF2, pi, l, filt.withRotatedHue (0.05f)));
+
+            voiceMode = new ParamChoice (*w.param (W::pMode), voice, false); owned.add (voiceMode); cVoice->addAndMakeVisible (voiceMode);
+            for (auto [pi, l] : L { { W::pGlide, "Glide" }, { W::pBendRange, "Bend" }, { W::pPressure, "Pressure" }, { W::pSlide, "Slide" } }) knobsVoice.add (knob (*cVoice, pi, l, voice));
 
             using EG = Graphs::EnvelopeGraph;
             envGraph = std::make_unique<EG> (std::vector<EG::Env> { { w.param (W::pA), w.param (W::pD), w.param (W::pS), w.param (W::pR), env, "AMP" },
                                                                    { w.param (W::pFA), w.param (W::pFD), w.param (W::pFS), w.param (W::pFR), filt, "FILTER" },
                                                                    { w.param (W::pMA), w.param (W::pMD), w.param (W::pMS), w.param (W::pMR), lfo, "MOD" } });
             cEnv->addAndMakeVisible (*envGraph);
-            const char* envNames[] = { "Amp", "Filter", "Mod" };
+            const char* envNames[] = { "AMP", "FILTER", "MOD" };
             for (int i = 0; i < 3; ++i)
             {
-                auto* b = envTabs.add (new TextButton (envNames[i]));
-                b->setColour (TextButton::buttonOnColourId, (i == 0 ? env : i == 1 ? filt : lfo).withAlpha (0.8f));
-                b->setColour (TextButton::textColourOnId, Colour (0xff111317));
-                b->setConnectedEdges ((i > 0 ? Button::ConnectedOnLeft : 0) | (i < 2 ? Button::ConnectedOnRight : 0));
+                auto* b = envTabs.add (new LineTab (envNames[i]));
+                b->colour = i == 0 ? env : i == 1 ? filt : lfo;
                 b->onClick = [this, i] { showEnv (i); };
                 cEnv->addAndMakeVisible (b);
             }
-
             lfoView = std::make_unique<WavetableUI::LfoView> (w);
             lfoView->onSelect = [this] (int l) { showLfo (l); };
             cLfo->addAndMakeVisible (*lfoView);
-            matrix = std::make_unique<WavetableUI::MatrixView> (w);
-            cMod->addAndMakeVisible (*matrix);
 
-            for (auto [pi, l] : L { { W::pDrive, "Amount" }, { W::pChorusMix, "Mix" }, { W::pChorusRate, "Rate" }, { W::pChorusDepth, "Depth" },
-                                    { W::pDelayMix, "Mix" }, { W::pDelayFb, "Feedback" }, { W::pReverbMix, "Mix" }, { W::pReverbSize, "Size" } })
-                knobsFx.add (knob (*cFx, pi, l, fxc));
-            delayTime = combo (*cFx, W::pDelayTime);
-
-            for (auto [pi, l] : L { { W::pGlide, "Glide" }, { W::pBendRange, "Bend" }, { W::pPressure, "Pressure" }, { W::pSlide, "Slide" }, { W::pLevel, "Level" } })
+            // ---- effects page
+            struct FxDef { const char* name; FxDisplay::Kind kind; Colour c; std::vector<std::pair<int, const char*>> knobs; int comboParam; int choiceParam; };
+            const FxDef defs[] = {
+                { "DISTORTION", FxDisplay::distortion, Colour (0xffff922b), { { W::pDrive, "Drive" } }, -1, W::pDriveType },
+                { "PHASER", FxDisplay::phaser, Colour (0xffda77f2), { { W::pPhaserMix, "Mix" }, { W::pPhaserRate, "Rate" }, { W::pPhaserDepth, "Depth" } }, -1, -1 },
+                { "CHORUS", FxDisplay::chorus, Colour (0xff4dabf7), { { W::pChorusMix, "Mix" }, { W::pChorusRate, "Rate" }, { W::pChorusDepth, "Depth" } }, -1, -1 },
+                { "DELAY", FxDisplay::delay, Colour (0xff38d9a9), { { W::pDelayMix, "Mix" }, { W::pDelayFb, "Feedback" } }, W::pDelayTime, -1 },
+                { "REVERB", FxDisplay::reverb, Colour (0xffb197fc), { { W::pReverbMix, "Mix" }, { W::pReverbSize, "Size" } }, -1, -1 },
+                { "EQ", FxDisplay::eq, Colour (0xffffd43b), { { W::pEqLow, "Low" }, { W::pEqHigh, "High" } }, -1, -1 } };
+            for (auto& d : defs)
             {
-                auto* k = new ParamKnob (evs, *w.param (pi));
-                k->setLabel (l);
-                k->setCompact (voice);
-                barKnobs.add (k);
-                addAndMakeVisible (k);
+                auto* fc = fx.add (new FxSlot());
+                fc->card = card (1, d.name, d.c);
+                fc->display = std::make_unique<FxDisplay> (w, d.kind, d.c);
+                fc->card->addAndMakeVisible (*fc->display);
+                if (d.choiceParam >= 0) { fc->top = new ParamChoice (*w.param (d.choiceParam), d.c, false); owned.add (fc->top); fc->card->addAndMakeVisible (fc->top); }
+                if (d.comboParam >= 0) { fc->top = combo (*fc->card, d.comboParam); }
+                for (auto [pi, l] : d.knobs) fc->knobs.add (knob (*fc->card, pi, l, d.c));
             }
+
+            // ---- matrix page
+            cMatrix = card (2, "MODULATION MATRIX", lfo.withRotatedHue (0.1f));
+            matrix = std::make_unique<WavetableUI::MatrixView> (w);
+            cMatrix->addAndMakeVisible (*matrix);
+            cSources = card (2, "SOURCES NOW", lfo);
+            meters = std::make_unique<SourceMeters> (w);
+            cSources->addAndMakeVisible (*meters);
+
+            // ---- draw page
+            cUser = card (3, "YOUR OWN WAVETABLE", oscA);
+            drawEditor = std::make_unique<DeviceDisplays::WaveDrawEditor> (w);
+            cUser->addAndMakeVisible (*drawEditor);
+
+            // ---- the bottom bar
+            for (int m = 0; m < W::numMacros; ++m)
+            {
+                auto* k = new ParamKnob (evs, *w.param (W::pMacro1 + m), false);
+                k->setCompact (WavetableUI::sourceColour (14 + m));
+                macroKnobs.add (k);
+                addAndMakeVisible (k);
+                addAndMakeVisible (macroChips.add (new WavetableUI::SourceChip (14 + m)));
+            }
+            for (int s = 1; s < 14; ++s) addAndMakeVisible (chips.add (new WavetableUI::SourceChip (s)));
+            levelKnob = std::make_unique<ParamKnob> (evs, *w.param (W::pLevel));
+            levelKnob->setLabel ("Level");
+            levelKnob->setCompact (voice);
+            addAndMakeVisible (*levelKnob);
             addAndMakeVisible (scope);
             showEnv (0);
             showLfo (0);
+            showTab (startTab);
+            startTimerHz (8);
+        }
+
+        int currentTab() const { return tab; }
+        int numTabs() const { return tabs.size(); }
+        void showTab (int t)
+        {
+            tab = jlimit (0, pages.size() - 1, t);
+            for (int i = 0; i < pages.size(); ++i) { pages[i]->setVisible (i == tab); tabs[i]->setToggleState (i == tab, dontSendNotification); }
+            resized();
         }
 
         void paint (Graphics& g) override
@@ -510,15 +820,18 @@ namespace DeviceEditors
             g.fillRect (bar);
             g.setColour (Theme::ink.withAlpha (0.06f));
             g.drawHorizontalLine ((int) bar.getY(), 0.0f, (float) getWidth());
+            g.drawHorizontalLine (37, 8.0f, (float) getWidth() - 8.0f);
             g.setColour (Theme::muted);
-            g.setFont (FontOptions (11.0f, Font::bold));
-            g.drawText ("PLAY", bar.reduced (16.0f, 0.0f), Justification::centredLeft);
-            g.drawText ("OUTPUT", scope.getBounds().toFloat().translated (-64.0f, 0.0f).withWidth (58.0f), Justification::centredRight);
+            g.setFont (FontOptions (9.5f, Font::bold).withKerningFactor (0.1f));
+            auto cap = [&] (const String& t, int x) { g.drawText (t, Rectangle<float> ((float) x, bar.getY() + 5.0f, 400.0f, 11.0f), Justification::centredLeft); };
+            cap ("MACROS", 14);
+            if (! chips.isEmpty()) cap ("MODULATION SOURCES  -  DRAG ONE ONTO ANY KNOB", chips[0]->getX() + 2);
+            cap ("OUTPUT    " + String (synth.activeVoices.load()) + (synth.activeVoices.load() == 1 ? " VOICE" : " VOICES"), levelKnob->getX() + 4);
         }
 
-        /** Knobs in a grid, all the same size, centred in their cells. */
+        /** Controls in a grid, all the same size, centred in their cells. */
         template <typename K>
-        static void placeKnobs (Rectangle<int> area, const Array<K*>& ks, int cols = 0, int maxW = 78, int maxH = 82)
+        static void placeKnobs (Rectangle<int> area, const Array<K*>& ks, int cols = 0, int maxW = 84, int maxH = 86)
         {
             const int n = ks.size();
             if (n == 0) return;
@@ -532,108 +845,167 @@ namespace DeviceEditors
 
         void resized() override
         {
+            if (pages.isEmpty() || levelKnob == nullptr) return;
             auto r = getLocalBounds();
-            auto bar = r.removeFromBottom (barH).reduced (0, 5);
-            bar.removeFromLeft (64);
-            scope.setBounds (bar.removeFromRight (jmin (300, bar.getWidth() / 3)).withTrimmedRight (12));
-            bar.removeFromRight (70);
-            for (auto* k : barKnobs) { k->setBounds (bar.removeFromLeft (74)); bar.removeFromLeft (6); }
-
-            r = r.reduced (8);
-            const int gap = 8;
-            auto top = r.removeFromTop (r.getHeight() * 35 / 100); r.removeFromTop (gap);
-            auto mid = r.removeFromTop (r.getHeight() * 45 / 100); r.removeFromTop (gap);
-            auto bottom = r;
-
-            // oscillators + voice
-            auto voiceArea = top.removeFromRight (jlimit (150, 190, top.getWidth() / 6));
-            top.removeFromRight (gap);
-            cOscA->setBounds (top.removeFromLeft ((top.getWidth() - gap) / 2)); top.removeFromLeft (gap);
-            cOscB->setBounds (top);
-            cVoice->setBounds (voiceArea);
-            layoutOsc (*cOscA, *framesA, *tableA, *warpA, knobsA);
-            layoutOsc (*cOscB, *framesB, *tableB, *warpB, knobsB);
-            placeKnobs (cVoice->content(), knobsVoice, 2);
-
-            // filters + envelopes
-            auto envArea = mid.removeFromRight (mid.getWidth() * 36 / 100); mid.removeFromRight (gap);
-            cF1->setBounds (mid.removeFromLeft ((mid.getWidth() - gap) / 2)); mid.removeFromLeft (gap);
-            cF2->setBounds (mid);
-            cEnv->setBounds (envArea);
-            auto layoutFilter = [] (Card& card, Component& graph, Component& type, Component* extra, Array<ParamKnob*>& ks)
+            // the bottom bar: macros, sources, level, scope
+            auto bar = r.removeFromBottom (barH).withTrimmedTop (18).reduced (12, 5);
+            for (int m = 0; m < macroKnobs.size(); ++m)
             {
-                auto head = card.header();
-                if (extra != nullptr) { extra->setBounds (head.removeFromRight (jmin (130, head.getWidth() / 2 - 3))); head.removeFromRight (6); }
-                type.setBounds (head.removeFromRight (jmin (130, head.getWidth())));
-                auto c = card.content();
-                placeKnobs (c.removeFromBottom (jmin (76, c.getHeight() / 2)), ks);
-                c.removeFromBottom (4);
-                graph.setBounds (c);
-            };
-            layoutFilter (*cF1, *graphF1, *typeF1, nullptr, knobsF1);
-            layoutFilter (*cF2, *graphF2, *typeF2, routing, knobsF2);
+                auto cell = bar.removeFromLeft (70);
+                macroChips[m]->setBounds (cell.removeFromTop (20).reduced (1, 1));
+                macroKnobs[m]->setBounds (cell);
+                bar.removeFromLeft (4);
+            }
+            bar.removeFromLeft (14);
+            scope.setBounds (bar.removeFromRight (jlimit (150, 300, bar.getWidth() / 4)));
+            bar.removeFromRight (6);
+            levelKnob->setBounds (bar.removeFromRight (74));
+            bar.removeFromRight (14);
             {
-                auto tabs = cEnv->header();
-                tabs = tabs.removeFromRight (jmin (210, tabs.getWidth()));
-                const int tw = tabs.getWidth() / 3;
-                for (auto* t : envTabs) t->setBounds (tabs.removeFromLeft (tw));
-                auto c = cEnv->content();
-                placeKnobs (c.removeFromBottom (jmin (76, c.getHeight() / 2)), envKnobs);
-                c.removeFromBottom (4);
-                envGraph->setBounds (c);
+                const int perRow = (chips.size() + 1) / 2;
+                auto grid = bar.withSizeKeepingCentre (jmin (bar.getWidth(), perRow * 92), jmin (bar.getHeight(), 60)).withX (bar.getX());
+                const int cw = grid.getWidth() / perRow, ch = grid.getHeight() / 2;
+                for (int i = 0; i < chips.size(); ++i)
+                    chips[i]->setBounds (Rectangle<int> (grid.getX() + (i % perRow) * cw, grid.getY() + (i / perRow) * ch, cw, ch).reduced (2, 3));
             }
 
-            // LFOs, modulation, effects
-            cLfo->setBounds (bottom.removeFromLeft (bottom.getWidth() * 28 / 100)); bottom.removeFromLeft (gap);
-            cFx->setBounds (bottom.removeFromRight (bottom.getWidth() * 57 / 100)); bottom.removeFromRight (gap);
-            cMod->setBounds (bottom);
+            // tabs
+            auto top = r.removeFromTop (38).reduced (10, 2);
+            for (auto* t : tabs) t->setBounds (top.removeFromLeft (jmin (130, top.getWidth() / 4)));
+            r.removeFromTop (6);
+            for (auto* p : pages) p->setBounds (r);
+            const int gap = 8;
+            auto area = Rectangle<int> (r.getWidth(), r.getHeight()).reduced (8, 0).withTrimmedBottom (8);
+
+            if (tab == 0)
             {
-                auto c = cLfo->content();
-                auto side = c.removeFromRight (92);
-                c.removeFromRight (6);
-                lfoView->setBounds (c);
-                if (lfoKnobs.size() == 3)
+                auto a = area;
+                auto col1 = a.removeFromLeft (a.getWidth() * 46 / 100); a.removeFromLeft (gap);
+                auto col2 = a.removeFromLeft ((a.getWidth() - gap) / 2); a.removeFromLeft (gap);
+                auto col3 = a;
+                const int stripH = jlimit (120, 150, area.getHeight() * 22 / 100);
+                const int bigH = (area.getHeight() - stripH - 2 * gap) / 2;
+
+                cOscA->setBounds (col1.removeFromTop (bigH)); col1.removeFromTop (gap);
+                cOscB->setBounds (col1.removeFromTop (bigH)); col1.removeFromTop (gap);
+                cMix->setBounds (col1);
+                layoutOsc (*cOscA, *framesA, *tableA, *warpA, knobsA, boxesA);
+                layoutOsc (*cOscB, *framesB, *tableB, *warpB, knobsB, boxesB);
                 {
-                    lfoKnobs[2]->setBounds (side.removeFromBottom (26));
-                    side.removeFromBottom (6);
-                    lfoKnobs[1]->setBounds (side.removeFromBottom (42));
-                    side.removeFromBottom (2);
-                    lfoKnobs[0]->setBounds (side.withSizeKeepingCentre (jmin (78, side.getWidth()), jmin (82, side.getHeight())));
+                    auto c = cMix->content();
+                    cMix->wells.clear();
+                    const int unit = (c.getWidth() - 12) / 8;
+                    auto subArea = c.removeFromLeft (unit * 2); c.removeFromLeft (6);
+                    auto noiseArea = c.removeFromLeft (unit * 2); c.removeFromLeft (6);
+                    cMix->wells.push_back ({ subArea, "SUB" });
+                    cMix->wells.push_back ({ noiseArea, "NOISE" });
+                    cMix->wells.push_back ({ c, "UNISON / MIX" });
+                    auto si = subArea.reduced (4, 0).withTrimmedTop (14).withTrimmedBottom (2);
+                    auto opts = si.removeFromRight (si.getWidth() / 2);
+                    subKnob->setBounds (si.withSizeKeepingCentre (jmin (84, si.getWidth()), jmin (86, si.getHeight())));
+                    opts = opts.withSizeKeepingCentre (opts.getWidth(), jmin (62, opts.getHeight()));
+                    subShape->setBounds (opts.removeFromTop (opts.getHeight() / 2).reduced (0, 2));
+                    subOct->setBounds (opts.reduced (0, 2));
+                    placeKnobs (noiseArea.reduced (4, 0).withTrimmedTop (14).withTrimmedBottom (2), knobsNoise);
+                    placeKnobs (c.reduced (4, 0).withTrimmedTop (14).withTrimmedBottom (2), knobsUni);
+                }
+
+                auto layoutFilter = [] (Card& cd, Component& graph, Component& type, Component* extra, Array<ParamKnob*>& ks)
+                {
+                    auto head = cd.header();
+                    if (extra != nullptr) { extra->setBounds (head.removeFromRight (jmin (128, head.getWidth() / 2 - 3))); head.removeFromRight (6); }
+                    type.setBounds (head.removeFromRight (jmin (128, head.getWidth())));
+                    auto c = cd.content();
+                    placeKnobs (c.removeFromBottom (jmin (86, c.getHeight() * 45 / 100)), ks);
+                    c.removeFromBottom (4);
+                    graph.setBounds (c);
+                };
+                cF1->setBounds (col2.removeFromTop (bigH)); col2.removeFromTop (gap);
+                cF2->setBounds (col2.removeFromTop (bigH)); col2.removeFromTop (gap);
+                cVoice->setBounds (col2);
+                layoutFilter (*cF1, *graphF1, *typeF1, nullptr, knobsF1);
+                layoutFilter (*cF2, *graphF2, *typeF2, routing, knobsF2);
+                {
+                    auto head = cVoice->header();
+                    voiceMode->setBounds (head.removeFromRight (jmin (150, head.getWidth())));
+                    placeKnobs (cVoice->content(), knobsVoice);
+                }
+
+                cEnv->setBounds (col3.removeFromTop (bigH)); col3.removeFromTop (gap);
+                cLfo->setBounds (col3);
+                {
+                    auto tabsArea = cEnv->header();
+                    tabsArea = tabsArea.removeFromRight (jmin (200, tabsArea.getWidth()));
+                    const int ew = tabsArea.getWidth() / 3;
+                    for (auto* t : envTabs) t->setBounds (tabsArea.removeFromLeft (ew));
+                    auto c = cEnv->content();
+                    placeKnobs (c.removeFromBottom (jmin (86, c.getHeight() * 45 / 100)), envKnobs);
+                    c.removeFromBottom (4);
+                    envGraph->setBounds (c);
+                }
+                {
+                    auto c = cLfo->content();
+                    auto row = c.removeFromBottom (86);
+                    c.removeFromBottom (4);
+                    lfoView->setBounds (c);
+                    if (lfoKnobs.size() == 3)
+                    {
+                        lfoKnobs[0]->setBounds (row.removeFromLeft (90).withSizeKeepingCentre (84, jmin (86, row.getHeight())));
+                        row.removeFromLeft (8);
+                        auto right = row.withSizeKeepingCentre (row.getWidth(), 76);
+                        lfoKnobs[1]->setBounds (right.removeFromTop (44));
+                        right.removeFromTop (4);
+                        lfoKnobs[2]->setBounds (right.removeFromTop (26));
+                    }
                 }
             }
-            matrix->setBounds (cMod->content());
+            else if (tab == 1)
             {
-                // four captioned groups in two rows: drive + chorus, delay + reverb
-                auto c = cFx->content();
-                const int rowH = (c.getHeight() - 6) / 2;
-                auto r1 = c.removeFromTop (rowH); c.removeFromTop (6);
-                auto r2 = c;
-                cFx->wells.clear();
-                auto group = [this] (Rectangle<int> area, const String& name, std::initializer_list<Component*> items)
+                // a rack: two columns of three, each with its picture on the left and its controls on the right
+                const int cols = 2, rows = 3;
+                const int cw = (area.getWidth() - gap * (cols - 1)) / cols, ch = (area.getHeight() - gap * (rows - 1)) / rows;
+                for (int i = 0; i < fx.size(); ++i)
                 {
-                    cFx->wells.push_back ({ area, name });
-                    auto in = area.reduced (4, 0).withTrimmedTop (14).withTrimmedBottom (2);
-                    const int cw = in.getWidth() / (int) items.size();
-                    for (auto* it : items)
+                    auto* f = fx[i];
+                    f->card->setBounds (area.getX() + (i % cols) * (cw + gap), area.getY() + (i / cols) * (ch + gap), cw, ch);
+                    auto c = f->card->content();
+                    auto right = c.removeFromRight (jmin (290, c.getWidth() * 48 / 100));
+                    c.removeFromRight (8);
+                    f->display->setBounds (c);
+                    if (f->top != nullptr)
                     {
-                        auto cell = in.removeFromLeft (cw);
-                        if (dynamic_cast<ParamKnob*> (it) != nullptr) it->setBounds (cell.withSizeKeepingCentre (jmin (cw, 78), jmin (cell.getHeight(), 82)));
-                        else it->setBounds (cell.withSizeKeepingCentre (jmin (cw - 2, 110), jmin (cell.getHeight(), 28)));
+                        f->top->setBounds (right.removeFromTop (34).withSizeKeepingCentre (jmin (right.getWidth(), 250), 28));
+                        right.removeFromTop (4);
                     }
-                };
-                const int u1 = (r1.getWidth() - 6) / 4;
-                group (r1.removeFromLeft (u1), "DRIVE", { knobsFx[0] });
-                r1.removeFromLeft (6);
-                group (r1, "CHORUS", { knobsFx[1], knobsFx[2], knobsFx[3] });
-                const int u2 = (r2.getWidth() - 6) / 5;
-                group (r2.removeFromLeft (u2 * 3), "DELAY", { knobsFx[4], delayTime, knobsFx[5] });
-                r2.removeFromLeft (6);
-                group (r2, "REVERB", { knobsFx[6], knobsFx[7] });
-                cFx->repaint();
+                    placeKnobs (right, f->knobs, 0, 92, 96);
+                }
+            }
+            else if (tab == 2)
+            {
+                auto a = area;
+                cSources->setBounds (a.removeFromRight (jlimit (240, 340, a.getWidth() * 30 / 100))); a.removeFromRight (gap);
+                cMatrix->setBounds (a);
+                matrix->setBounds (cMatrix->content());
+                meters->setBounds (cSources->content());
+            }
+            else
+            {
+                cUser->setBounds (area);
+                drawEditor->setBounds (cUser->content());
             }
         }
 
     private:
+        struct FxSlot
+        {
+            Card* card = nullptr;
+            std::unique_ptr<FxDisplay> display;
+            Component* top = nullptr;
+            Array<ParamKnob*> knobs;
+        };
+
+        void timerCallback() override { repaint (getLocalBounds().removeFromBottom (barH).removeFromTop (18)); }
+
         ParamKnob* knob (Card& c, int pi, const char* label, Colour col)
         {
             auto* k = new ParamKnob (evs, *synth.param (pi));
@@ -643,6 +1015,13 @@ namespace DeviceEditors
             c.addAndMakeVisible (k);
             return k;
         }
+        ParamValueBox* box (Card& c, int pi, const char* label, Colour col)
+        {
+            auto* b = new ParamValueBox (*synth.param (pi), label, col);
+            owned.add (b);
+            c.addAndMakeVisible (b);
+            return b;
+        }
         ParamCombo* combo (Card& c, int pi)
         {
             auto* cb = new ParamCombo (*synth.param (pi), false);
@@ -650,16 +1029,20 @@ namespace DeviceEditors
             c.addAndMakeVisible (cb);
             return cb;
         }
-        /** The table and warp menus in the header, the wavetable on the left, a 2 x 2 of knobs on the right. */
-        void layoutOsc (Card& c, Component& frames, Component& table, Component& warp, Array<ParamKnob*>& ks)
+        /** Menus in the header; the wavetable with the pitch boxes under it on the left; a 2 x 2 of knobs on the right. */
+        void layoutOsc (Card& c, Component& frames, Component& table, Component& warp, Array<ParamKnob*>& ks, Array<ParamValueBox*>& boxes)
         {
             auto head = c.header();
-            warp.setBounds (head.removeFromRight (jmin (120, head.getWidth() / 2 - 3)));
+            warp.setBounds (head.removeFromRight (jmin (130, head.getWidth() / 2 - 3)));
             head.removeFromRight (6);
-            table.setBounds (head.removeFromRight (jmin (160, head.getWidth())));
+            table.setBounds (head.removeFromRight (jmin (170, head.getWidth())));
             auto r = c.content();
-            placeKnobs (r.removeFromRight (jlimit (120, 164, r.getWidth() * 36 / 100)), ks, 2);
+            placeKnobs (r.removeFromRight (jlimit (130, 180, r.getWidth() * 32 / 100)), ks, 2);
             r.removeFromRight (6);
+            auto row = r.removeFromBottom (26);
+            r.removeFromBottom (5);
+            const int bw = (row.getWidth() - 8) / 3;
+            for (auto* b : boxes) { b->setBounds (row.removeFromLeft (bw)); row.removeFromLeft (4); }
             frames.setBounds (r);
         }
         void showEnv (int i)
@@ -683,32 +1066,43 @@ namespace DeviceEditors
             cLfo->repaint();
             lfoKnobs.add (knob (*cLfo, synth.lfoParam (l, 0), "Rate", col));
             auto* sync = new ParamCombo (*synth.param (synth.lfoParam (l, 1)), true);
-            sync->setLabel ("Sync");
+            sync->setLabel ("Sync to tempo");
             owned.add (sync); cLfo->addAndMakeVisible (sync); lfoKnobs.add (sync);
-            auto* retrig = new ParamToggle (*synth.param (synth.lfoParam (l, 3)), "Per note", col);
+            auto* retrig = new ParamToggle (*synth.param (synth.lfoParam (l, 3)), "Restart on each note", col);
             owned.add (retrig); cLfo->addAndMakeVisible (retrig); lfoKnobs.add (retrig);
             resized();
         }
 
-        static constexpr int barH = 84;
+        static constexpr int barH = 112;
         EditViewState& evs;
         W& synth;
         te::Plugin::Ptr holder;
         SynthScope scope;
+        OwnedArray<LineTab> tabs;
+        OwnedArray<Component> pages;
         OwnedArray<Card> cards;
         OwnedArray<Component> owned;
-        Card *cOscA = nullptr, *cOscB = nullptr, *cVoice = nullptr, *cF1 = nullptr, *cF2 = nullptr, *cEnv = nullptr, *cLfo = nullptr, *cMod = nullptr, *cFx = nullptr;
+        OwnedArray<WavetableUI::SourceChip> chips, macroChips;
+        OwnedArray<ParamKnob> macroKnobs;
+        std::unique_ptr<ParamKnob> levelKnob;
+        OwnedArray<FxSlot> fx;
+        Card *cOscA = nullptr, *cOscB = nullptr, *cMix = nullptr, *cF1 = nullptr, *cF2 = nullptr, *cEnv = nullptr, *cLfo = nullptr,
+             *cMatrix = nullptr, *cSources = nullptr, *cVoice = nullptr, *cUser = nullptr;
         std::unique_ptr<FramesView> framesA, framesB;
-        ParamCombo *tableA = nullptr, *warpA = nullptr, *tableB = nullptr, *warpB = nullptr, *typeF2 = nullptr, *routing = nullptr, *delayTime = nullptr;
-        ParamCombo* typeF1 = nullptr;
+        ParamCombo *tableA = nullptr, *warpA = nullptr, *tableB = nullptr, *warpB = nullptr, *typeF1 = nullptr, *typeF2 = nullptr, *routing = nullptr, *subShape = nullptr;
+        ParamChoice *subOct = nullptr, *voiceMode = nullptr;
+        ParamKnob* subKnob = nullptr;
         std::unique_ptr<Graphs::FilterGraph> graphF1, graphF2;
         std::unique_ptr<Graphs::EnvelopeGraph> envGraph;
         std::unique_ptr<WavetableUI::LfoView> lfoView;
         std::unique_ptr<WavetableUI::MatrixView> matrix;
-        Array<ParamKnob*> knobsA, knobsB, knobsVoice, knobsF1, knobsF2, knobsFx, envKnobs;
+        std::unique_ptr<SourceMeters> meters;
+        std::unique_ptr<DeviceDisplays::WaveDrawEditor> drawEditor;
+        Array<ParamKnob*> knobsA, knobsB, knobsNoise, knobsUni, knobsF1, knobsF2, envKnobs, knobsVoice;
+        Array<ParamValueBox*> boxesA, boxesB;
         Array<Component*> lfoKnobs;
-        OwnedArray<TextButton> envTabs;
-        OwnedArray<ParamKnob> barKnobs;
+        OwnedArray<LineTab> envTabs;
+        int tab = 0;
     };
 
     //==============================================================================
@@ -938,7 +1332,7 @@ namespace DeviceEditors
                 m.showMenuAsync (PopupMenu::Options().withTargetComponent (&presetBtn));
             };
             addAndMakeVisible (presetBtn);
-            setSize (1100, 760);
+            if (dynamic_cast<pulse::WavetableSynth*> (&p) != nullptr) setSize (1280, 860); else setSize (1100, 760);
         }
 
         void paint (Graphics& g) override

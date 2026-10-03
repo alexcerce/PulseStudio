@@ -12,8 +12,9 @@ namespace WavetableUI
     inline Colour sourceColour (int s)
     {
         const uint32 c[] = { 0xff8a929d, 0xff4dabf7, 0xff69db7c, 0xffffd43b, 0xffff922b, 0xffda77f2, 0xffff6b6b, 0xffffa94d,
-                             0xff38d9a9, 0xff748ffc, 0xfff783ac, 0xffb197fc, 0xffced4da, 0xff63e6be };
-        return Colour (c[jlimit (0, 13, s)]);
+                             0xff38d9a9, 0xff748ffc, 0xfff783ac, 0xffb197fc, 0xffced4da, 0xff63e6be,
+                             0xffffe066, 0xffffc078, 0xffffa8a8, 0xffeebefa };
+        return Colour (c[jlimit (0, 17, s)]);
     }
 
     /** Hooks ParamKnob's modulation drops to the Wavetable matrix (call once at startup). */
@@ -80,15 +81,18 @@ namespace WavetableUI
         }
         void paint (Graphics& g) override
         {
-            auto r = getLocalBounds().toFloat().reduced (1.5f);
+            auto r = getLocalBounds().toFloat().reduced (1.0f);
             const auto c = sourceColour (source);
-            g.setColour (c.withAlpha (hover ? 0.45f : 0.25f));
-            g.fillRoundedRectangle (r, 4.0f);
+            const float rad = jmin (r.getHeight() * 0.5f, 11.0f);
+            g.setColour (c.withAlpha (hover ? 0.3f : 0.13f));
+            g.fillRoundedRectangle (r, rad);
+            g.setColour (c.withAlpha (hover ? 0.9f : 0.4f));
+            g.drawRoundedRectangle (r.reduced (0.5f), rad, 1.0f);
             g.setColour (c);
-            g.drawRoundedRectangle (r, 4.0f, 1.0f);
-            g.setColour (Theme::text);
-            g.setFont (FontOptions (11.0f, Font::bold));
-            g.drawText (W::sourceNames[source], r, Justification::centred, true);
+            g.fillEllipse (r.getX() + 7.0f, r.getCentreY() - 3.0f, 6.0f, 6.0f);
+            g.setColour (Theme::text.withAlpha (0.95f));
+            g.setFont (FontOptions (10.5f, Font::bold));
+            g.drawText (W::sourceNames[source], r.withTrimmedLeft (17.0f).withTrimmedRight (5.0f), Justification::centredLeft, true);
         }
         void mouseEnter (const MouseEvent&) override { hover = true; repaint(); }
         void mouseExit (const MouseEvent&) override  { hover = false; repaint(); }

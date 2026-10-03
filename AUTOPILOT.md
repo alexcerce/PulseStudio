@@ -195,3 +195,9 @@ when you start, touch it after each step, and delete it when you stop.
   redesigned: displays fill the window, controls in a bottom bar (no folding). ProDisplays.h: SpectrumPro, TunerPro, PitchPro,
   GlueNeedle, AutoFilterLfo. Pro:: palette in Common.h so device windows follow light themes. 216 checks pass.
   Owner then said the Wavetable is still weak: next is a full overhaul with tabs and more sound features (v0.55).
+- 2026-10-03: v0.55.0 Wavetable overhaul (owner: "still weak, maybe tabs", then "no keyboard, use the space, looks cheap").
+  Engine: 11 more wavetables (17), noise osc, sub shapes / octave, per-osc octave / level / pan, unison width, filter drive,
+  key tracking, notch, mono mode, 4 macros (sources 14..17), drive types, phaser, EQ; new param ids appended (old ones keep
+  their places). Window 1280 x 860: tabs Synth / Effects / Matrix / Draw wave, three dense columns, solid 3D wavetable,
+  macros + source chips + scope in the bottom bar (no keyboard). Knobs restyled app-wide (thin arc, quiet cap).
+  15 new presets. 220 checks pass. MidiKeyboardState stays in the synth (unused by the UI, tested).

@@ -122,22 +122,25 @@ public:
         auto bounds = Rectangle<int> (x, y, width, height).toFloat().reduced (3.0f);
         auto radius = jmin (bounds.getWidth(), bounds.getHeight()) / 2.0f;
         auto centre = bounds.getCentre();
-        const float lineW = jmax (2.5f, radius * 0.16f);
+        const float lineW = jlimit (2.0f, 3.5f, radius * 0.1f);
         auto arcR = radius - lineW * 0.5f;
         auto fill = s.findColour (Slider::rotarySliderFillColourId);
         if (! s.isEnabled()) fill = fill.withSaturation (0.0f).withAlpha (0.5f);
 
         // body
-        auto bodyR = arcR - lineW * 0.9f;
-        g.setGradientFill (ColourGradient (Theme::line, centre.x, centre.y - bodyR,
-                                           Theme::panel, centre.x, centre.y + bodyR, false));
+        auto bodyR = arcR - lineW * 0.5f - jmax (3.0f, radius * 0.13f);
+        // a soft shadow under the cap, the cap itself, and a thin light rim along its top
+        g.setColour (Colours::black.withAlpha (Theme::isLight ? 0.12f : 0.35f));
+        g.fillEllipse (centre.x - bodyR - 1.0f, centre.y - bodyR + 1.5f, bodyR * 2.0f + 2.0f, bodyR * 2.0f + 2.0f);
+        g.setGradientFill (ColourGradient (Theme::raised.brighter (Theme::isLight ? 0.0f : 0.08f), centre.x, centre.y - bodyR,
+                                           Theme::panel.darker (Theme::isLight ? 0.04f : 0.25f), centre.x, centre.y + bodyR, false));
         g.fillEllipse (centre.x - bodyR, centre.y - bodyR, bodyR * 2.0f, bodyR * 2.0f);
-        g.setColour (Colours::black.withAlpha (0.4f));
-        g.drawEllipse (centre.x - bodyR, centre.y - bodyR, bodyR * 2.0f, bodyR * 2.0f, 1.0f);
+        g.setGradientFill (ColourGradient (Theme::ink.withAlpha (0.22f), centre.x, centre.y - bodyR, Theme::ink.withAlpha (0.0f), centre.x, centre.y, false));
+        g.drawEllipse (centre.x - bodyR + 0.5f, centre.y - bodyR + 0.5f, bodyR * 2.0f - 1.0f, bodyR * 2.0f - 1.0f, 1.0f);
 
         Path track;
         track.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f, startAngle, endAngle, true);
-        g.setColour (findColour (Slider::rotarySliderOutlineColourId));
+        g.setColour (Theme::ink.withAlpha (0.1f));
         g.strokePath (track, PathStrokeType (lineW, PathStrokeType::curved, PathStrokeType::rounded));
 
         // symmetric (bipolar) params like pan or +/-dB gain draw from the centre
@@ -151,16 +154,19 @@ public:
         {
             Path arc;
             arc.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f, jmin (a0, a1), jmax (a0, a1), true);
-            g.setColour (fill.withAlpha (0.25f));   // soft glow
-            g.strokePath (arc, PathStrokeType (lineW + 3.0f, PathStrokeType::curved, PathStrokeType::rounded));
+            g.setColour (fill.withAlpha (0.18f));   // soft glow
+            g.strokePath (arc, PathStrokeType (lineW + 4.0f, PathStrokeType::curved, PathStrokeType::rounded));
             g.setColour (fill);
             g.strokePath (arc, PathStrokeType (lineW, PathStrokeType::curved, PathStrokeType::rounded));
         }
 
-        Point<float> p (centre.x + bodyR * 0.25f * std::sin (a1), centre.y - bodyR * 0.25f * std::cos (a1));
-        Point<float> q (centre.x + bodyR * 0.85f * std::sin (a1), centre.y - bodyR * 0.85f * std::cos (a1));
+        Point<float> p (centre.x + bodyR * 0.45f * std::sin (a1), centre.y - bodyR * 0.45f * std::cos (a1));
+        Point<float> q (centre.x + bodyR * 0.82f * std::sin (a1), centre.y - bodyR * 0.82f * std::cos (a1));
         g.setColour (Theme::text);
-        g.drawLine ({ p, q }, jmax (1.6f, radius * 0.09f));
+        Path ptr;
+        ptr.startNewSubPath (p);
+        ptr.lineTo (q);
+        g.strokePath (ptr, PathStrokeType (jlimit (1.6f, 2.6f, radius * 0.08f), PathStrokeType::curved, PathStrokeType::rounded));
     }
 
     void drawLinearSlider (Graphics& g, int x, int y, int width, int height, float sliderPos,
