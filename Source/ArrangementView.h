@@ -979,6 +979,13 @@ public:
 
     void mouseDown (const MouseEvent& e) override
     {
+        if (e.mods.isMiddleButtonDown())   // middle-drag: pan the view
+        {
+            panning = true;
+            panStartBeat = evs.viewStartBeat;
+            setMouseCursor (MouseCursor::DraggingHandCursor);
+            return;
+        }
         evs.selectionManager.selectOnly (track.get());
 
         compRow = e.mods.isPopupMenu() ? -1 : takeRowAt (e.y);
@@ -998,8 +1005,17 @@ public:
     }
 
     // Dragging on empty space draws a selection rectangle across lanes.
+    bool panning = false;
+    double panStartBeat = 0;
+
     void mouseDrag (const MouseEvent& e) override
     {
+        if (panning)
+        {
+            evs.viewStartBeat = jmax (0.0, panStartBeat - e.getDistanceFromDragStartX() / evs.pixelsPerBeat);
+            evs.viewChanged.sendChangeMessage();
+            return;
+        }
         if (compRow >= 0) { compX1 = e.x; repaint(); return; }
         if (! e.mods.isPopupMenu() && e.getDistanceFromDragStart() > 4 && onRubberBand)
             onRubberBand (e, false);
@@ -1007,6 +1023,7 @@ public:
 
     void mouseUp (const MouseEvent& e) override
     {
+        if (panning) { panning = false; setMouseCursor (MouseCursor::NormalCursor); return; }
         if (compRow >= 0)
         {
             // a click picks the take for the whole clip, a drag picks it for that range (snapped)
@@ -1045,8 +1062,8 @@ public:
     {
         if (e.mods.isCtrlDown())
             evs.zoom (std::exp (w.deltaY * 1.5), (float) e.x);
-        else if (e.mods.isShiftDown() || std::abs (w.deltaX) > std::abs (w.deltaY))
-            evs.scrollBy (-(e.mods.isShiftDown() ? w.deltaY : w.deltaX) * 400.0 / evs.pixelsPerBeat);
+        else if (e.mods.isShiftDown() || e.mods.isAltDown() || std::abs (w.deltaX) > std::abs (w.deltaY))
+            evs.scrollBy (-((e.mods.isShiftDown() || e.mods.isAltDown()) ? w.deltaY : w.deltaX) * 400.0 / evs.pixelsPerBeat);
         else
             Component::mouseWheelMove (e, w);
     }
@@ -2090,6 +2107,114 @@ private:
 };
 
 //==============================================================================
+/** The whole song in miniature (every track's clips) with the visible part as a box: drag the box
+    to scroll, drag its edges to zoom, click elsewhere to jump there, scroll the wheel to move. */
+class Overview : public Component,
+                 private Timer
+{
+public:
+    Overview (EditViewState& e, std::function<int()> laneWidth) : evs (e), visibleWidth (std::move (laneWidth))
+    {
+        setTooltip ("Overview: drag the box to scroll, its edges to zoom, click to jump (wheel scrolls too)");
+        startTimerHz (15);
+    }
+
+    void setTooltip (const String& t) { tip = t; }
+    String getTooltip() { return tip; }
+
+    double totalBeats() const
+    {
+        const double song = EngineHelpers::timeToBeat (evs.edit, te::TimePosition() + evs.edit.getLength());
+        return jmax (song + 16.0, viewEnd() + 8.0, 64.0);
+    }
+    double viewBeats() const { return visibleWidth() / jmax (0.01, evs.pixelsPerBeat); }
+    double viewEnd() const   { return evs.viewStartBeat + viewBeats(); }
+    float xFor (double beat) const { return (float) (beat / totalBeats()) * (float) getWidth(); }
+    double beatAt (float x) const  { return x / (float) jmax (1, getWidth()) * totalBeats(); }
+
+    void paint (Graphics& g) override
+    {
+        g.fillAll (Theme::well);
+        auto tracks = EngineHelpers::getUserTracks (evs.edit);
+        const float rowH = jmax (1.0f, (float) (getHeight() - 2) / (float) jmax (1, tracks.size()));
+        for (int i = 0; i < tracks.size(); ++i)
+            for (auto c : tracks[i]->getClips())
+            {
+                const double b0 = c->getStartBeat().inBeats(), b1 = c->getEndBeat().inBeats();
+                g.setColour (tracks[i]->getColour().withAlpha (0.8f));
+                g.fillRect (Rectangle<float> (xFor (b0), 1.0f + rowH * i, jmax (1.0f, xFor (b1) - xFor (b0)), jmax (1.0f, rowH - 1.0f)));
+            }
+        // playhead
+        const double ph = EngineHelpers::timeToBeat (evs.edit, evs.edit.getTransport().getPosition());
+        g.setColour (Theme::ink.withAlpha (0.7f));
+        g.drawVerticalLine ((int) xFor (ph), 0.0f, (float) getHeight());
+        // the visible part
+        auto box = Rectangle<float> (xFor (evs.viewStartBeat), 0.5f, jmax (6.0f, xFor (viewEnd()) - xFor (evs.viewStartBeat)), (float) getHeight() - 1.0f);
+        g.setColour (Theme::accent.withAlpha (0.14f));
+        g.fillRect (box);
+        g.setColour (Theme::accent);
+        g.drawRect (box, 1.5f);
+        g.fillRect (box.withWidth (3.0f));
+        g.fillRect (box.withX (box.getRight() - 3.0f).withWidth (3.0f));
+    }
+
+    void mouseMove (const MouseEvent& e) override
+    {
+        const int h = hit (e.position.x);
+        setMouseCursor (h == 1 || h == 2 ? MouseCursor::LeftRightResizeCursor : h == 0 ? MouseCursor::DraggingHandCursor : MouseCursor::PointingHandCursor);
+    }
+
+    void mouseDown (const MouseEvent& e) override
+    {
+        mode = hit (e.position.x);
+        if (mode < 0)   // jump: centre the view there
+        {
+            evs.viewStartBeat = jmax (0.0, beatAt (e.position.x) - viewBeats() * 0.5);
+            evs.viewChanged.sendChangeMessage();
+            mode = 0;
+        }
+        startView = evs.viewStartBeat;
+        startEnd = viewEnd();
+    }
+
+    void mouseDrag (const MouseEvent& e) override
+    {
+        const double d = beatAt ((float) e.getDistanceFromDragStartX()) ;
+        if (mode == 0) evs.viewStartBeat = jmax (0.0, startView + d);
+        else
+        {
+            double v0 = startView, v1 = startEnd;
+            if (mode == 1) v0 = jlimit (0.0, v1 - 1.0, startView + d);
+            else           v1 = jmax (v0 + 1.0, startEnd + d);
+            evs.pixelsPerBeat = jlimit (2.0, 600.0, visibleWidth() / (v1 - v0));
+            evs.viewStartBeat = v0;
+        }
+        evs.viewChanged.sendChangeMessage();
+    }
+
+    void mouseWheelMove (const MouseEvent&, const MouseWheelDetails& w) override
+    {
+        evs.scrollBy (-(std::abs (w.deltaX) > std::abs (w.deltaY) ? w.deltaX : w.deltaY) * viewBeats() * 0.5);
+    }
+
+private:
+    int hit (float x) const   // 1 left edge, 2 right edge, 0 inside, -1 outside
+    {
+        const float l = xFor (evs.viewStartBeat), r = jmax (l + 6.0f, xFor (viewEnd()));
+        if (std::abs (x - l) < 5.0f) return 1;
+        if (std::abs (x - r) < 5.0f) return 2;
+        return x > l && x < r ? 0 : -1;
+    }
+    void timerCallback() override { repaint(); }
+
+    EditViewState& evs;
+    std::function<int()> visibleWidth;
+    String tip;
+    int mode = 0;
+    double startView = 0, startEnd = 0;
+};
+
+//==============================================================================
 /** Song sections: coloured blocks above the ruler. Click to loop and select a section, drag one
     to move it (with everything in it) before another, drag its right edge to change its length,
     double-click empty space to add one; right-click for rename, colour, duplicate and delete. */
@@ -2646,8 +2771,10 @@ class ArrangementView : public Component,
 public:
     static constexpr int headerWidth = 230;
 
-    explicit ArrangementView (EditViewState& e) : evs (e), ruler (e), markerStrip (e), sectionStrip (e), tempoLane (e), content (e), playhead (e), buses (e, headerWidth)
+    explicit ArrangementView (EditViewState& e) : evs (e), ruler (e), markerStrip (e), sectionStrip (e), tempoLane (e), content (e), playhead (e), buses (e, headerWidth),
+                                                   overview (e, [this] { return jmax (100, viewport.getWidth() - headerWidth - viewport.getScrollBarThickness()); })
     {
+        addAndMakeVisible (overview);
         addAndMakeVisible (sectionStrip);
         addAndMakeVisible (buses);
         addAndMakeVisible (ruler);
@@ -2718,6 +2845,14 @@ public:
             g.drawText ("TEMPO", 10, markerStripHeight + sectionStripHeight + rulerHeight, headerWidth - 20, tempoLaneHeight, Justification::centredLeft);
         g.setColour (Theme::line);
         g.drawHorizontalLine (topHeight() - 1, 0.0f, (float) getWidth());
+        if (! overviewLabel.isEmpty())
+        {
+            g.setColour (Theme::muted);
+            g.setFont (FontOptions (11.0f, Font::bold));
+            g.drawText ("OVERVIEW", overviewLabel.reduced (10, 0), Justification::centredLeft);
+            g.setFont (FontOptions (10.0f));
+            g.drawText ("drag / wheel / middle-drag", overviewLabel.reduced (10, 0), Justification::centredRight);
+        }
     }
 
     void resized() override
@@ -2743,6 +2878,8 @@ public:
         snapBox.setBounds (tools.removeFromRight (70));
         ruler.setBounds (top);
         buses.setBounds (r.removeFromBottom (jmin (buses.idealHeight(), r.getHeight() / 2)));
+        overview.setBounds (r.removeFromBottom (overviewHeight).withTrimmedLeft (headerWidth));
+        overviewLabel = r.withTop (overview.getY()).withHeight (overviewHeight).withWidth (headerWidth);
         viewport.setBounds (r);
         layoutContent();
         playhead.setBounds (r.withTrimmedLeft (headerWidth).withTrimmedRight (viewport.getScrollBarThickness()));
@@ -2779,7 +2916,8 @@ public:
     }
 
 private:
-    static constexpr int rulerHeight = 30, markerStripHeight = 20, sectionStripHeight = 22, tempoLaneHeight = 64;
+    static constexpr int rulerHeight = 30, markerStripHeight = 20, sectionStripHeight = 22, tempoLaneHeight = 64, overviewHeight = 30;
+    Rectangle<int> overviewLabel;
     int topHeight() const { return markerStripHeight + sectionStripHeight + rulerHeight + (tempoLane.isVisible() ? tempoLaneHeight : 0); }
 
     /** Holds the rows; drops on the empty area below the tracks create a new track. */
@@ -3123,6 +3261,7 @@ private:
     Content content;
     PlayheadOverlay playhead;
     BusLanes::Area buses;
+    Overview overview;
     std::vector<Row> rows;
     OwnedArray<Component> headers, lanes;
     Array<TrackLane*> trackLanes;

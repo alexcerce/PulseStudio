@@ -3959,6 +3959,39 @@ namespace SelfTest
             edit->deleteTrack (plain);
         }
 
+        // --- v0.52: arrangement overview (scrolling / zooming) ------------------------------------------------
+        {
+            rep.step ("overview");
+            EditViewState evs (*edit, sm);
+            evs.viewStartBeat = 0.0;
+            evs.pixelsPerBeat = 40.0;
+            Overview ov (evs, [] { return 800; });
+            ov.setSize (600, 30);
+            auto src = Desktop::getInstance().getMainMouseSource();
+            auto ev = [&] (juce::Point<float> down, juce::Point<float> pos)
+            {
+                const auto now = Time::getCurrentTime();
+                return MouseEvent (src, pos, ModifierKeys (ModifierKeys::leftButtonModifier), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, &ov, &ov, now, down, now, 1, pos != down);
+            };
+            // click far right: the view jumps there
+            const auto far = juce::Point<float> (560.0f, 15.0f);
+            ov.mouseDown (ev (far, far));
+            const double jumped = evs.viewStartBeat;
+            // drag the box back left: it scrolls
+            const float boxX = ov.xFor (evs.viewStartBeat) + 20.0f;
+            ov.mouseDown (ev ({ boxX, 15.0f }, { boxX, 15.0f }));
+            ov.mouseDrag (ev ({ boxX, 15.0f }, { boxX - 100.0f, 15.0f }));
+            const double dragged = evs.viewStartBeat;
+            // drag the right edge out: it zooms out
+            const double ppbBefore = evs.pixelsPerBeat;
+            const float right = ov.xFor (ov.viewEnd());
+            ov.mouseDown (ev ({ right, 15.0f }, { right, 15.0f }));
+            ov.mouseDrag (ev ({ right, 15.0f }, { right + 60.0f, 15.0f }));
+            const double ppbAfter = evs.pixelsPerBeat;
+            rep.check (jumped > 20.0 && dragged < jumped - 5.0 && ppbAfter < ppbBefore, "Arrangement overview: jump, drag to scroll, drag an edge to zoom",
+                       "jump to " + String (jumped, 1) + ", drag to " + String (dragged, 1) + ", zoom " + String (ppbBefore, 1) + " -> " + String (ppbAfter, 1) + " px/beat");
+        }
+
         // --- sharing: project zip, crash bundle, update check -----------------------------------------
         {
             rep.step ("sharing tools");

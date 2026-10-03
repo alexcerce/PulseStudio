@@ -184,3 +184,6 @@ when you start, touch it after each step, and delete it when you stop.
   and session), chain presets load instruments first. 213 checks pass.
 - Owner request (2026-10-02): better horizontal scrolling in the arrangement; the Wavetable synth's window must look very
   pro (Vital / Serum-like, not a copy), graph-first like the FabFilter-style panels. Next: v0.52.
+- 2026-10-02: v0.52.0 arrangement Overview strip (whole-song miniature, drag / edge-zoom / click-jump / wheel), middle-drag
+  pan, Alt+wheel horizontal scroll; Wavetable full panel (WavetablePanel in DeviceEditor.h: OSC A/B, voice, filter 1/2,
+  envelopes, LFOs, modulation, effects, play bar). 214 checks pass. Owner queue (request 3) done; continue with item 6.

@@ -278,6 +278,279 @@ namespace DeviceEditors
     };
 
     //==============================================================================
+    /** The Wavetable's full panel: oscillators with their wavetables in 3D, filters, envelopes,
+        LFOs, the modulation matrix, effects and the play settings, laid out on dark cards. */
+    class WavetablePanel : public Component
+    {
+    public:
+        using W = pulse::WavetableSynth;
+
+        /** A dark rounded card with a small title. */
+        struct Card : public Component
+        {
+            String title;
+            Colour accent;
+            Card (const String& t, Colour a) : title (t), accent (a) {}
+            Rectangle<int> content() const { return getLocalBounds().reduced (10, 6).withTrimmedTop (22); }
+            void paint (Graphics& g) override
+            {
+                auto r = getLocalBounds().toFloat().reduced (0.5f);
+                g.setGradientFill (ColourGradient (Colour (0xff1a1e26), 0.0f, r.getY(), Colour (0xff12151b), 0.0f, r.getBottom(), false));
+                g.fillRoundedRectangle (r, 8.0f);
+                g.setColour (Colours::white.withAlpha (0.07f));
+                g.drawRoundedRectangle (r, 8.0f, 1.0f);
+                g.setColour (accent);
+                g.fillRoundedRectangle (Rectangle<float> (r.getX() + 10.0f, r.getY() + 9.0f, 3.0f, 12.0f), 1.5f);
+                g.setColour (Colours::white.withAlpha (0.85f));
+                g.setFont (FontOptions (12.0f, Font::bold));
+                g.drawText (title, Rectangle<float> (r.getX() + 18.0f, r.getY() + 5.0f, r.getWidth() - 30.0f, 20.0f), Justification::centredLeft);
+            }
+        };
+
+        WavetablePanel (EditViewState& e, W& w) : evs (e), synth (w), holder (&w)
+        {
+            const auto oscA = Colour (0xff4dabf7), oscB = Colour (0xffffa94d), filt = Colour (0xffff6b6b), env = Colour (0xff69db7c),
+                       lfo = Colour (0xffda77f2), fxc = Colour (0xff38d9a9);
+            auto card = [this] (const String& t, Colour c) { auto* k = cards.add (new Card (t, c)); addAndMakeVisible (k); return k; };
+            cOscA = card ("OSC A", oscA); cOscB = card ("OSC B", oscB); cVoice = card ("VOICE", Colour (0xff748ffc));
+            cF1 = card ("FILTER 1", filt); cF2 = card ("FILTER 2", filt.withRotatedHue (0.05f)); cEnv = card ("ENVELOPES", env);
+            cLfo = card ("LFOs", lfo); cMod = card ("MODULATION  (drag a source onto any knob)", lfo.withRotatedHue (0.1f)); cFx = card ("EFFECTS", fxc);
+
+            framesA = std::make_unique<FramesView> (w, 0); cOscA->addAndMakeVisible (*framesA);
+            framesB = std::make_unique<FramesView> (w, 1); cOscB->addAndMakeVisible (*framesB);
+            tableA = combo (*cOscA, W::pSet1); warpA = combo (*cOscA, W::pWarp1);
+            tableB = combo (*cOscB, W::pSet2); warpB = combo (*cOscB, W::pWarp2);
+            for (auto [pi, l] : std::initializer_list<std::pair<int, const char*>> { { W::pPos1, "Position" }, { W::pWarpAmt1, "Warp" } }) knobsA.add (knob (*cOscA, pi, l, oscA));
+            for (auto [pi, l] : std::initializer_list<std::pair<int, const char*>> { { W::pPos2, "Position" }, { W::pWarpAmt2, "Warp" }, { W::pSemi2, "Semi" }, { W::pFine2, "Fine" } })
+                knobsB.add (knob (*cOscB, pi, l, oscB));
+            for (auto [pi, l] : std::initializer_list<std::pair<int, const char*>> { { W::pMix, "A / B" }, { W::pVoices, "Unison" }, { W::pDetune, "Detune" }, { W::pSub, "Sub" } })
+                knobsVoice.add (knob (*cVoice, pi, l, Colour (0xff748ffc)));
+
+            graphF1 = std::make_unique<Graphs::FilterGraph> (w.param (W::pCutoff), w.param (W::pReso), w.param (W::pFilterType),
+                                                             [] (int t) { const int m[] = { 1, 5, 2, 3 }; return m[jlimit (0, 3, t)]; }, filt, w.param (W::pFilterEnv));
+            cF1->addAndMakeVisible (*graphF1);
+            typeF1 = combo (*cF1, W::pFilterType);
+            for (auto [pi, l] : std::initializer_list<std::pair<int, const char*>> { { W::pCutoff, "Cutoff" }, { W::pReso, "Reso" }, { W::pFilterEnv, "Env" } })
+                knobsF1.add (knob (*cF1, pi, l, filt));
+            graphF2 = std::make_unique<Graphs::FilterGraph> (w.param (W::pF2Cutoff), w.param (W::pF2Reso), w.param (W::pF2Type),
+                                                             [] (int t) { const int m[] = { 0, 1, 5, 2, 3, 4 }; return m[jlimit (0, 5, t)]; }, filt.withRotatedHue (0.05f), w.param (W::pF2Env));
+            cF2->addAndMakeVisible (*graphF2);
+            typeF2 = combo (*cF2, W::pF2Type); routing = combo (*cF2, W::pRouting);
+            for (auto [pi, l] : std::initializer_list<std::pair<int, const char*>> { { W::pF2Cutoff, "Cutoff" }, { W::pF2Reso, "Reso" }, { W::pF2Env, "Env" } })
+                knobsF2.add (knob (*cF2, pi, l, filt.withRotatedHue (0.05f)));
+
+            using EG = Graphs::EnvelopeGraph;
+            envGraph = std::make_unique<EG> (std::vector<EG::Env> { { w.param (W::pA), w.param (W::pD), w.param (W::pS), w.param (W::pR), env, "AMP" },
+                                                                   { w.param (W::pFA), w.param (W::pFD), w.param (W::pFS), w.param (W::pFR), filt, "FILTER" },
+                                                                   { w.param (W::pMA), w.param (W::pMD), w.param (W::pMS), w.param (W::pMR), lfo, "MOD" } });
+            cEnv->addAndMakeVisible (*envGraph);
+            const char* envNames[] = { "Amp", "Filter", "Mod" };
+            for (int i = 0; i < 3; ++i)
+            {
+                auto* b = envTabs.add (new TextButton (envNames[i]));
+                b->setColour (TextButton::buttonOnColourId, (i == 0 ? env : i == 1 ? filt : lfo).withAlpha (0.8f));
+                b->setColour (TextButton::textColourOnId, Colour (0xff111317));
+                b->setConnectedEdges ((i > 0 ? Button::ConnectedOnLeft : 0) | (i < 2 ? Button::ConnectedOnRight : 0));
+                b->onClick = [this, i] { showEnv (i); };
+                cEnv->addAndMakeVisible (b);
+            }
+
+            lfoView = std::make_unique<WavetableUI::LfoView> (w);
+            lfoView->onSelect = [this] (int l) { showLfo (l); };
+            cLfo->addAndMakeVisible (*lfoView);
+            matrix = std::make_unique<WavetableUI::MatrixView> (w);
+            cMod->addAndMakeVisible (*matrix);
+
+            for (auto [pi, l] : std::initializer_list<std::pair<int, const char*>> { { W::pDrive, "Drive" }, { W::pChorusMix, "Chorus" }, { W::pChorusRate, "Rate" },
+                                                                                      { W::pChorusDepth, "Depth" }, { W::pDelayMix, "Delay" }, { W::pDelayFb, "Feedback" },
+                                                                                      { W::pReverbMix, "Reverb" }, { W::pReverbSize, "Size" } })
+                knobsFx.add (knob (*cFx, pi, l, fxc));
+            delayTime = combo (*cFx, W::pDelayTime);
+
+            for (auto [pi, l] : std::initializer_list<std::pair<int, const char*>> { { W::pGlide, "Glide" }, { W::pBendRange, "Bend" }, { W::pPressure, "Pressure" },
+                                                                                      { W::pSlide, "Slide" }, { W::pLevel, "Level" } })
+            {
+                auto* k = new ParamKnob (evs, *w.param (pi));
+                k->setLabel (l);
+                k->setCompact (Colour (0xff748ffc));
+                barKnobs.add (k);
+                addAndMakeVisible (k);
+            }
+            showEnv (0);
+            showLfo (0);
+        }
+
+        void paint (Graphics& g) override
+        {
+            g.fillAll (Colour (0xff0b0d11));
+            auto bar = getLocalBounds().removeFromBottom (barH).toFloat();
+            g.setGradientFill (ColourGradient (Colour (0xff181c23), 0.0f, bar.getY(), Colour (0xff111419), 0.0f, bar.getBottom(), false));
+            g.fillRect (bar);
+            g.setColour (Colours::white.withAlpha (0.06f));
+            g.drawHorizontalLine ((int) bar.getY(), 0.0f, (float) getWidth());
+            g.setColour (Theme::muted);
+            g.setFont (FontOptions (11.0f, Font::bold));
+            g.drawText ("PLAY", bar.reduced (14.0f, 0.0f), Justification::centredLeft);
+        }
+
+        void resized() override
+        {
+            auto r = getLocalBounds();
+            auto bar = r.removeFromBottom (barH).reduced (60, 4);
+            for (auto* k : barKnobs) { k->setBounds (bar.removeFromLeft (70)); bar.removeFromLeft (8); }
+            r = r.reduced (8);
+            const int gap = 8;
+            auto top = r.removeFromTop (r.getHeight() * 39 / 100); r.removeFromTop (gap);
+            auto mid = r.removeFromTop (r.getHeight() * 50 / 100); r.removeFromTop (gap);
+            auto bottom = r;
+
+            // oscillators + voice
+            auto voiceArea = top.removeFromRight (jmin (170, top.getWidth() / 6));
+            top.removeFromRight (gap);
+            cOscA->setBounds (top.removeFromLeft ((top.getWidth() - gap) / 2)); top.removeFromLeft (gap);
+            cOscB->setBounds (top);
+            cVoice->setBounds (voiceArea);
+            layoutOsc (*cOscA, *framesA, *tableA, *warpA, knobsA);
+            layoutOsc (*cOscB, *framesB, *tableB, *warpB, knobsB);
+            {
+                auto c = cVoice->content();
+                const int kh = c.getHeight() / 2;
+                for (int i = 0; i < knobsVoice.size(); ++i)
+                    knobsVoice[i]->setBounds (c.getX() + (i % 2) * c.getWidth() / 2, c.getY() + (i / 2) * kh, c.getWidth() / 2, kh);
+            }
+
+            // filters + envelopes
+            auto envArea = mid.removeFromRight (mid.getWidth() * 36 / 100); mid.removeFromRight (gap);
+            cF1->setBounds (mid.removeFromLeft ((mid.getWidth() - gap) / 2)); mid.removeFromLeft (gap);
+            cF2->setBounds (mid);
+            cEnv->setBounds (envArea);
+            auto layoutFilter = [] (Rectangle<int> c, Component& graph, Component& type, Component* extra, Array<ParamKnob*>& ks)
+            {
+                auto kr = c.removeFromBottom (64);
+                auto typeArea = kr.removeFromLeft (jmin (150, kr.getWidth() / 3));
+                if (extra != nullptr)
+                {
+                    type.setBounds (typeArea.removeFromTop (typeArea.getHeight() / 2).reduced (0, 3));
+                    extra->setBounds (typeArea.reduced (0, 3));
+                }
+                else type.setBounds (typeArea.withSizeKeepingCentre (typeArea.getWidth(), 26));
+                kr.removeFromLeft (6);
+                const int kw = kr.getWidth() / jmax (1, ks.size());
+                for (auto* k : ks) k->setBounds (kr.removeFromLeft (kw));
+                c.removeFromBottom (4);
+                graph.setBounds (c);
+            };
+            layoutFilter (cF1->content(), *graphF1, *typeF1, nullptr, knobsF1);
+            layoutFilter (cF2->content(), *graphF2, *typeF2, routing, knobsF2);
+            {
+                auto c = cEnv->content();
+                auto tabs = c.removeFromTop (24);
+                for (auto* t : envTabs) t->setBounds (tabs.removeFromLeft (tabs.getWidth() / jmax (1, (envTabs.size() - envTabs.indexOf (t)))));
+                c.removeFromTop (4);
+                auto kr = c.removeFromBottom (62);
+                for (auto* k : envKnobs) k->setBounds (kr.removeFromLeft (kr.getWidth() / jmax (1, (envKnobs.size() - envKnobs.indexOf (k)))));
+                envGraph->setBounds (c.reduced (0, 2));
+            }
+
+            // LFOs, modulation, effects
+            const int third = (bottom.getWidth() - 2 * gap) / 3;
+            cLfo->setBounds (bottom.removeFromLeft (third)); bottom.removeFromLeft (gap);
+            cMod->setBounds (bottom.removeFromLeft (third)); bottom.removeFromLeft (gap);
+            cFx->setBounds (bottom);
+            {
+                auto c = cLfo->content();
+                auto kr = c.removeFromRight (86);
+                for (auto* k : lfoKnobs) k->setBounds (kr.removeFromTop (kr.getHeight() / jmax (1, (lfoKnobs.size() - lfoKnobs.indexOf (k)))).reduced (0, 2));
+                lfoView->setBounds (c);
+            }
+            matrix->setBounds (cMod->content());
+            {
+                auto c = cFx->content();
+                auto top2 = c.removeFromTop (c.getHeight() / 2);
+                const int kw = top2.getWidth() / 4;
+                for (int i = 0; i < 4; ++i) knobsFx[i]->setBounds (top2.removeFromLeft (kw));
+                auto b2 = c;
+                const int kw2 = b2.getWidth() / 5;
+                knobsFx[4]->setBounds (b2.removeFromLeft (kw2));
+                delayTime->setBounds (b2.removeFromLeft (kw2).withSizeKeepingCentre (kw2 - 4, 44));
+                for (int i = 5; i < 8; ++i) knobsFx[i]->setBounds (b2.removeFromLeft (kw2));
+            }
+        }
+
+    private:
+        ParamKnob* knob (Card& c, int pi, const char* label, Colour col)
+        {
+            auto* k = new ParamKnob (evs, *synth.param (pi));
+            k->setLabel (label);
+            k->setCompact (col);
+            owned.add (k);
+            c.addAndMakeVisible (k);
+            return k;
+        }
+        ParamCombo* combo (Card& c, int pi)
+        {
+            auto* cb = new ParamCombo (*synth.param (pi), false);
+            owned.add (cb);
+            c.addAndMakeVisible (cb);
+            return cb;
+        }
+        void layoutOsc (Card& c, Component& frames, Component& table, Component& warp, Array<ParamKnob*>& ks)
+        {
+            auto r = c.content();
+            auto head = r.removeFromTop (24);
+            warp.setBounds (head.removeFromRight (jmin (150, head.getWidth() / 2 - 4)));
+            head.removeFromRight (6);
+            table.setBounds (head.removeFromRight (jmin (170, head.getWidth())));
+            r.removeFromTop (4);
+            auto kr = r.removeFromBottom (66);
+            const int kw = jmin (70, kr.getWidth() / jmax (1, ks.size()));
+            for (auto* k : ks) k->setBounds (kr.removeFromLeft (kw));
+            frames.setBounds (r.reduced (0, 2));
+        }
+        void showEnv (int i)
+        {
+            for (int k = 0; k < envTabs.size(); ++k) envTabs[k]->setToggleState (k == i, dontSendNotification);
+            for (auto* k : envKnobs) owned.removeObject (k);
+            envKnobs.clear();
+            const int sets[3][4] = { { W::pA, W::pD, W::pS, W::pR }, { W::pFA, W::pFD, W::pFS, W::pFR }, { W::pMA, W::pMD, W::pMS, W::pMR } };
+            const char* names[] = { "Attack", "Decay", "Sustain", "Release" };
+            for (int k = 0; k < 4; ++k) envKnobs.add (knob (*cEnv, sets[i][k], names[k], Colour (0xff69db7c)));
+            resized();
+        }
+        void showLfo (int l)
+        {
+            for (auto* k : lfoKnobs) owned.removeObject (k);
+            lfoKnobs.clear();
+            lfoKnobs.add (knob (*cLfo, synth.lfoParam (l, 0), "Rate", Colour (0xffda77f2)));
+            auto* sync = new ParamCombo (*synth.param (synth.lfoParam (l, 1)), true);
+            sync->setLabel ("Sync");
+            owned.add (sync); cLfo->addAndMakeVisible (sync); lfoKnobs.add (sync);
+            auto* retrig = new ParamToggle (*synth.param (synth.lfoParam (l, 3)), "Per note", Colour (0xffda77f2));
+            owned.add (retrig); cLfo->addAndMakeVisible (retrig); lfoKnobs.add (retrig);
+            resized();
+        }
+
+        static constexpr int barH = 74;
+        EditViewState& evs;
+        W& synth;
+        te::Plugin::Ptr holder;
+        OwnedArray<Card> cards;
+        OwnedArray<Component> owned;
+        Card *cOscA = nullptr, *cOscB = nullptr, *cVoice = nullptr, *cF1 = nullptr, *cF2 = nullptr, *cEnv = nullptr, *cLfo = nullptr, *cMod = nullptr, *cFx = nullptr;
+        std::unique_ptr<FramesView> framesA, framesB;
+        ParamCombo *tableA = nullptr, *warpA = nullptr, *tableB = nullptr, *warpB = nullptr, *typeF2 = nullptr, *routing = nullptr, *delayTime = nullptr;
+        ParamCombo* typeF1 = nullptr;
+        std::unique_ptr<Graphs::FilterGraph> graphF1, graphF2;
+        std::unique_ptr<Graphs::EnvelopeGraph> envGraph;
+        std::unique_ptr<WavetableUI::LfoView> lfoView;
+        std::unique_ptr<WavetableUI::MatrixView> matrix;
+        Array<ParamKnob*> knobsA, knobsB, knobsVoice, knobsF1, knobsF2, knobsFx, envKnobs;
+        Array<Component*> lfoKnobs;
+        OwnedArray<TextButton> envTabs;
+        OwnedArray<ParamKnob> barKnobs;
+    };
+
+    //==============================================================================
     using Graph = std::pair<String, std::unique_ptr<Component>>;
 
     /** Every view of a device, big. */
@@ -289,20 +562,7 @@ namespace DeviceEditors
         auto env = [] (std::vector<EG::Env> e) { return std::make_unique<EG> (std::move (e)); };
 
         if (auto s = dynamic_cast<pulse::WavetableSynth*> (&p))
-        {
-            using W = pulse::WavetableSynth;
-            add ("Oscillator 1", std::make_unique<FramesView> (*s, 0));
-            add ("Oscillator 2", std::make_unique<FramesView> (*s, 1));
-            add ("Filter", std::make_unique<Graphs::FilterGraph> (s->param (W::pCutoff), s->param (W::pReso), s->param (W::pFilterType),
-                                                                  [] (int t) { const int m[] = { 1, 5, 2, 3 }; return m[jlimit (0, 3, t)]; }, Theme::orange, s->param (W::pFilterEnv)));
-            add ("Envelopes", env ({ { s->param (W::pA), s->param (W::pD), s->param (W::pS), s->param (W::pR), Theme::accent, "AMP" },
-                                     { s->param (W::pFA), s->param (W::pFD), s->param (W::pFS), s->param (W::pFR), Theme::orange, "FILTER" },
-                                     { s->param (W::pMA), s->param (W::pMD), s->param (W::pMS), s->param (W::pMR), Theme::purple, "MOD" } }));
-            add ("Filter 2", std::make_unique<Graphs::FilterGraph> (s->param (W::pF2Cutoff), s->param (W::pF2Reso), s->param (W::pF2Type),
-                                                                    [] (int t) { const int m[] = { 0, 1, 5, 2, 3, 4 }; return m[jlimit (0, 5, t)]; }, Theme::purple, s->param (W::pF2Env)));
-            add ("LFOs", std::make_unique<WavetableUI::LfoView> (*s));
-            add ("Modulation (drag a source onto any knob)", std::make_unique<WavetableUI::MatrixView> (*s));
-        }
+            add ("Wavetable", std::make_unique<WavetablePanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::Simpler*> (&p))
         {
             using S = pulse::Simpler;
@@ -371,6 +631,7 @@ namespace DeviceEditors
     inline bool hasFullEditor (pulse::PulsePlugin& p)
     {
         return dynamic_cast<pulse::PrismEQ*> (&p) != nullptr || dynamic_cast<pulse::ProCompressor*> (&p) != nullptr
+            || dynamic_cast<pulse::WavetableSynth*> (&p) != nullptr
             || dynamic_cast<pulse::MultibandDynamics*> (&p) != nullptr || dynamic_cast<pulse::Limiter*> (&p) != nullptr;
     }
 

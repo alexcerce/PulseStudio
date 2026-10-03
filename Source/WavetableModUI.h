@@ -257,7 +257,7 @@ namespace WavetableUI
                 auto* b = tabs.add (new TextButton ("LFO " + String (l + 1)));
                 b->setClickingTogglesState (false);
                 b->setColour (TextButton::buttonOnColourId, sourceColour (l + 1).withAlpha (0.7f));
-                b->onClick = [this, l] { current = l; repaint(); updateTabs(); };
+                b->onClick = [this, l] { current = l; repaint(); updateTabs(); if (onSelect) onSelect (l); };
                 addAndMakeVisible (b);
             }
             for (int s = 0; s < W::lfoShapes.size(); ++s)
@@ -277,6 +277,7 @@ namespace WavetableUI
         }
 
         void setCurrent (int l) { current = jlimit (0, W::numLfos - 1, l); updateTabs(); repaint(); }
+        std::function<void (int)> onSelect;
 
         void resized() override
         {
