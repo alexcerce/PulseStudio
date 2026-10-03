@@ -452,49 +452,78 @@ namespace DeviceDisplays
             auto r = getLocalBounds().reduced (2);
             auto bottom = r.removeFromBottom (80);
             graph = r.toFloat();
-            auto btns = bottom.removeFromLeft (150).withSizeKeepingCentre (150, 52);
+            const bool tight = getWidth() < 560;   // on a device card
+            const int bw = tight ? 40 : 50;
+            auto btns = bottom.removeFromLeft (bw * 3).withSizeKeepingCentre (bw * 3, 52);
             for (int i = 0; i < bandButtons.size(); ++i)
-                bandButtons[i]->setBounds (btns.getX() + (i % 3) * 50, btns.getY() + (i / 3) * 27, 46, 24);
+                bandButtons[i]->setBounds (btns.getX() + (i % 3) * bw, btns.getY() + (i / 3) * 27, bw - 4, 24);
             onBtn.setBounds (bottom.removeFromLeft (44).withSizeKeepingCentre (40, 24));
+            bottom.removeFromLeft (tight ? 2 : 8);
+            if (typeBox != nullptr) typeBox->setBounds (bottom.removeFromLeft (tight ? 100 : 124).withSizeKeepingCentre (tight ? 98 : 120, 46));
+            bottom.removeFromLeft (tight ? 2 : 6);
             for (auto* k : knobs)
-                k->setBounds (bottom.removeFromLeft (64));
+                k->setBounds (bottom.removeFromLeft (tight ? 62 : 72));
         }
 
         void paint (Graphics& g) override
         {
             paintPanel (g, graph);
+            const bool big = graph.getHeight() >= 180.0f;
             FreqAxis axis { graph.reduced (4.0f) };
             axis.drawGrid (g);
             auto dbToY = [this] (double db) { return graph.getCentreY() - (float) (db / 20.0) * graph.getHeight() * 0.5f; };
-            g.setColour (Theme::ink.withAlpha (0.1f));
-            g.drawHorizontalLine ((int) dbToY (0.0), graph.getX(), graph.getRight());
-
-            // analyser (post EQ)
-            Path spec;
-            for (int i = 0; i < (int) axis.area.getWidth(); i += 2)
+            for (int db = -18; db <= 18; db += 6)
             {
-                const double f = axis.freqAt (axis.area.getX() + (float) i);
-                const int bin = jlimit (1, fftSize / 2 - 1, (int) (f / sampleRateGuess * fftSize));
-                const float db = jlimit (-90.0f, 0.0f, spectrum[(size_t) bin]);
-                const float y = graph.getBottom() - (db + 90.0f) / 90.0f * graph.getHeight();
-                if (i == 0) spec.startNewSubPath (axis.area.getX(), graph.getBottom());
-                spec.lineTo (axis.area.getX() + (float) i, y);
+                g.setColour (Theme::ink.withAlpha (db == 0 ? 0.14f : 0.04f));
+                g.drawHorizontalLine ((int) dbToY (db), graph.getX(), graph.getRight());
+                if (big && db != 0) Graphs::label (g, (db > 0 ? "+" : "") + String (db), { graph.getX() + 6.0f, dbToY (db) - 6.0f, 30.0f, 12.0f }, Justification::centredLeft, 0.5f);
             }
-            spec.lineTo (axis.area.getRight(), graph.getBottom());
-            spec.closeSubPath();
-            g.setColour (Theme::ink.withAlpha (0.07f));
-            g.fillPath (spec);
 
-            // response curve
-            Path curve;
+            // analyser (post EQ): bins blended so the low end has no steps
+            {
+                std::vector<float> ys;
+                for (float x = axis.area.getX(); x <= axis.area.getRight(); x += 2.0f)
+                {
+                    const double pos = jlimit (1.0, fftSize / 2 - 2.0, axis.freqAt (x) / sampleRateGuess * fftSize);
+                    const double hi = jlimit (1.0, fftSize / 2 - 2.0, axis.freqAt (x + 2.0f) / sampleRateGuess * fftSize);
+                    float db;
+                    if (hi - pos < 1.0) { const int b0 = (int) pos; db = spectrum[(size_t) b0] + (spectrum[(size_t) b0 + 1] - spectrum[(size_t) b0]) * (float) (pos - b0); }
+                    else { db = -120.0f; for (int b0 = (int) pos; b0 <= (int) hi; ++b0) db = jmax (db, spectrum[(size_t) b0]); }
+                    ys.push_back (graph.getBottom() - (jlimit (-90.0f, 0.0f, db) + 90.0f) / 90.0f * graph.getHeight());
+                }
+                for (size_t k = 1; k + 1 < ys.size(); ++k) ys[k] = 0.25f * ys[k - 1] + 0.5f * ys[k] + 0.25f * ys[k + 1];
+                Path spec, line;
+                spec.startNewSubPath (axis.area.getX(), graph.getBottom());
+                for (size_t k = 0; k < ys.size(); ++k)
+                {
+                    const float x = axis.area.getX() + 2.0f * (float) k;
+                    spec.lineTo (x, ys[k]);
+                    if (k == 0) line.startNewSubPath (x, ys[k]); else line.lineTo (x, ys[k]);
+                }
+                spec.lineTo (axis.area.getRight(), graph.getBottom());
+                spec.closeSubPath();
+                g.setGradientFill (ColourGradient (Theme::accent.withAlpha (0.22f), 0.0f, graph.getY(), Theme::accent.withAlpha (0.02f), 0.0f, graph.getBottom(), false));
+                g.fillPath (spec);
+                g.setColour (Theme::accent.withAlpha (0.35f));
+                g.strokePath (line, PathStrokeType (1.0f));
+            }
+
+            // response curve: filled towards the 0 dB line, with a glow
+            Path curve, fill;
+            const float zeroY = dbToY (0.0);
             for (int i = 0; i <= (int) axis.area.getWidth(); ++i)
             {
                 const float x = axis.area.getX() + (float) i;
                 const float y = jlimit (graph.getY(), graph.getBottom(), dbToY (eq.responseDb (axis.freqAt (x))));
-                if (i == 0) curve.startNewSubPath (x, y); else curve.lineTo (x, y);
+                if (i == 0) { curve.startNewSubPath (x, y); fill.startNewSubPath (x, zeroY); }
+                else curve.lineTo (x, y);
+                fill.lineTo (x, y);
             }
-            g.setColour (Theme::accent);
-            g.strokePath (curve, PathStrokeType (2.0f));
+            fill.lineTo (axis.area.getRight(), zeroY);
+            fill.closeSubPath();
+            g.setColour (Theme::yellow.withAlpha (0.12f));
+            g.fillPath (fill);
+            Graphs::glowStroke (g, curve, Theme::yellow, big ? 2.2f : 1.8f);
 
             // band nodes
             for (int b = 0; b < pulse::PulseEQ::numBands; ++b)
@@ -592,10 +621,16 @@ namespace DeviceDisplays
             selected = b;
             knobs.clear();
             using Q = pulse::PulseEQ;
-            for (int which : { Q::pType, Q::pFreq, Q::pGain, Q::pQ })
+            typeBox = std::make_unique<ParamCombo> (*eq.param (Q::idx (b, Q::pType)));
+            typeBox->setLabel ("Band " + String (b + 1) + " type");
+            addAndMakeVisible (*typeBox);
+            for (int which : { Q::pFreq, Q::pGain, Q::pQ })
                 addAndMakeVisible (knobs.add (new ParamKnob (evs, *eq.param (Q::idx (b, which)))));
             for (auto* k : knobs)   // "Band 3 Freq" -> "Freq"
+            {
                 k->name.setText (k->name.getText().fromLastOccurrenceOf (" ", false, false), dontSendNotification);
+                k->setCompact (bandColour (b));
+            }
             resized();
             repaint();
         }
@@ -628,6 +663,7 @@ namespace DeviceDisplays
         OwnedArray<TextButton> bandButtons;
         TextButton onBtn { "On" };
         OwnedArray<ParamKnob> knobs;
+        std::unique_ptr<ParamCombo> typeBox;
         int selected = 2, dragging = -1;
     };
 

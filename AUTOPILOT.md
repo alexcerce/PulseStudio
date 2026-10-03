@@ -201,3 +201,5 @@ when you start, touch it after each step, and delete it when you stop.
   their places). Window 1280 x 860: tabs Synth / Effects / Matrix / Draw wave, three dense columns, solid 3D wavetable,
   macros + source chips + scope in the bottom bar (no keyboard). Knobs restyled app-wide (thin arc, quiet cap).
   15 new presets. 220 checks pass. MidiKeyboardState stays in the synth (unused by the UI, tested).
+- 2026-10-03: v0.56.0 EQ Six display: smooth analyser, glowing response curve filled to 0 dB, dB labels, band type as a menu.
+  220 checks pass. Next ideas: FM Synth / Simpler / Drum Synth windows in the Wavetable's card style; LFO tabs as LineTabs.
