@@ -398,6 +398,8 @@ namespace pulse
         }
 
         /** The transfer curve (used by the display too). */
+        std::atomic<float> inPeak { 0.0f };   // input level (for the display)
+
         static float shape (int type, float x, float bias) noexcept
         {
             x += bias * 0.5f;
@@ -439,6 +441,9 @@ namespace pulse
             const float offset = shape (type, 0.0f, bias);
             const float dcR = 1.0f - (float) (MathConstants<double>::twoPi * 10.0 / sampleRate);
             const float lpA = (float) std::exp (-MathConstants<double>::twoPi * 1200.0 / sampleRate);
+            float pk = 0.0f;
+            for (int i = 0; i < n; ++i) pk = jmax (pk, std::abs (l[i]), std::abs (r[i]));
+            inPeak = jmax (pk, inPeak.load() * 0.85f);
 
             for (int start = 0; start < n; start += blockSize)
             {

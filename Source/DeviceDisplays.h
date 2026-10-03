@@ -6,6 +6,7 @@
 #include "Graphs.h"
 #include "PrismEQDisplay.h"
 #include "DynamicsDisplay.h"
+#include "SpaceDisplay.h"
 
 /** Visual panels shown at the left of Pulse device cards. */
 namespace DeviceDisplays

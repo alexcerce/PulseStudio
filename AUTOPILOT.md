@@ -187,3 +187,6 @@ when you start, touch it after each step, and delete it when you stop.
 - 2026-10-02: v0.52.0 arrangement Overview strip (whole-song miniature, drag / edge-zoom / click-jump / wheel), middle-drag
   pan, Alt+wheel horizontal scroll; Wavetable full panel (WavetablePanel in DeviceEditor.h: OSC A/B, voice, filter 1/2,
   envelopes, LFOs, modulation, effects, play bar). 214 checks pass. Owner queue (request 3) done; continue with item 6.
+- 2026-10-02: v0.53.0 graph-first full editors for Pulse Reverb, Pulse Delay and Saturator (SpaceDisplay.h: HandleView
+  base with draggable handles, decay/echo/transfer graphs plus tone curves). Fixed ParamChoice button widths (the last
+  buttons were squeezed). 216 checks pass.

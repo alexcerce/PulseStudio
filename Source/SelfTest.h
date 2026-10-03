@@ -170,6 +170,9 @@ namespace SelfTest
             set (3, EQ::pOn, 1); set (3, EQ::pFreq, 3200); set (3, EQ::pGain, 4); set (3, EQ::pDyn, 1); set (3, EQ::pRange, -6);
             set (5, EQ::pOn, 1); set (5, EQ::pType, EQ::highShelf); set (5, EQ::pFreq, 11000); set (5, EQ::pGain, 2.5f);
         }, "shot_prism.png");
+        shoot (pulse::Reverb::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Reverb::pPredelay, 35); p.set (pulse::Reverb::pDecay, 3.2f); }, "shot_reverb.png");
+        shoot (pulse::Delay::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Delay::pPingPong, 1); p.set (pulse::Delay::pFeedback, 0.55f); p.set (pulse::Delay::pLowCut, 250); p.set (pulse::Delay::pHighCut, 5000); }, "shot_delay.png");
+        shoot (pulse::Saturator::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Saturator::pDrive, 14); p.set (pulse::Saturator::pType, 2); p.set (pulse::Saturator::pTone, 0.3f); }, "shot_saturator.png");
         shoot (pulse::ProCompressor::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::ProCompressor::pThreshold, -24); p.set (pulse::ProCompressor::pKnee, 8); },
                "shot_compressor.png");
         shoot (pulse::MultibandDynamics::xmlTypeName, [] (pulse::PulsePlugin& p)
@@ -3957,6 +3960,46 @@ namespace SelfTest
                        String (refused.size()) + " refused: " + refused[0].upToFirstOccurrenceOf (":", false, false));
             edit->deleteTrack (ret);
             edit->deleteTrack (plain);
+        }
+
+        // --- v0.53: graph-first Reverb, Delay and Saturator editors ---------------------------------------
+        {
+            rep.step ("space editors");
+            auto make = [&] (const char* type) { auto pl = edit->getPluginCache().createNewPlugin (type, {}); return pl; };
+            auto rp = make (pulse::Reverb::xmlTypeName), dp = make (pulse::Delay::xmlTypeName), sp = make (pulse::Saturator::xmlTypeName);
+            auto& rv = *dynamic_cast<pulse::Reverb*> (rp.get());
+            auto& dl = *dynamic_cast<pulse::Delay*> (dp.get());
+            auto& st = *dynamic_cast<pulse::Saturator*> (sp.get());
+            SpaceUI::ReverbView rView (rv);
+            SpaceUI::DelayView dView (dl);
+            SpaceUI::SaturatorView sView (st);
+            for (Component* c : { (Component*) &rView, (Component*) &dView, (Component*) &sView }) c->setSize (1000, 560);
+            Image img (Image::ARGB, 1000, 560, true);
+            { Graphics g (img); rView.paint (g); dView.paint (g); sView.paint (g); }   // lays out the time spans
+            // reverb: drag the decay point right -> longer; the predelay point right -> more predelay
+            const float decay0 = rv.get (pulse::Reverb::pDecay), pre0 = rv.get (pulse::Reverb::pPredelay);
+            rView.dragHandle (2, 120.0f, 0.0f);
+            rView.dragHandle (0, 20.0f, 0.0f);
+            const bool revOk = rv.get (pulse::Reverb::pDecay) > decay0 + 0.3f && rv.get (pulse::Reverb::pPredelay) > pre0 + 5.0f;
+            // delay (synced): dragging the first echo snaps to a note value; dragging the second up raises the feedback
+            dl.set (pulse::Delay::pSync, 1.0f);
+            dl.set (pulse::Delay::pNote, 4.0f);   // 1/8
+            dView.setTime (60.0 / dl.lastBpm.load());   // a quarter note
+            const bool snapped = dl.getInt (pulse::Delay::pNote) == 7;
+            const float fb0 = dl.get (pulse::Delay::pFeedback);
+            dView.dragHandle (1, 0.0f, -40.0f);
+            const bool fbUp = dl.get (pulse::Delay::pFeedback) > fb0 + 0.05f;
+            // saturator: dragging the shape point up adds drive, sideways moves the bias
+            const float drive0 = st.get (pulse::Saturator::pDrive);
+            sView.dragHandle (0, 30.0f, -40.0f);
+            const bool satOk = st.get (pulse::Saturator::pDrive) > drive0 + 1.0f && st.get (pulse::Saturator::pBias) > 0.05f;
+            rep.check (revOk && snapped && fbUp && satOk && rView.getNumHandles() == 5 && dView.getNumHandles() == 4,
+                       "Reverb, Delay and Saturator: controls are handles on the graph",
+                       "decay " + String (decay0, 2) + " -> " + String (rv.get (pulse::Reverb::pDecay), 2) + " s, note " + dl.param (pulse::Delay::pNote)->getCurrentValueAsString()
+                       + ", feedback " + String (fb0, 2) + " -> " + String (dl.get (pulse::Delay::pFeedback), 2)
+                       + ", drive " + String (drive0, 1) + " -> " + String (st.get (pulse::Saturator::pDrive), 1));
+            rep.check (DeviceEditors::hasFullEditor (rv) && DeviceEditors::hasFullEditor (dl) && DeviceEditors::hasFullEditor (st),
+                       "Reverb, Delay and Saturator open as full panels", {});
         }
 
         // --- v0.52: arrangement overview (scrolling / zooming) ------------------------------------------------

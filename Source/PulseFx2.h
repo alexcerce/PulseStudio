@@ -93,6 +93,7 @@ namespace pulse
             }
             const float inGain = freeze ? 0.0f : 1.0f;
 
+            float peak = 0.0f;
             for (int s = 0; s < n; ++s)
             {
                 const float dryL = l[s], dryR = r[s];
@@ -127,8 +128,13 @@ namespace pulse
                 const float mid = 0.5f * (wl + wr), side = 0.5f * (wl - wr) * width;
                 l[s] = dryL * (1.0f - mix) + (mid + side) * mix;
                 r[s] = dryR * (1.0f - mix) + (mid - side) * mix;
+                peak = jmax (peak, std::abs (wl), std::abs (wr));
             }
+            wetDb = jmax (Decibels::gainToDecibels (peak, -100.0f), wetDb.load() - 1.5f);
         }
+
+    public:
+        std::atomic<float> wetDb { -100.0f };   // the tail's level (for the display)
 
     private:
         DelayLine pre;

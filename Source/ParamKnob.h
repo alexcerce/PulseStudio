@@ -272,10 +272,11 @@ public:
         auto r = getLocalBounds();
         if (name.isVisible()) name.setBounds (r.removeFromTop (14));
         r = r.withSizeKeepingCentre (r.getWidth(), jmin (26, r.getHeight()));
-        const int total = jmax (1, idealWidth());
+        const int total = jmax (1, idealWidth()), full = r.getWidth();
         for (auto* b : buttons)
         {
-            const int w = r.getWidth() * jmax (34, GlyphArrangement::getStringWidthInt (FontOptions (12.0f), b->getButtonText()) + 16) / total;
+            const int w = b == buttons.getLast() ? r.getWidth()   // the last one takes what is left (no rounding gap)
+                                                 : full * jmax (34, GlyphArrangement::getStringWidthInt (FontOptions (12.0f), b->getButtonText()) + 16) / total;
             b->setBounds (r.removeFromLeft (w));
         }
     }

@@ -598,6 +598,12 @@ namespace DeviceEditors
             add ("Compressor", std::make_unique<DynamicsUI::CompressorPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::MultibandDynamics*> (&p))
             add ("Multiband", std::make_unique<DynamicsUI::MultibandPanel> (evs, *s));
+        else if (auto s = dynamic_cast<pulse::Reverb*> (&p))
+            add ("Reverb", std::make_unique<SpaceUI::ReverbPanel> (evs, *s));
+        else if (auto s = dynamic_cast<pulse::Delay*> (&p))
+            add ("Delay", std::make_unique<SpaceUI::DelayPanel> (evs, *s));
+        else if (auto s = dynamic_cast<pulse::Saturator*> (&p))
+            add ("Saturator", std::make_unique<SpaceUI::SaturatorPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::AutoFilter*> (&p))
         {
             using A = pulse::AutoFilter;
@@ -632,6 +638,7 @@ namespace DeviceEditors
     {
         return dynamic_cast<pulse::PrismEQ*> (&p) != nullptr || dynamic_cast<pulse::ProCompressor*> (&p) != nullptr
             || dynamic_cast<pulse::WavetableSynth*> (&p) != nullptr
+            || dynamic_cast<pulse::Reverb*> (&p) != nullptr || dynamic_cast<pulse::Delay*> (&p) != nullptr || dynamic_cast<pulse::Saturator*> (&p) != nullptr
             || dynamic_cast<pulse::MultibandDynamics*> (&p) != nullptr || dynamic_cast<pulse::Limiter*> (&p) != nullptr;
     }
 
