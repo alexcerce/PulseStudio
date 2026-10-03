@@ -343,6 +343,7 @@ namespace pulse
                pL4Rate, pL4Sync, pL4Shape, pL4Retrig,
                pMA, pMD, pMS, pMR,
                pDrive, pChorusMix, pChorusRate, pChorusDepth, pDelayMix, pDelayTime, pDelayFb, pReverbMix, pReverbSize,
+               pSemi1, pFine1,   // v0.54
                numParamsTotal };
         static inline const char* xmlTypeName = "pulseWavetable";
         static const char* getPluginName() { return "Wavetable"; }
@@ -429,6 +430,8 @@ namespace pulse
             add ("delayfb", "Delay Feedback", { 0.0f, 0.95f }, 0.35f, fmt::pct);
             add ("reverbmix", "Reverb", { 0.0f, 1.0f }, 0.0f, fmt::pct);
             add ("reverbsize", "Reverb Size", { 0.0f, 1.0f }, 0.6f, fmt::pct);
+            add ("semi1", "Osc 1 Semitones", { -24.0f, 24.0f, 1.0f }, 0.0f, fmt::st);
+            add ("fine1", "Osc 1 Fine", { -50.0f, 50.0f }, 0.0f, fmt::ct);
             jassert (numParams() == numParamsTotal);
 
             WavetableBank::get();   // build the tables now rather than on the audio thread
@@ -635,7 +638,7 @@ namespace pulse
 
         std::vector<Section> getSections() const override
         {
-            return { { "Osc 1", { pSet1, pPos1, pWarp1, pWarpAmt1 } }, { "Osc 2", { pSet2, pPos2, pSemi2, pFine2, pWarp2, pWarpAmt2 } },
+            return { { "Osc 1", { pSet1, pPos1, pSemi1, pFine1, pWarp1, pWarpAmt1 } }, { "Osc 2", { pSet2, pPos2, pSemi2, pFine2, pWarp2, pWarpAmt2 } },
                      { "Unison / Sub", { pMix, pVoices, pDetune, pSub } },
                      { "Filter", { pFilterType, pCutoff, pReso, pFilterEnv } },
                      { "Filter 2", { pF2Type, pF2Cutoff, pF2Reso, pF2Env, pRouting } },
@@ -708,7 +711,33 @@ namespace pulse
             }
         }
 
-        void afterBlock (AudioBuffer<float>& b, int start, int n) override { fx.process (*this, b, start, n); }
+        void afterBlock (AudioBuffer<float>& b, int start, int n) override
+        {
+            fx.process (*this, b, start, n);
+            // the output for the panel's scope and meter
+            const float* l = b.getReadPointer (0, start);
+            const float* r = b.getNumChannels() > 1 ? b.getReadPointer (1, start) : l;
+            float pl = outPeak[0].load() * 0.9f, pr = outPeak[1].load() * 0.9f;
+            int pos = scopePos.load();
+            for (int i = 0; i < n; ++i)
+            {
+                pl = jmax (pl, std::abs (l[i]));
+                pr = jmax (pr, std::abs (r[i]));
+                if ((scopeSkip++ & 1) == 0) { scope[(size_t) pos].store (0.5f * (l[i] + r[i])); pos = (pos + 1) % scopeSize; }
+            }
+            scopePos.store (pos);
+            outPeak[0].store (pl);
+            outPeak[1].store (pr);
+        }
+
+    public:
+        static constexpr int scopeSize = 1024;
+        std::array<std::atomic<float>, scopeSize> scope {};
+        std::atomic<int> scopePos { 0 };
+        std::array<std::atomic<float>, 2> outPeak {};
+
+    private:
+        int scopeSkip = 0;
 
         mutable SpinLock userLock;
         std::shared_ptr<const WavetableBank::UserTable> userTable, audioUserTable;
@@ -958,6 +987,7 @@ namespace pulse
                     const float mixV = mv (pMix);
                     const float oscGain[2] = { 1.0f - mixV, mixV };
                     const double osc2Ratio = std::pow (2.0, (mv (pSemi2) + mv (pFine2) / 100.0) / 12.0);
+                    const double osc1Ratio = std::pow (2.0, (mv (pSemi1) + mv (pFine1) / 100.0) / 12.0);
                     const float detune = mv (pDetune), sub = mv (pSub);
                     const float warpAmt[2] = { mv (pWarpAmt1), mv (pWarpAmt2) };
                     const float level = Decibels::decibelsToGain (mv (pLevel)) * (0.3f + 0.7f * velocity) * (1.0f + pressure * pressureAmt * 0.6f);
@@ -977,7 +1007,7 @@ namespace pulse
                     const float* t0[2]; const float* t1[2]; float frameFrac[2]; double inc[2][7];
                     for (int osc = 0; osc < 2; ++osc)
                     {
-                        const double of = osc == 0 ? f : f * osc2Ratio;
+                        const double of = osc == 0 ? f * osc1Ratio : f * osc2Ratio;
                         const float pos = jlimit (0.0f, 1.0f, basePos[osc] + lfo[0] * lfoPos * 0.5f) * (WavetableBank::numFrames - 1);
                         const int fr = jmin (WavetableBank::numFrames - 2, (int) pos);
                         frameFrac[osc] = pos - (float) fr;

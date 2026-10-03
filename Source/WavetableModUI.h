@@ -104,6 +104,91 @@ namespace WavetableUI
     };
 
     //==============================================================================
+    /** A route's amount: a bar from the centre (left is negative), drag sideways, double-click = 0. */
+    struct AmountBar : public Component
+    {
+        float value = 0.0f;
+        Colour colour { Theme::accent };
+        std::function<void()> onCommit;
+
+        AmountBar() { setMouseCursor (MouseCursor::LeftRightResizeCursor); }
+        void paint (Graphics& g) override
+        {
+            auto r = getLocalBounds().toFloat().reduced (0.5f, 3.0f);
+            g.setColour (Pro::deep());
+            g.fillRoundedRectangle (r, 4.0f);
+            const float cx = r.getCentreX(), x = cx + value * r.getWidth() * 0.5f;
+            g.setColour (colour.withAlpha (0.75f));
+            g.fillRoundedRectangle (Rectangle<float> (jmin (cx, x), r.getY() + 2.0f, std::abs (x - cx), r.getHeight() - 4.0f), 2.5f);
+            g.setColour (Theme::ink.withAlpha (0.25f));
+            g.drawVerticalLine ((int) cx, r.getY() + 2.0f, r.getBottom() - 2.0f);
+            g.setColour (Theme::ink.withAlpha (0.08f));
+            g.drawRoundedRectangle (r, 4.0f, 1.0f);
+            g.setColour (Theme::ink.withAlpha (0.92f));
+            g.setFont (FontOptions (11.0f, Font::bold));
+            g.drawText ((value > 0 ? "+" : "") + String (roundToInt (value * 100)) + "%", r, Justification::centred);
+        }
+        void mouseDown (const MouseEvent&) override { start = value; }
+        void mouseDrag (const MouseEvent& e) override
+        {
+            value = jlimit (-1.0f, 1.0f, start + e.getDistanceFromDragStartX() / (float) jmax (40, getWidth()) * (e.mods.isShiftDown() ? 0.4f : 2.0f));
+            value = std::round (value * 100.0f) / 100.0f;
+            repaint();
+        }
+        void mouseUp (const MouseEvent&) override { if (value != start && onCommit) onCommit(); }
+        void mouseDoubleClick (const MouseEvent&) override { value = 0.0f; repaint(); if (onCommit) onCommit(); }
+        void mouseWheelMove (const MouseEvent&, const MouseWheelDetails& w) override
+        {
+            value = jlimit (-1.0f, 1.0f, value + (w.deltaY > 0 ? 0.05f : -0.05f));
+            repaint();
+            if (onCommit) onCommit();
+        }
+        float start = 0.0f;
+    };
+
+    /** An LFO shape as a small picture (0 sine, 1 triangle, 2 saw up, 3 saw down, 4 square, 5 random, 6 drawn). */
+    struct ShapeButton : public Button
+    {
+        int shape;
+        Colour colour { Theme::accent };
+        ShapeButton (int s, const String& name) : Button (name), shape (s) { setTooltip (name); }
+        static float valueAt (int shape, float ph)
+        {
+            switch (shape)
+            {
+                case 0:  return std::sin (ph * MathConstants<float>::twoPi);
+                case 1:  return ph < 0.25f ? ph * 4.0f : ph < 0.75f ? 2.0f - ph * 4.0f : ph * 4.0f - 4.0f;
+                case 2:  return ph * 2.0f - 1.0f;
+                case 3:  return 1.0f - ph * 2.0f;
+                case 4:  return ph < 0.5f ? 1.0f : -1.0f;
+                case 5:  { const float v[] = { 0.3f, -0.7f, 0.9f, -0.2f, 0.6f, -0.9f }; return v[jlimit (0, 5, (int) (ph * 6.0f))]; }
+                default: { const float v[] = { 0.0f, 0.9f, 0.5f, 0.7f, -0.6f, -0.9f, -0.2f, 0.0f };
+                           const float x = ph * 7.0f; const int i = jlimit (0, 6, (int) x); return v[i] + (v[i + 1] - v[i]) * (x - (float) i); }
+            }
+        }
+        void paintButton (Graphics& g, bool over, bool) override
+        {
+            auto r = getLocalBounds().toFloat().reduced (1.0f);
+            const bool on = getToggleState();
+            g.setColour (on ? colour.withAlpha (0.22f) : Theme::ink.withAlpha (over ? 0.08f : 0.03f));
+            g.fillRoundedRectangle (r, 4.0f);
+            g.setColour (on ? colour : Theme::ink.withAlpha (0.08f));
+            g.drawRoundedRectangle (r, 4.0f, 1.0f);
+            auto a = r.reduced (jmax (5.0f, r.getWidth() * 0.2f), 6.0f);
+            Path p;
+            const int n = 40;
+            for (int i = 0; i <= n; ++i)
+            {
+                const float ph = jmin (0.9999f, i / (float) n);
+                const float x = a.getX() + a.getWidth() * i / (float) n, y = a.getCentreY() - valueAt (shape, ph) * a.getHeight() * 0.5f;
+                if (i == 0) p.startNewSubPath (x, y); else p.lineTo (x, y);
+            }
+            g.setColour (on ? colour.brighter (0.3f) : Theme::text.withAlpha (over ? 0.9f : 0.6f));
+            g.strokePath (p, PathStrokeType (1.5f, PathStrokeType::curved, PathStrokeType::rounded));
+        }
+    };
+
+    //==============================================================================
     /** The modulation matrix: one row per route (source, destination, amount, remove), plus the
         source chips to drag onto knobs. */
     class MatrixView : public Component, private Timer
@@ -120,7 +205,7 @@ namespace WavetableUI
             };
             addBtn.setTooltip ("Add a route (or drag a source chip onto a knob)");
             addAndMakeVisible (addBtn);
-            hint.setText ("Drag a source onto any knob, or add a route here. Right-click a knob to remove its modulation.", dontSendNotification);
+            hint.setText ("Drag a source onto a knob. Right-click a knob to clear it.", dontSendNotification);
             hint.setColour (Label::textColourId, Theme::muted);
             hint.setFont (FontOptions (11.0f));
             addAndMakeVisible (hint);
@@ -131,16 +216,12 @@ namespace WavetableUI
             startTimerHz (4);
         }
 
-        void paint (Graphics& g) override
-        {
-            auto b = getLocalBounds().toFloat().reduced (1.0f);
-            Graphs::panel (g, b);
-        }
+        void paint (Graphics&) override {}
 
         void resized() override
         {
-            auto r = getLocalBounds().reduced (8);
-            auto chipArea = r.removeFromTop (jmin (56, r.getHeight() / 3));
+            auto r = getLocalBounds();
+            auto chipArea = r.removeFromTop (jmin (52, r.getHeight() / 3));
             const int perRow = jmax (1, (int) std::ceil (chips.size() / 2.0));
             const int cw = chipArea.getWidth() / perRow, ch = chipArea.getHeight() / 2;
             for (int i = 0; i < chips.size(); ++i) chips[i]->setBounds (chipArea.getX() + (i % perRow) * cw, chipArea.getY() + (i / perRow) * ch, cw, ch);
@@ -167,24 +248,18 @@ namespace WavetableUI
                 for (int p = 0; p < w.numParams(); ++p)
                     if (w.isModulatable (p)) dest.addItem (w.param (p)->getParameterName(), p + 1);
                 dest.setSelectedId (rt.dest + 1, dontSendNotification);
-                amount.setSliderStyle (Slider::LinearBar);
-                amount.setRange (-1.0, 1.0, 0.01);
-                amount.setValue (rt.amount, dontSendNotification);
-                amount.setDoubleClickReturnValue (true, 0.0);
-                amount.textFromValueFunction = [] (double v) { return String (roundToInt (v * 100)) + "%"; };
-                amount.updateText();
-                amount.setColour (Slider::trackColourId, sourceColour (rt.source).withAlpha (0.6f));
+                amount.value = rt.amount;
+                amount.colour = sourceColour (rt.source);
                 auto commit = [this]
                 {
                     auto& ww = owner.synth;
                     ww.edit.getUndoManager().beginNewTransaction ("Change modulation");
                     const int d = dest.getSelectedId() - 1;
-                    if (d >= 0) ww.setRouteAt (index, src.getSelectedId(), ww.param (d)->paramID, (float) amount.getValue());
+                    if (d >= 0) ww.setRouteAt (index, src.getSelectedId(), ww.param (d)->paramID, amount.value);
                 };
                 src.onChange = commit;
                 dest.onChange = commit;
-                amount.onDragEnd = commit;
-                amount.onValueChange = [this, commit] { if (! amount.isMouseButtonDown()) commit(); };
+                amount.onCommit = commit;
                 remove.onClick = [this] { auto& ww = owner.synth; ww.edit.getUndoManager().beginNewTransaction ("Remove modulation"); ww.removeRoute (index); };
                 for (auto* c : std::initializer_list<Component*> { &src, &dest, &amount, &remove }) addAndMakeVisible (c);
             }
@@ -202,7 +277,7 @@ namespace WavetableUI
             MatrixView& owner;
             int index;
             ComboBox src, dest;
-            Slider amount;
+            AmountBar amount;
             TextButton remove { "x" };
         };
 
@@ -262,9 +337,8 @@ namespace WavetableUI
             }
             for (int s = 0; s < W::lfoShapes.size(); ++s)
             {
-                auto* b = shapes.add (new TextButton (W::lfoShapes[s]));
+                auto* b = shapes.add (new ShapeButton (s, W::lfoShapes[s]));
                 b->setClickingTogglesState (false);
-                b->setColour (TextButton::buttonOnColourId, Theme::accentDim);
                 b->onClick = [this, s]
                 {
                     synth.edit.getUndoManager().beginNewTransaction ("LFO shape");
@@ -285,7 +359,8 @@ namespace WavetableUI
             auto top = r.removeFromTop (22);
             const int tw = top.getWidth() / W::numLfos;
             for (auto* t : tabs) t->setBounds (top.removeFromLeft (tw).reduced (1, 0));
-            auto bottom = r.removeFromBottom (22);
+            r.removeFromTop (4);
+            auto bottom = r.removeFromBottom (26);
             const int sw = bottom.getWidth() / jmax (1, shapes.size());
             for (auto* s : shapes) s->setBounds (bottom.removeFromLeft (sw).reduced (1, 0));
             area = r.reduced (2, 6).toFloat();
@@ -293,10 +368,27 @@ namespace WavetableUI
 
         void paint (Graphics& g) override
         {
-            Graphs::panel (g, getLocalBounds().toFloat().reduced (1.0f));
             const auto c = sourceColour (current + 1);
-            g.setColour (Theme::ink.withAlpha (0.08f));
+            auto well = area.expanded (2.0f, 4.0f);
+            g.setColour (Pro::deep());
+            g.fillRoundedRectangle (well, 5.0f);
+            g.setColour (Theme::ink.withAlpha (0.06f));
+            g.drawRoundedRectangle (well, 5.0f, 1.0f);
+            for (int q = 1; q < 4; ++q)
+                g.drawVerticalLine ((int) (area.getX() + area.getWidth() * q / 4.0f), area.getY(), area.getBottom());
+            g.setColour (Theme::ink.withAlpha (0.1f));
             g.drawHorizontalLine ((int) area.getCentreY(), area.getX(), area.getRight());
+            for (auto* s : shapes) s->colour = c;
+            {
+                Path fill;
+                fill.startNewSubPath (area.getX(), area.getCentreY());
+                for (int i = 0; i <= (int) area.getWidth(); ++i)
+                    fill.lineTo (area.getX() + (float) i, area.getCentreY() - synth.lfoShape (current, i / area.getWidth(), 0.6f) * area.getHeight() * 0.45f);
+                fill.lineTo (area.getRight(), area.getCentreY());
+                fill.closeSubPath();
+                g.setColour (c.withAlpha (0.16f));
+                g.fillPath (fill);
+            }
             Path p;
             for (int i = 0; i <= (int) area.getWidth(); ++i)
             {
@@ -315,6 +407,11 @@ namespace WavetableUI
             const float x = area.getX() + (float) synth.lfoClockPhase (current) * area.getWidth();
             g.setColour (Theme::ink.withAlpha (0.5f));
             g.drawVerticalLine ((int) x, area.getY(), area.getBottom());
+            {
+                const float v = synth.lfoShape (current, synth.lfoClockPhase (current), 0.6f);
+                g.setColour (Colours::white);
+                g.fillEllipse (x - 3.5f, area.getCentreY() - v * area.getHeight() * 0.45f - 3.5f, 7.0f, 7.0f);
+            }
             String info = synth.param (synth.lfoParam (current, 1))->getCurrentValueAsString();
             if (synth.getInt (synth.lfoParam (current, 1)) == 0) info = synth.param (synth.lfoParam (current, 0))->getCurrentValueAsString();
             info << "   " << synth.param (synth.lfoParam (current, 3))->getCurrentValueAsString();
@@ -349,7 +446,8 @@ namespace WavetableUI
 
         W& synth;
         te::Plugin::Ptr holder;
-        OwnedArray<TextButton> tabs, shapes;
+        OwnedArray<TextButton> tabs;
+        OwnedArray<ShapeButton> shapes;
         Rectangle<float> area;
         int current = 0;
     };

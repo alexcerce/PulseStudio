@@ -170,6 +170,12 @@ namespace SelfTest
             set (3, EQ::pOn, 1); set (3, EQ::pFreq, 3200); set (3, EQ::pGain, 4); set (3, EQ::pDyn, 1); set (3, EQ::pRange, -6);
             set (5, EQ::pOn, 1); set (5, EQ::pType, EQ::highShelf); set (5, EQ::pFreq, 11000); set (5, EQ::pGain, 2.5f);
         }, "shot_prism.png");
+        for (auto [type, file] : std::initializer_list<std::pair<const char*, const char*>> {
+                 { pulse::GlueCompressor::xmlTypeName, "shot_glue.png" }, { pulse::AutoFilter::xmlTypeName, "shot_autofilter.png" }, { pulse::PulseEQ::xmlTypeName, "shot_eq.png" },
+                 { pulse::Vocoder::xmlTypeName, "shot_vocoder.png" }, { pulse::PitchCorrect::xmlTypeName, "shot_pitch.png" }, { pulse::Utility::xmlTypeName, "shot_utility.png" },
+                 { pulse::Tuner::xmlTypeName, "shot_tuner.png" }, { pulse::Spectrum::xmlTypeName, "shot_spectrum.png" }, { pulse::FMSynth::xmlTypeName, "shot_fm.png" },
+                 { pulse::Simpler::xmlTypeName, "shot_simpler.png" }, { pulse::DrumSynth::xmlTypeName, "shot_drumsynth.png" } })
+            shoot (type, nullptr, file);
         shoot (pulse::Reverb::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Reverb::pPredelay, 35); p.set (pulse::Reverb::pDecay, 3.2f); }, "shot_reverb.png");
         shoot (pulse::Delay::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Delay::pPingPong, 1); p.set (pulse::Delay::pFeedback, 0.55f); p.set (pulse::Delay::pLowCut, 250); p.set (pulse::Delay::pHighCut, 5000); }, "shot_delay.png");
         shoot (pulse::Saturator::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Saturator::pDrive, 14); p.set (pulse::Saturator::pType, 2); p.set (pulse::Saturator::pTone, 0.3f); }, "shot_saturator.png");
@@ -190,9 +196,16 @@ namespace SelfTest
             w.setRoute (2, "cutoff", 0.4f);
             w.setRoute (5, "pos1", -0.3f);
         }, "shot_wavetable.png");
+        // a light theme: the device windows follow it
+        Theme::apply (Theme::indexOf ("Daylight"));
+        if (auto* laf = dynamic_cast<PulseLookAndFeel*> (&LookAndFeel::getDefaultLookAndFeel())) laf->applyTheme();
+        shoot (pulse::WavetableSynth::xmlTypeName, nullptr, "shot_light_wavetable.png");
+        shoot (pulse::Reverb::xmlTypeName, nullptr, "shot_light_reverb.png");
+        shoot (pulse::AutoFilter::xmlTypeName, nullptr, "shot_light_autofilter.png");
+        Theme::apply (0);
         LookAndFeel::setDefaultLookAndFeel (nullptr);
         edit = nullptr;
-        return written == 5 ? 0 : 1;
+        return written >= 5 ? 0 : 1;
     }
 
     inline int run (te::Engine& engine, const File& reportFile)

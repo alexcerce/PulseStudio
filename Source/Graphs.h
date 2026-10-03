@@ -23,6 +23,14 @@ namespace Graphs
 
     inline void panel (Graphics& g, Rectangle<float> r)
     {
+        if (r.getHeight() >= 180.0f)   // big (in a device window): a deep well on the dark display area
+        {
+            g.setColour (Pro::well());
+            g.fillRoundedRectangle (r, 6.0f);
+            g.setColour (Theme::ink.withAlpha (0.06f));
+            g.drawRoundedRectangle (r.reduced (0.5f), 6.0f, 1.0f);
+            return;
+        }
         g.setGradientFill (ColourGradient (Theme::bg2, 0.0f, r.getY(), Theme::well, 0.0f, r.getBottom(), false));
         g.fillRoundedRectangle (r, 4.0f);
         g.setColour (Theme::line);
@@ -32,8 +40,9 @@ namespace Graphs
     /** The deep display background of the full editors (Prism EQ, dynamics). */
     inline void proDisplay (Graphics& g, Rectangle<float> r)
     {
-        g.setGradientFill (ColourGradient (Colour (0xff121720), r.getX(), r.getY(), Colour (0xff07090d), r.getX(), r.getBottom(), false));
+        g.setGradientFill (ColourGradient (Pro::dispTop(), r.getX(), r.getY(), Pro::dispBot(), r.getX(), r.getBottom(), false));
         g.fillRect (r);
+        if (Theme::isLight) return;
         g.setGradientFill (ColourGradient (Colours::transparentBlack, r.getCentreX(), r.getCentreY(), Colours::black.withAlpha (0.35f), r.getX(), r.getY(), true));
         g.fillRect (r);
     }

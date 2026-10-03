@@ -276,7 +276,7 @@ namespace PrismUI
                     g.setColour (c.withAlpha (0.25f));
                     g.fillEllipse (pnt.x - r - 5.0f, pnt.y - r - 5.0f, (r + 5.0f) * 2.0f, (r + 5.0f) * 2.0f);
                 }
-                g.setColour (Colours::black.withAlpha (0.55f));
+                g.setColour (Pro::shade (0.55f));
                 g.fillEllipse (pnt.x - r - 1.5f, pnt.y - r - 1.5f, (r + 1.5f) * 2.0f, (r + 1.5f) * 2.0f);
                 g.setColour (on ? c : c.withAlpha (0.25f));
                 g.fillEllipse (pnt.x - r, pnt.y - r, r * 2.0f, r * 2.0f);
@@ -740,13 +740,13 @@ namespace PrismUI
 
         void paint (Graphics& g) override
         {
-            g.fillAll (large ? Colour (0xff0b0d11) : Theme::panel);
+            g.fillAll (large ? Pro::bg() : Theme::panel);
             if (! large) return;
             // the global bar along the bottom
             auto bar = getLocalBounds().removeFromBottom (barHeight).toFloat();
-            g.setGradientFill (ColourGradient (Colour (0xff181c23), 0.0f, bar.getY(), Colour (0xff111419), 0.0f, bar.getBottom(), false));
+            g.setGradientFill (ColourGradient (Pro::barTop(), 0.0f, bar.getY(), Pro::barBot(), 0.0f, bar.getBottom(), false));
             g.fillRect (bar);
-            g.setColour (Colours::white.withAlpha (0.06f));
+            g.setColour (Theme::ink.withAlpha (0.06f));
             g.drawHorizontalLine ((int) bar.getY(), 0.0f, (float) getWidth());
         }
 
@@ -907,8 +907,8 @@ namespace PrismUI
             void paint (Graphics& g) override
             {
                 auto r = getLocalBounds().toFloat().reduced (1.0f);
-                DropShadow (Colours::black.withAlpha (0.6f), 18, { 0, 6 }).drawForRectangle (g, getLocalBounds().reduced (6));
-                g.setGradientFill (ColourGradient (Colour (0xf21d222b), 0.0f, r.getY(), Colour (0xf2151920), 0.0f, r.getBottom(), false));
+                DropShadow (Pro::shade (0.6f), 18, { 0, 6 }).drawForRectangle (g, getLocalBounds().reduced (6));
+                g.setGradientFill (ColourGradient (Pro::cardTop(), 0.0f, r.getY(), Pro::cardBot(), 0.0f, r.getBottom(), false));
                 g.fillRoundedRectangle (r, 8.0f);
                 g.setColour (colour.withAlpha (0.8f));
                 g.drawRoundedRectangle (r, 8.0f, 1.2f);

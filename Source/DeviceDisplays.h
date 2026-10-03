@@ -13,6 +13,7 @@ namespace DeviceDisplays
 {
     inline void paintPanel (Graphics& g, Rectangle<float> r)
     {
+        if (r.getHeight() >= 180.0f) { Graphs::panel (g, r); return; }
         g.setColour (Theme::bg);
         g.fillRoundedRectangle (r, 4.0f);
         g.setColour (Theme::line);

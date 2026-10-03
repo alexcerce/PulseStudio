@@ -349,7 +349,7 @@ namespace SpaceUI
             // live: the reverb's own output
             const float live = jlimit (-66.0f, 0.0f, rev.wetDb.load());
             auto m = Rectangle<float> (timeArea.getRight() + 14.0f, yDb (0), 8.0f, a.getBottom() - yDb (0));
-            g.setColour (Colours::black.withAlpha (0.4f));
+            g.setColour (Pro::shade (0.4f));
             g.fillRoundedRectangle (m, 2.0f);
             g.setColour (Theme::purple);
             g.fillRoundedRectangle (m.withTop (yDb (live)), 2.0f);
@@ -359,7 +359,7 @@ namespace SpaceUI
         {
             auto a = toneArea;
             areaTitle (g, a, "TAIL TONE");
-            g.setColour (Colours::black.withAlpha (0.3f));
+            g.setColour (Pro::shade (0.3f));
             g.fillRoundedRectangle (a.expanded (6.0f), 5.0f);
             freqGrid (g, a, true);
             for (float db : { 0.0f, -12.0f, -24.0f })
@@ -502,7 +502,7 @@ namespace SpaceUI
         {
             auto a = timeArea;
             areaTitle (g, a, "ECHOES", "drag the first echo: time   |   the second: feedback   |   wheel steps");
-            g.setColour (Colours::black.withAlpha (0.25f));
+            g.setColour (Pro::shade (0.25f));
             g.fillRoundedRectangle (a.expanded (4.0f), 5.0f);
             // the grid: beats when synced, otherwise tidy times
             const double bpm = del.lastBpm.load();
@@ -556,7 +556,7 @@ namespace SpaceUI
         {
             auto a = toneArea;
             areaTitle (g, a, "FEEDBACK TONE");
-            g.setColour (Colours::black.withAlpha (0.3f));
+            g.setColour (Pro::shade (0.3f));
             g.fillRoundedRectangle (a.expanded (6.0f), 5.0f);
             freqGrid (g, a, true);
             Path p, fill;
@@ -665,7 +665,7 @@ namespace SpaceUI
         {
             auto a = curveArea;
             areaTitle (g, a, "SHAPE", "drag: up drive, sideways bias");
-            g.setColour (Colours::black.withAlpha (0.3f));
+            g.setColour (Pro::shade (0.3f));
             g.fillRoundedRectangle (a.expanded (6.0f), 5.0f);
             for (float v : { -1.0f, -0.5f, 0.0f, 0.5f, 1.0f })
             {
@@ -696,7 +696,7 @@ namespace SpaceUI
         {
             auto a = waveArea;
             areaTitle (g, a, "WHAT IT DOES TO A SINE");
-            g.setColour (Colours::black.withAlpha (0.3f));
+            g.setColour (Pro::shade (0.3f));
             g.fillRoundedRectangle (a.expanded (6.0f), 5.0f);
             g.setColour (Theme::ink.withAlpha (0.08f));
             g.drawHorizontalLine ((int) a.getCentreY(), a.getX(), a.getRight());
@@ -720,7 +720,7 @@ namespace SpaceUI
         {
             auto a = toneArea;
             areaTitle (g, a, "TONE", "drag the point up for brighter");
-            g.setColour (Colours::black.withAlpha (0.3f));
+            g.setColour (Pro::shade (0.3f));
             g.fillRoundedRectangle (a.expanded (6.0f), 5.0f);
             freqGrid (g, a, true);
             g.setColour (Theme::ink.withAlpha (0.08f));

@@ -39,7 +39,7 @@ namespace DynamicsUI
         inP.lineTo (area.getRight(), area.getBottom()); inP.closeSubPath();
         outP.lineTo (area.getRight(), area.getBottom()); outP.closeSubPath();
         grP.lineTo (area.getRight(), area.getY()); grP.closeSubPath();
-        g.setColour (Colours::white.withAlpha (0.10f));
+        g.setColour (Theme::ink.withAlpha (0.10f));
         g.fillPath (inP);
         g.setGradientFill (ColourGradient (outCol.withAlpha (0.42f), 0.0f, area.getY(), outCol.withAlpha (0.06f), 0.0f, area.getBottom(), false));
         g.fillPath (outP);
@@ -104,7 +104,7 @@ namespace DynamicsUI
         void drawCurve (Graphics& g)
         {
             auto a = curveArea;
-            g.setColour (Colours::black.withAlpha (0.35f));
+            g.setColour (Pro::shade (0.35f));
             g.fillRoundedRectangle (a.expanded (4.0f), 4.0f);
             for (float db = -60; db <= 0; db += 12)
             {
@@ -638,7 +638,7 @@ namespace DynamicsUI
         int idealWidth() const { int w = 16; for (auto& i : items) w += i.width + 6; return w; }
         void paint (Graphics& g) override
         {
-            g.setColour (Colours::white.withAlpha (0.06f));
+            g.setColour (Theme::ink.withAlpha (0.06f));
             g.drawVerticalLine (getWidth() - 1, 6.0f, (float) getHeight() - 6.0f);
         }
         void resized() override
@@ -671,11 +671,11 @@ namespace DynamicsUI
         int stripHeight = 100;
         void paint (Graphics& g) override
         {
-            g.fillAll (Colour (0xff0b0d11));
+            g.fillAll (Pro::bg());
             auto bar = getLocalBounds().removeFromBottom (stripHeight + 8).toFloat();
-            g.setGradientFill (ColourGradient (Colour (0xff181c23), 0.0f, bar.getY(), Colour (0xff111419), 0.0f, bar.getBottom(), false));
+            g.setGradientFill (ColourGradient (Pro::barTop(), 0.0f, bar.getY(), Pro::barBot(), 0.0f, bar.getBottom(), false));
             g.fillRect (bar);
-            g.setColour (Colours::white.withAlpha (0.06f));
+            g.setColour (Theme::ink.withAlpha (0.06f));
             g.drawHorizontalLine ((int) bar.getY(), 0.0f, (float) getWidth());
         }
         void resized() override
@@ -753,8 +753,8 @@ namespace DynamicsUI
         void paint (Graphics& g) override
         {
             auto r = getLocalBounds().toFloat().reduced (1.0f);
-            DropShadow (Colours::black.withAlpha (0.6f), 18, { 0, 6 }).drawForRectangle (g, getLocalBounds().reduced (6));
-            g.setGradientFill (ColourGradient (Colour (0xf21d222b), 0.0f, r.getY(), Colour (0xf2151920), 0.0f, r.getBottom(), false));
+            DropShadow (Pro::shade (0.6f), 18, { 0, 6 }).drawForRectangle (g, getLocalBounds().reduced (6));
+            g.setGradientFill (ColourGradient (Pro::cardTop(), 0.0f, r.getY(), Pro::cardBot(), 0.0f, r.getBottom(), false));
             g.fillRoundedRectangle (r, 8.0f);
             g.setColour (colour.withAlpha (0.8f));
             g.drawRoundedRectangle (r, 8.0f, 1.2f);

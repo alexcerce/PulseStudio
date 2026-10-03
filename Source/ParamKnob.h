@@ -259,6 +259,8 @@ public:
         timerCallback();
     }
 
+    void setLabel (const String& t) { name.setText (t, dontSendNotification); }
+
     /** A good width for the buttons' labels. */
     int idealWidth() const
     {

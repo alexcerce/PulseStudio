@@ -190,3 +190,8 @@ when you start, touch it after each step, and delete it when you stop.
 - 2026-10-02: v0.53.0 graph-first full editors for Pulse Reverb, Pulse Delay and Saturator (SpaceDisplay.h: HandleView
   base with draggable handles, decay/echo/transfer graphs plus tone curves). Fixed ParamChoice button widths (the last
   buttons were squeezed). 216 checks pass.
+- 2026-10-03: v0.54.0 owner: "wavetable needs refinement, fix all effects to look like FabFilter". Wavetable panel reworked
+  (header menus, 2x2 knobs, osc 1 semi/fine, LFO shape icons, amount bars, FX groups, output scope). Generic device Editor
+  redesigned: displays fill the window, controls in a bottom bar (no folding). ProDisplays.h: SpectrumPro, TunerPro, PitchPro,
+  GlueNeedle, AutoFilterLfo. Pro:: palette in Common.h so device windows follow light themes. 216 checks pass.
+  Owner then said the Wavetable is still weak: next is a full overhaul with tabs and more sound features (v0.55).

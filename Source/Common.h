@@ -298,3 +298,19 @@ namespace StartupTimer
     inline std::function<void (const String&)>& status() { static std::function<void (const String&)> f; return f; }
     inline void save() { File::getSpecialLocation (File::tempDirectory).getChildFile ("pulse-startup.log").replaceWithText (lines().joinIntoString ("\n")); }
 }
+
+/** Surfaces of the device windows: deep and dark on dark themes, the theme's own on light ones. */
+namespace Pro
+{
+    inline Colour bg()      { return Theme::isLight ? Theme::bg     : Colour (0xff0b0d11); }
+    inline Colour barTop()  { return Theme::isLight ? Theme::panel  : Colour (0xff181c23); }
+    inline Colour barBot()  { return Theme::isLight ? Theme::panel2 : Colour (0xff111419); }
+    inline Colour cardTop() { return Theme::isLight ? Theme::panel  : Colour (0xff1b1f27); }
+    inline Colour cardBot() { return Theme::isLight ? Theme::bg2    : Colour (0xff13161c); }
+    inline Colour deep()    { return Theme::isLight ? Theme::well   : Colour (0xff0a0c10); }
+    inline Colour dispTop() { return Theme::isLight ? Theme::bg2    : Colour (0xff121720); }
+    inline Colour dispBot() { return Theme::isLight ? Theme::well   : Colour (0xff07090d); }
+    inline Colour well()    { return Colours::black.withAlpha (Theme::isLight ? 0.05f : 0.3f); }
+    /** A darkening overlay (wells, shadows): much lighter on light themes. */
+    inline Colour shade (float alpha) { return Colours::black.withAlpha (Theme::isLight ? alpha * 0.18f : alpha); }
+}
