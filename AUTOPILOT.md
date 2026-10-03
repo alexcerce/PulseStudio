@@ -203,3 +203,6 @@ when you start, touch it after each step, and delete it when you stop.
   15 new presets. 220 checks pass. MidiKeyboardState stays in the synth (unused by the UI, tested).
 - 2026-10-03: v0.56.0 EQ Six display: smooth analyser, glowing response curve filled to 0 dB, dB labels, band type as a menu.
   220 checks pass. Next ideas: FM Synth / Simpler / Drum Synth windows in the Wavetable's card style; LFO tabs as LineTabs.
+- 2026-10-03: v0.57.0 FM Synth window (FMPanel in DeviceEditor.h, same cards as the Wavetable): algorithm diagram,
+  wave preview, operator cards with draggable envelopes, filter, filter envelope, play. 221 checks pass.
+  Next ideas: Simpler and Drum Synth windows in the same style; device cards in the chain.

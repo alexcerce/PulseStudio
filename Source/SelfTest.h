@@ -4102,6 +4102,14 @@ namespace SelfTest
                        + ", drive " + String (drive0, 1) + " -> " + String (st.get (pulse::Saturator::pDrive), 1));
             rep.check (DeviceEditors::hasFullEditor (rv) && DeviceEditors::hasFullEditor (dl) && DeviceEditors::hasFullEditor (st),
                        "Reverb, Delay and Saturator open as full panels", {});
+            {
+                auto fp = make (pulse::FMSynth::xmlTypeName);
+                auto& fmSynth = *dynamic_cast<pulse::FMSynth*> (fp.get());
+                EditViewState fevs (*edit, sm);
+                DeviceEditors::FMPanel panel (fevs, fmSynth);
+                panel.setSize (1200, 780);
+                rep.check (DeviceEditors::hasFullEditor (fmSynth) && panel.numOperatorCards() == 4, "FM Synth opens as its own panel (algorithm, wave, four operators)", {});
+            }
         }
 
         // --- v0.52: arrangement overview (scrolling / zooming) ------------------------------------------------

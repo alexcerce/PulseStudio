@@ -1106,6 +1106,290 @@ namespace DeviceEditors
     };
 
     //==============================================================================
+    /** The FM synth's window: the algorithm as a diagram, the wave it makes, the four operators
+        (each with its envelope to drag), the filter with its envelope, and the output. */
+    class FMPanel : public Component
+    {
+    public:
+        using F = pulse::FMSynth;
+        using Card = WavetablePanel::Card;
+        static Colour opColour (int op)
+        {
+            const Colour c[] = { Colour (0xffffa94d), Colour (0xff4dabf7), Colour (0xff69db7c), Colour (0xffda77f2) };
+            return c[jlimit (0, 3, op)];
+        }
+
+        /** The algorithm: who modulates whom (carriers, which you hear, sit at the bottom). */
+        class AlgoView : public Component, private Timer
+        {
+        public:
+            explicit AlgoView (F& f) : holder (&f), fm (f) { startTimerHz (10); }
+            void paint (Graphics& g) override
+            {
+                auto b = getLocalBounds().toFloat().reduced (1.0f);
+                g.setColour (Pro::deep());
+                g.fillRoundedRectangle (b, 6.0f);
+                const auto& alg = F::algorithms()[(size_t) jlimit (0, (int) F::algorithms().size() - 1, fm.getInt (F::pAlgorithm))];
+                int depth[4] = { 0, 0, 0, 0 };
+                for (int pass = 0; pass < 4; ++pass)
+                    for (auto [from, to] : alg.mods) depth[from] = jmax (depth[from], depth[to] + 1);
+                int perRow[4] = { 0, 0, 0, 0 }, idx[4], maxDepth = 0;
+                for (int i = 0; i < 4; ++i) { idx[i] = perRow[depth[i]]++; maxDepth = jmax (maxDepth, depth[i]); }
+                auto a = b.reduced (16.0f, 26.0f);
+                const float bw = jmin (96.0f, a.getWidth() / 4.2f), bh = jmin (46.0f, a.getHeight() / 5.0f);
+                auto pos = [&] (int op)
+                {
+                    const float rowY = a.getBottom() - bh * 0.5f - (maxDepth > 0 ? depth[op] * (a.getHeight() - bh) / (float) jmax (1, maxDepth) : (a.getHeight() - bh) * 0.5f);
+                    const float x = a.getX() + a.getWidth() * (idx[op] + 1.0f) / (perRow[depth[op]] + 1.0f);
+                    return juce::Point<float> (x, rowY);
+                };
+                for (auto [from, to] : alg.mods)
+                {
+                    const auto p0 = pos (from), p1 = pos (to);
+                    Path line;
+                    line.startNewSubPath (p0.x, p0.y + bh * 0.5f);
+                    line.cubicTo (p0.x, (p0.y + p1.y) * 0.5f, p1.x, (p0.y + p1.y) * 0.5f, p1.x, p1.y - bh * 0.5f);
+                    g.setColour (opColour (from).withAlpha (0.25f + 0.6f * fm.get (F::opParam (from, F::kLevel))));
+                    g.strokePath (line, PathStrokeType (2.0f));
+                }
+                if (fm.get (F::pFeedback) > 0.001f)   // operator 4 feeds itself
+                {
+                    const auto c = pos (3);
+                    Path loop;
+                    loop.addCentredArc (c.x + bw * 0.5f, c.y - bh * 0.2f, 12.0f, 12.0f, 0.0f, -2.2f, 2.2f, true);
+                    g.setColour (opColour (3).withAlpha (0.3f + 0.7f * fm.get (F::pFeedback)));
+                    g.strokePath (loop, PathStrokeType (2.0f));
+                }
+                for (int op = 0; op < 4; ++op)
+                {
+                    const auto c = pos (op);
+                    const bool carrier = std::find (alg.outs.begin(), alg.outs.end(), op) != alg.outs.end();
+                    auto box = Rectangle<float> (bw, bh).withCentre (c);
+                    const auto col = opColour (op);
+                    g.setColour (Pro::cardTop());
+                    g.fillRoundedRectangle (box, 7.0f);
+                    g.setColour (col.withAlpha (0.12f + 0.3f * fm.get (F::opParam (op, F::kLevel))));
+                    g.fillRoundedRectangle (box, 7.0f);
+                    g.setColour (col);
+                    g.drawRoundedRectangle (box, 7.0f, carrier ? 2.0f : 1.2f);
+                    g.setColour (Theme::text);
+                    g.setFont (FontOptions (12.0f, Font::bold));
+                    g.drawText ("OP " + String (op + 1), box.withTrimmedBottom (bh * 0.42f), Justification::centred);
+                    g.setColour (Theme::muted);
+                    g.setFont (FontOptions (10.0f));
+                    g.drawText (fm.param (F::opParam (op, F::kRatio))->getCurrentValueAsString() + (carrier ? "  out" : ""), box.withTrimmedTop (bh * 0.5f), Justification::centred);
+                    if (carrier)
+                    {
+                        g.setColour (col.withAlpha (0.6f));
+                        g.drawLine (c.x, box.getBottom(), c.x, b.getBottom() - 8.0f, 2.0f);
+                    }
+                }
+                Graphs::label (g, "MODULATORS ABOVE, CARRIERS (HEARD) BELOW", b.reduced (10.0f, 6.0f).removeFromTop (12.0f), Justification::centredLeft, 0.6f);
+            }
+        private:
+            void timerCallback() override { repaint(); }
+            te::Plugin::Ptr holder;
+            F& fm;
+        };
+
+        /** Two cycles of the wave the current settings make at the top of the attack. */
+        class WaveView : public Component, private Timer
+        {
+        public:
+            explicit WaveView (F& f) : holder (&f), fm (f) { startTimerHz (10); }
+            void paint (Graphics& g) override
+            {
+                auto b = getLocalBounds().toFloat().reduced (1.0f);
+                g.setColour (Pro::deep());
+                g.fillRoundedRectangle (b, 6.0f);
+                auto a = b.reduced (12.0f, 14.0f);
+                g.setColour (Theme::ink.withAlpha (0.08f));
+                g.drawHorizontalLine ((int) a.getCentreY(), a.getX(), a.getRight());
+                const auto& alg = F::algorithms()[(size_t) jlimit (0, (int) F::algorithms().size() - 1, fm.getInt (F::pAlgorithm))];
+                constexpr int perCycle = 256, cycles = 6;
+                double phase[4] = { 0, 0, 0, 0 }, inc[4];
+                float level[4], out[4] = { 0, 0, 0, 0 }, fbState = 0.0f;
+                for (int i = 0; i < 4; ++i)
+                {
+                    inc[i] = fm.get (F::opParam (i, F::kRatio)) * std::pow (2.0, fm.get (F::opParam (i, F::kFine)) / 1200.0) / perCycle;
+                    level[i] = fm.get (F::opParam (i, F::kLevel));
+                }
+                const float fb = fm.get (F::pFeedback);
+                std::vector<float> ys;
+                float peak = 0.01f;
+                for (int n = 0; n < perCycle * cycles; ++n)
+                {
+                    float mod[4] = { 0, 0, 0, fbState * fb * 3.0f };
+                    for (int i = 4; --i >= 0;)
+                    {
+                        for (auto [from, to] : alg.mods) if (to == i) mod[i] += out[from] * 4.0f;
+                        out[i] = std::sin ((float) (MathConstants<double>::twoPi * phase[i]) + mod[i]) * level[i];
+                        phase[i] += inc[i];
+                    }
+                    fbState = 0.5f * (fbState + out[3]);
+                    float y = 0.0f;
+                    for (int c : alg.outs) y += out[c];
+                    if (n >= perCycle * (cycles - 2)) { ys.push_back (y); peak = jmax (peak, std::abs (y)); }
+                }
+                Path p, fill;
+                fill.startNewSubPath (a.getX(), a.getCentreY());
+                for (size_t i = 0; i < ys.size(); ++i)
+                {
+                    const float x = a.getX() + a.getWidth() * (float) i / (float) (ys.size() - 1), y = a.getCentreY() - ys[i] / peak * a.getHeight() * 0.46f;
+                    if (i == 0) p.startNewSubPath (x, y); else p.lineTo (x, y);
+                    fill.lineTo (x, y);
+                }
+                fill.lineTo (a.getRight(), a.getCentreY());
+                fill.closeSubPath();
+                g.setColour (Theme::orange.withAlpha (0.12f));
+                g.fillPath (fill);
+                Graphs::glowStroke (g, p, Theme::orange, 1.8f);
+            }
+        private:
+            void timerCallback() override { repaint(); }
+            te::Plugin::Ptr holder;
+            F& fm;
+        };
+
+        FMPanel (EditViewState& e, F& f) : evs (e), fm (f), holder (&f)
+        {
+            using EG = Graphs::EnvelopeGraph;
+            using L = std::initializer_list<std::pair<int, const char*>>;
+            auto card = [this] (const String& t, Colour c) { auto* k = cards.add (new Card (t, c)); addAndMakeVisible (k); return k; };
+            const auto filt = Colour (0xffff6b6b), out = Colour (0xff748ffc);
+            cAlgo = card ("ALGORITHM", Theme::orange);
+            algo = std::make_unique<AlgoView> (f); cAlgo->addAndMakeVisible (*algo);
+            algoBox = combo (*cAlgo, F::pAlgorithm);
+            for (auto* b : { &prevAlgo, &nextAlgo })
+            {
+                cAlgo->addAndMakeVisible (b);
+                b->onClick = [this, b]
+                {
+                    fm.edit.getUndoManager().beginNewTransaction ("Algorithm");
+                    const int n = (int) F::algorithms().size();
+                    Graphs::setValue (fm.param (F::pAlgorithm), (float) ((fm.getInt (F::pAlgorithm) + (b == &nextAlgo ? 1 : n - 1)) % n));
+                };
+            }
+            feedback = knob (*cAlgo, F::pFeedback, "Feedback (op 4)", opColour (3));
+            cWave = card ("THE WAVE IT MAKES", Theme::orange);
+            wave = std::make_unique<WaveView> (f); cWave->addAndMakeVisible (*wave);
+            for (int op = 0; op < F::numOps; ++op)
+            {
+                auto* o = ops.add (new Op());
+                o->card = card ("OPERATOR " + String (op + 1), opColour (op));
+                o->env = std::make_unique<EG> (std::vector<EG::Env> { { f.param (F::opParam (op, F::kA)), f.param (F::opParam (op, F::kD)), f.param (F::opParam (op, F::kS)),
+                                                                        f.param (F::opParam (op, F::kR)), opColour (op), "OP " + String (op + 1) } });
+                o->card->addAndMakeVisible (*o->env);
+                for (auto [k, l] : L { { F::kRatio, "Ratio" }, { F::kFine, "Fine" }, { F::kLevel, "Level" } }) o->knobs.add (knob (*o->card, F::opParam (op, k), l, opColour (op)));
+            }
+            cFilter = card ("FILTER", filt);
+            filterGraph = std::make_unique<Graphs::FilterGraph> (f.param (F::pCutoff), f.param (F::pReso), nullptr, nullptr, filt, f.param (F::pFEnv));
+            cFilter->addAndMakeVisible (*filterGraph);
+            for (auto [pi, l] : L { { F::pCutoff, "Cutoff" }, { F::pReso, "Resonance" }, { F::pFEnv, "Envelope" } }) knobsFilter.add (knob (*cFilter, pi, l, filt));
+            cFEnv = card ("FILTER ENVELOPE", filt);
+            fenvGraph = std::make_unique<EG> (std::vector<EG::Env> { { f.param (F::pFA), f.param (F::pFD), f.param (F::pFS), f.param (F::pFR), filt, "FILTER" } });
+            cFEnv->addAndMakeVisible (*fenvGraph);
+            for (auto [pi, l] : L { { F::pFA, "Attack" }, { F::pFD, "Decay" }, { F::pFS, "Sustain" }, { F::pFR, "Release" } }) knobsFEnv.add (knob (*cFEnv, pi, l, filt));
+            cOut = card ("PLAY", out);
+            for (auto [pi, l] : L { { F::pVelSens, "Velocity" }, { F::pGlide, "Glide" }, { F::pVolume, "Volume" } }) knobsOut.add (knob (*cOut, pi, l, out));
+        }
+
+        int numOperatorCards() const { return ops.size(); }
+
+        void paint (Graphics& g) override { g.fillAll (Pro::bg()); }
+
+        void resized() override
+        {
+            const int gap = 8;
+            auto a = getLocalBounds().reduced (8);
+            auto col1 = a.removeFromLeft (a.getWidth() * 30 / 100); a.removeFromLeft (gap);
+            auto col3 = a.removeFromRight (a.getWidth() * 40 / 100); a.removeFromRight (gap);
+            auto col2 = a;
+
+            cAlgo->setBounds (col1.removeFromTop (col1.getHeight() * 58 / 100)); col1.removeFromTop (gap);
+            cWave->setBounds (col1);
+            {
+                auto head = cAlgo->header();
+                nextAlgo.setBounds (head.removeFromRight (28));
+                head.removeFromRight (4);
+                prevAlgo.setBounds (head.removeFromRight (28));
+                head.removeFromRight (6);
+                algoBox->setBounds (head.removeFromRight (jmin (150, head.getWidth())));
+                auto c = cAlgo->content();
+                feedback->setBounds (c.removeFromBottom (90).withSizeKeepingCentre (110, 88));
+                c.removeFromBottom (4);
+                algo->setBounds (c);
+            }
+            wave->setBounds (cWave->content());
+
+            const int oh = (col2.getHeight() - gap * (ops.size() - 1)) / jmax (1, ops.size());
+            for (auto* o : ops)
+            {
+                o->card->setBounds (col2.removeFromTop (oh)); col2.removeFromTop (gap);
+                auto c = o->card->content();
+                WavetablePanel::placeKnobs (c.removeFromRight (jmin (260, c.getWidth() * 50 / 100)), o->knobs);
+                c.removeFromRight (6);
+                o->env->setBounds (c);
+            }
+
+            auto graphAndKnobs = [] (Card& cd, Component& graph, Array<ParamKnob*>& ks)
+            {
+                auto c = cd.content();
+                WavetablePanel::placeKnobs (c.removeFromBottom (jmin (88, c.getHeight() * 45 / 100)), ks);
+                c.removeFromBottom (4);
+                graph.setBounds (c);
+            };
+            const int big = (col3.getHeight() - 2 * gap) * 38 / 100;
+            cFilter->setBounds (col3.removeFromTop (big)); col3.removeFromTop (gap);
+            cFEnv->setBounds (col3.removeFromTop (big)); col3.removeFromTop (gap);
+            cOut->setBounds (col3);
+            graphAndKnobs (*cFilter, *filterGraph, knobsFilter);
+            graphAndKnobs (*cFEnv, *fenvGraph, knobsFEnv);
+            WavetablePanel::placeKnobs (cOut->content(), knobsOut, 0, 96, 100);
+        }
+
+    private:
+        struct Op
+        {
+            Card* card = nullptr;
+            std::unique_ptr<Graphs::EnvelopeGraph> env;
+            Array<ParamKnob*> knobs;
+        };
+        ParamKnob* knob (Card& c, int pi, const char* label, Colour col)
+        {
+            auto* k = new ParamKnob (evs, *fm.param (pi));
+            k->setLabel (label);
+            k->setCompact (col);
+            owned.add (k);
+            c.addAndMakeVisible (k);
+            return k;
+        }
+        ParamCombo* combo (Card& c, int pi)
+        {
+            auto* cb = new ParamCombo (*fm.param (pi), false);
+            owned.add (cb);
+            c.addAndMakeVisible (cb);
+            return cb;
+        }
+
+        EditViewState& evs;
+        F& fm;
+        te::Plugin::Ptr holder;
+        OwnedArray<Card> cards;
+        OwnedArray<Component> owned;
+        OwnedArray<Op> ops;
+        Card *cAlgo = nullptr, *cWave = nullptr, *cFilter = nullptr, *cFEnv = nullptr, *cOut = nullptr;
+        std::unique_ptr<AlgoView> algo;
+        std::unique_ptr<WaveView> wave;
+        std::unique_ptr<Graphs::FilterGraph> filterGraph;
+        std::unique_ptr<Graphs::EnvelopeGraph> fenvGraph;
+        ParamCombo* algoBox = nullptr;
+        ParamKnob* feedback = nullptr;
+        TextButton prevAlgo { "<" }, nextAlgo { ">" };
+        Array<ParamKnob*> knobsFilter, knobsFEnv, knobsOut;
+    };
+
+    //==============================================================================
     using Graph = std::pair<String, std::unique_ptr<Component>>;
 
     /** Every view of a device, big. */
@@ -1128,18 +1412,7 @@ namespace DeviceEditors
                                      { s->param (S::pFA), s->param (S::pFD), s->param (S::pFS), s->param (S::pFR), Theme::orange, "FILTER" } }));
         }
         else if (auto s = dynamic_cast<pulse::FMSynth*> (&p))
-        {
-            using F = pulse::FMSynth;
-            add ("Algorithm", std::make_unique<DeviceDisplays::FMDisplay> (*s));
-            std::vector<EG::Env> ops;
-            const Colour cols[] = { Theme::orange, Theme::accent, Colour (0xff69db7c), Theme::purple };
-            for (int op = 0; op < F::numOps; ++op)
-                ops.push_back ({ s->param (F::opParam (op, F::kA)), s->param (F::opParam (op, F::kD)), s->param (F::opParam (op, F::kS)),
-                                 s->param (F::opParam (op, F::kR)), cols[op], "OP " + String (op + 1) });
-            add ("Operator envelopes", env (ops));
-            add ("Filter", std::make_unique<Graphs::FilterGraph> (s->param (F::pCutoff), s->param (F::pReso), nullptr, nullptr, Theme::orange, s->param (F::pFEnv)));
-            add ("Filter envelope", env ({ { s->param (F::pFA), s->param (F::pFD), s->param (F::pFS), s->param (F::pFR), Theme::orange, "FILTER" } }));
-        }
+            add ("FM Synth", std::make_unique<FMPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::DrumSynth*> (&p))
             add ("Hits", std::make_unique<DrumHitsView> (*s));
         else if (auto s = dynamic_cast<pulse::GlueCompressor*> (&p))
@@ -1200,6 +1473,7 @@ namespace DeviceEditors
     {
         return dynamic_cast<pulse::PrismEQ*> (&p) != nullptr || dynamic_cast<pulse::ProCompressor*> (&p) != nullptr
             || dynamic_cast<pulse::WavetableSynth*> (&p) != nullptr
+            || dynamic_cast<pulse::FMSynth*> (&p) != nullptr
             || dynamic_cast<pulse::Reverb*> (&p) != nullptr || dynamic_cast<pulse::Delay*> (&p) != nullptr || dynamic_cast<pulse::Saturator*> (&p) != nullptr
             || dynamic_cast<pulse::MultibandDynamics*> (&p) != nullptr || dynamic_cast<pulse::Limiter*> (&p) != nullptr;
     }
@@ -1332,7 +1606,7 @@ namespace DeviceEditors
                 m.showMenuAsync (PopupMenu::Options().withTargetComponent (&presetBtn));
             };
             addAndMakeVisible (presetBtn);
-            if (dynamic_cast<pulse::WavetableSynth*> (&p) != nullptr) setSize (1280, 860); else setSize (1100, 760);
+            if (dynamic_cast<pulse::WavetableSynth*> (&p) != nullptr || dynamic_cast<pulse::FMSynth*> (&p) != nullptr) setSize (1280, 860); else setSize (1100, 760);
         }
 
         void paint (Graphics& g) override
