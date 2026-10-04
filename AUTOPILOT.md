@@ -206,3 +206,8 @@ when you start, touch it after each step, and delete it when you stop.
 - 2026-10-03: v0.57.0 FM Synth window (FMPanel in DeviceEditor.h, same cards as the Wavetable): algorithm diagram,
   wave preview, operator cards with draggable envelopes, filter, filter envelope, play. 221 checks pass.
   Next ideas: Simpler and Drum Synth windows in the same style; device cards in the chain.
+- 2026-10-04: v0.58.0 owner: "don't take any functionality away" + "cutoff knob should show where the envelope moves it".
+  FM operator cards have A/D/S/R knobs again; Wavetable LFO card has LFO 1 > Position / Cutoff back. ModDrop::sweep
+  (installed in WavetableUI::installModDrop) gives every cutoff knob an outer arc for the envelope / LFO range
+  (Wavetable F1 + F2, FM, Simpler, Auto Filter). Self-test walks the Wavetable and FM windows and fails if any
+  parameter has no control. 223 checks pass. RULE: new windows must keep a control for every parameter.

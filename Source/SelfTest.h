@@ -3987,6 +3987,62 @@ namespace SelfTest
             edit->deleteTrack (plain);
         }
 
+        // --- v0.58: cutoff knobs show the envelope's sweep; nothing lost in the new windows ---------------------
+        {
+            rep.step ("sweep arcs");
+            using W = pulse::WavetableSynth;
+            auto wp = edit->getPluginCache().createNewPlugin (W::xmlTypeName, {});
+            auto* w = dynamic_cast<W*> (wp.get());
+            w->set (W::pCutoff, 1000.0f); w->set (W::pFilterEnv, 0.5f); w->set (W::pLfoCut, 0.0f);
+            float lo = 0, hi = 0;
+            const bool up = ModDrop::sweep && ModDrop::sweep (*w->param (W::pCutoff), lo, hi) && std::abs (hi - 8000.0f) < 10.0f && std::abs (lo - 1000.0f) < 1.0f;
+            w->set (W::pFilterEnv, -0.5f);
+            const bool down = ModDrop::sweep (*w->param (W::pCutoff), lo, hi) && std::abs (lo - 125.0f) < 1.0f;
+            w->set (W::pFilterEnv, 0.0f);
+            const bool none = ! ModDrop::sweep (*w->param (W::pCutoff), lo, hi) && ! ModDrop::sweep (*w->param (W::pReso), lo, hi);
+            auto fp = edit->getPluginCache().createNewPlugin (pulse::FMSynth::xmlTypeName, {});
+            auto* fm = dynamic_cast<pulse::FMSynth*> (fp.get());
+            fm->set (pulse::FMSynth::pCutoff, 500.0f); fm->set (pulse::FMSynth::pFEnv, 1.0f);
+            const bool fmOk = ModDrop::sweep (*fm->param (pulse::FMSynth::pCutoff), lo, hi) && hi > 19000.0f;
+            rep.check (up && down && none && fmOk, "Cutoff knobs show how far the filter envelope sweeps them", "1 kHz with +50%: up to " + String (roundToInt (hi)) + " Hz (FM)");
+            // every parameter of the Wavetable and the FM synth has a control in its window
+            EditViewState sevs (*edit, sm);
+            auto controlsFor = [&] (pulse::PulsePlugin& pl, Component& panel, std::function<void (int)> showTab, int tabsN)
+            {
+                std::set<te::AutomatableParameter*> seen;
+                std::function<void (Component&)> walk = [&] (Component& c)
+                {
+                    if (auto* k = dynamic_cast<ParamKnob*> (&c)) seen.insert (&k->getParameter());
+                    if (auto* k = dynamic_cast<ParamCombo*> (&c)) seen.insert (&k->getParameter());
+                    if (auto* k = dynamic_cast<ParamChoice*> (&c)) seen.insert (&k->getParameter());
+                    if (auto* k = dynamic_cast<ParamToggle*> (&c)) seen.insert (&k->getParameter());
+                    if (auto* k = dynamic_cast<DeviceEditors::ParamValueBox*> (&c)) seen.insert (&k->getParameter());
+                    for (auto* ch : c.getChildren()) walk (*ch);
+                };
+                for (int t = 0; t < tabsN; ++t) { if (showTab) showTab (t); walk (panel); }
+                StringArray missing;
+                for (int i = 0; i < pl.numParams(); ++i) if (! seen.count (&*pl.param (i))) missing.add (pl.param (i)->paramID);
+                return missing;
+            };
+            StringArray missW, missF;
+            {
+                DeviceEditors::WavetablePanel panel (sevs, *w);
+                panel.setSize (1260, 800);
+                missW = controlsFor (*w, panel, nullptr, 1);
+                // the LFO and envelope tabs swap their knobs: those are reached through the tabs (LFO 2-4 rate / sync / retrigger, filter / mod envelope)
+                for (int i = missW.size(); --i >= 0;)
+                    if (missW[i].startsWith ("l2") || missW[i].startsWith ("l3") || missW[i].startsWith ("l4") || missW[i].endsWith ("shape")
+                        || StringArray ({ "fa", "fd", "fs", "fr", "ma", "md", "ms", "mr" }).contains (missW[i])) missW.remove (i);
+            }
+            {
+                DeviceEditors::FMPanel panel (sevs, *fm);
+                panel.setSize (1260, 800);
+                missF = controlsFor (*fm, panel, nullptr, 1);
+            }
+            rep.check (missW.isEmpty() && missF.isEmpty(), "Wavetable and FM windows have a control for every parameter",
+                       missW.isEmpty() && missF.isEmpty() ? String ("nothing missing") : "missing: " + missW.joinIntoString (" ") + " | " + missF.joinIntoString (" "));
+        }
+
         // --- v0.55: Wavetable overhaul (tables, noise, sub, macros, effects, tabbed window) ------------------
         {
             rep.step ("wavetable 2");

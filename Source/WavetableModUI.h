@@ -29,6 +29,43 @@ namespace WavetableUI
         {
             if (auto* w = dynamic_cast<W*> (&p)) w->setRoute (source, dest, amount);
         };
+        // cutoff knobs show how far the filter envelope (and a built-in LFO) takes them
+        ModDrop::sweep = [] (te::AutomatableParameter& p, float& lo, float& hi)
+        {
+            auto* pl = dynamic_cast<pulse::PulsePlugin*> (p.getPlugin());
+            if (pl == nullptr) return false;
+            auto is = [&] (int index) -> bool { return &*pl->param (index) == &p; };
+            float down = 0.0f, up = 0.0f;   // octaves below and above
+            auto env = [&] (float amount, float octaves) { (amount < 0 ? down : up) += std::abs (amount) * octaves; };
+            if (auto* w = dynamic_cast<W*> (pl))
+            {
+                if (is (W::pCutoff))        { env (w->get (W::pFilterEnv), 6.0f); down += w->get (W::pLfoCut) * 3.0f; up += w->get (W::pLfoCut) * 3.0f; }
+                else if (is (W::pF2Cutoff)) env (w->get (W::pF2Env), 6.0f);
+                else return false;
+            }
+            else if (auto* f = dynamic_cast<pulse::FMSynth*> (pl))
+            {
+                if (! is (pulse::FMSynth::pCutoff)) return false;
+                env (f->get (pulse::FMSynth::pFEnv), 6.0f);
+            }
+            else if (auto* sm = dynamic_cast<pulse::Simpler*> (pl))
+            {
+                if (! is (pulse::Simpler::pCutoff) || sm->getInt (pulse::Simpler::pFilterType) == 0) return false;
+                env (sm->get (pulse::Simpler::pFEnv), 6.0f);
+            }
+            else if (auto* af = dynamic_cast<pulse::AutoFilter*> (pl))
+            {
+                if (! is (pulse::AutoFilter::pCutoff)) return false;
+                env (af->get (pulse::AutoFilter::pEnvAmount), 5.0f);
+                down += af->get (pulse::AutoFilter::pLfoAmount) * 4.0f; up += af->get (pulse::AutoFilter::pLfoAmount) * 4.0f;
+            }
+            else return false;
+            if (down < 0.01f && up < 0.01f) return false;
+            const float v = p.getCurrentBaseValue();
+            lo = v * std::pow (2.0f, -down);
+            hi = v * std::pow (2.0f, up);
+            return true;
+        };
         ModDrop::accepts = [] (te::AutomatableParameter& p)
         {
             auto* w = dynamic_cast<W*> (p.getPlugin());

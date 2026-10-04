@@ -379,6 +379,7 @@ namespace DeviceEditors
     class ParamValueBox : public Component, private Timer
     {
     public:
+        te::AutomatableParameter& getParameter() const { return *param; }
         ParamValueBox (te::AutomatableParameter& p, const String& l, Colour c) : param (&p), label (l), colour (c)
         {
             setMouseCursor (MouseCursor::UpDownResizeCursor);
@@ -748,6 +749,7 @@ namespace DeviceEditors
             lfoView = std::make_unique<WavetableUI::LfoView> (w);
             lfoView->onSelect = [this] (int l) { showLfo (l); };
             cLfo->addAndMakeVisible (*lfoView);
+            for (auto [pi, l] : L { { W::pLfoPos, "LFO 1 > Position" }, { W::pLfoCut, "LFO 1 > Cutoff" } }) knobsLfo1.add (knob (*cLfo, pi, l, WavetableUI::sourceColour (1)));
 
             // ---- effects page
             struct FxDef { const char* name; FxDisplay::Kind kind; Colour c; std::vector<std::pair<int, const char*>> knobs; int comboParam; int choiceParam; };
@@ -945,17 +947,22 @@ namespace DeviceEditors
                 }
                 {
                     auto c = cLfo->content();
+                    auto opts = c.removeFromBottom (48);
+                    c.removeFromBottom (2);
                     auto row = c.removeFromBottom (86);
                     c.removeFromBottom (4);
                     lfoView->setBounds (c);
+                    // the rate, and LFO 1's built-in depths (kept from earlier versions)
+                    Array<ParamKnob*> rowKnobs;
+                    if (lfoKnobs.size() == 3) rowKnobs.add (dynamic_cast<ParamKnob*> (lfoKnobs[0]));
+                    rowKnobs.addArray (knobsLfo1);
+                    rowKnobs.removeAllInstancesOf (nullptr);
+                    placeKnobs (row, rowKnobs, 0, 104, 86);
                     if (lfoKnobs.size() == 3)
                     {
-                        lfoKnobs[0]->setBounds (row.removeFromLeft (90).withSizeKeepingCentre (84, jmin (86, row.getHeight())));
-                        row.removeFromLeft (8);
-                        auto right = row.withSizeKeepingCentre (row.getWidth(), 76);
-                        lfoKnobs[1]->setBounds (right.removeFromTop (44));
-                        right.removeFromTop (4);
-                        lfoKnobs[2]->setBounds (right.removeFromTop (26));
+                        lfoKnobs[1]->setBounds (opts.removeFromLeft (opts.getWidth() / 2 - 3));
+                        opts.removeFromLeft (6);
+                        lfoKnobs[2]->setBounds (opts.withTrimmedTop (16).withHeight (28));
                     }
                 }
             }
@@ -1098,7 +1105,7 @@ namespace DeviceEditors
         std::unique_ptr<WavetableUI::MatrixView> matrix;
         std::unique_ptr<SourceMeters> meters;
         std::unique_ptr<DeviceDisplays::WaveDrawEditor> drawEditor;
-        Array<ParamKnob*> knobsA, knobsB, knobsNoise, knobsUni, knobsF1, knobsF2, envKnobs, knobsVoice;
+        Array<ParamKnob*> knobsA, knobsB, knobsNoise, knobsUni, knobsF1, knobsF2, envKnobs, knobsVoice, knobsLfo1;
         Array<ParamValueBox*> boxesA, boxesB;
         Array<Component*> lfoKnobs;
         OwnedArray<LineTab> envTabs;
@@ -1280,7 +1287,7 @@ namespace DeviceEditors
                 o->env = std::make_unique<EG> (std::vector<EG::Env> { { f.param (F::opParam (op, F::kA)), f.param (F::opParam (op, F::kD)), f.param (F::opParam (op, F::kS)),
                                                                         f.param (F::opParam (op, F::kR)), opColour (op), "OP " + String (op + 1) } });
                 o->card->addAndMakeVisible (*o->env);
-                for (auto [k, l] : L { { F::kRatio, "Ratio" }, { F::kFine, "Fine" }, { F::kLevel, "Level" } }) o->knobs.add (knob (*o->card, F::opParam (op, k), l, opColour (op)));
+                for (auto [k, l] : L { { F::kRatio, "Ratio" }, { F::kFine, "Fine" }, { F::kLevel, "Level" }, { F::kA, "Attack" }, { F::kD, "Decay" }, { F::kS, "Sustain" }, { F::kR, "Release" } }) o->knobs.add (knob (*o->card, F::opParam (op, k), l, opColour (op)));
             }
             cFilter = card ("FILTER", filt);
             filterGraph = std::make_unique<Graphs::FilterGraph> (f.param (F::pCutoff), f.param (F::pReso), nullptr, nullptr, filt, f.param (F::pFEnv));
@@ -1327,7 +1334,8 @@ namespace DeviceEditors
             {
                 o->card->setBounds (col2.removeFromTop (oh)); col2.removeFromTop (gap);
                 auto c = o->card->content();
-                WavetablePanel::placeKnobs (c.removeFromRight (jmin (260, c.getWidth() * 50 / 100)), o->knobs);
+                // ratio, fine and level in a column of the grid; attack, decay, sustain, release as knobs too (the graph drags them as well)
+                WavetablePanel::placeKnobs (c.removeFromRight (jmin (300, c.getWidth() * 60 / 100)), o->knobs, 4, 76, 76);
                 c.removeFromRight (6);
                 o->env->setBounds (c);
             }

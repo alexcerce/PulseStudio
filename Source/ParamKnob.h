@@ -12,6 +12,10 @@
     sources can be dropped onto its knobs ("PulseMod:<source index>") and the knobs show the depth. */
 namespace ModDrop
 {
+    /** Where something built into the device (a filter envelope, an LFO) sweeps this parameter:
+        the lowest and highest value it reaches, in the parameter's own units. False = nothing. */
+    inline std::function<bool (te::AutomatableParameter&, float& lo, float& hi)> sweep;
+
     inline const String prefix { "PulseMod:" };
     inline std::function<bool (te::AutomatableParameter&)> accepts;                    // can this knob be modulated?
     inline std::function<void (te::AutomatableParameter&, int source)> drop;            // add a route
@@ -27,6 +31,7 @@ class ParamKnob : public Component,
                   private Timer
 {
 public:
+    te::AutomatableParameter& getParameter() const { return *param; }
     ParamKnob (EditViewState& e, te::AutomatableParameter& p, bool showName = true) : evs (e), param (&p)
     {
         auto range = p.getValueRange();
@@ -110,6 +115,31 @@ public:
             arc.addCentredArc (b.getCentreX(), b.getCentreY(), r, r, 0.0f, jmin (a0, a1), jmax (a0, a1), true);
             g.setColour (Theme::green);
             g.strokePath (arc, PathStrokeType (2.5f, PathStrokeType::curved, PathStrokeType::rounded));
+        }
+        if (float lo = 0, hi = 0; ModDrop::sweep && ModDrop::sweep (*param, lo, hi))
+        {
+            // the range an envelope or LFO moves this value over, as a thin arc outside the knob's ring
+            auto b = slider.getBounds().toFloat().reduced (3.0f);
+            const float r = jmin (b.getWidth(), b.getHeight()) * 0.5f + 3.5f;
+            auto rp = slider.getRotaryParameters();
+            const float span = rp.endAngleRadians - rp.startAngleRadians;
+            const auto& range = param->valueRange;
+            const float n0 = range.convertTo0to1 (jlimit (range.start, range.end, lo)), n1 = range.convertTo0to1 (jlimit (range.start, range.end, hi));
+            if (std::abs (n1 - n0) > 0.004f)
+            {
+                Path arc;
+                arc.addCentredArc (b.getCentreX(), b.getCentreY(), r, r, 0.0f, rp.startAngleRadians + jmin (n0, n1) * span, rp.startAngleRadians + jmax (n0, n1) * span, true);
+                const auto c = slider.findColour (Slider::rotarySliderFillColourId).brighter (0.6f);
+                g.setColour (c.withAlpha (0.25f));
+                g.strokePath (arc, PathStrokeType (5.0f, PathStrokeType::curved, PathStrokeType::rounded));
+                g.setColour (c);
+                g.strokePath (arc, PathStrokeType (2.0f, PathStrokeType::curved, PathStrokeType::rounded));
+                // a dot at the far end (where the envelope takes it)
+                const float cur = param->getCurrentNormalisedValue();
+                const float far = std::abs (n1 - cur) >= std::abs (n0 - cur) ? n1 : n0;
+                const float a = rp.startAngleRadians + far * span;
+                g.fillEllipse (b.getCentreX() + r * std::sin (a) - 2.5f, b.getCentreY() - r * std::cos (a) - 2.5f, 5.0f, 5.0f);
+            }
         }
         // small dots: orange = MIDI mapped, blue = macro-controlled
         if (evs.midiLearn != nullptr && evs.midiLearn->isMapped (*param))
@@ -207,6 +237,7 @@ namespace ParamButtons
 class ParamToggle : public TextButton, private Timer
 {
 public:
+    te::AutomatableParameter& getParameter() const { return *param; }
     ParamToggle (te::AutomatableParameter& p, const String& label = {}, Colour on = Theme::accent) : param (&p)
     {
         setButtonText (label.isNotEmpty() ? label : p.getParameterName());
@@ -231,6 +262,7 @@ private:
 class ParamChoice : public Component, private Timer
 {
 public:
+    te::AutomatableParameter& getParameter() const { return *param; }
     ParamChoice (te::AutomatableParameter& p, Colour on = Theme::accent, bool showName = true) : param (&p)
     {
         const int n = jmax (2, ParamButtons::numOptions (p));
@@ -298,6 +330,7 @@ private:
 class ParamCombo : public Component, private Timer
 {
 public:
+    te::AutomatableParameter& getParameter() const { return *param; }
     explicit ParamCombo (te::AutomatableParameter& p, bool showName = true) : param (&p)
     {
         const auto& r = p.valueRange;
