@@ -211,3 +211,6 @@ when you start, touch it after each step, and delete it when you stop.
   (installed in WavetableUI::installModDrop) gives every cutoff knob an outer arc for the envelope / LFO range
   (Wavetable F1 + F2, FM, Simpler, Auto Filter). Self-test walks the Wavetable and FM windows and fails if any
   parameter has no control. 223 checks pass. RULE: new windows must keep a control for every parameter.
+- 2026-10-04: v0.59.0 Simpler window (SimplerPanel, same cards): sample + region / pitch, filter, amp env, filter env,
+  granular, output; every parameter keeps a control (self-test covers Wavetable, FM, Simpler). 223 checks pass.
+  Drum Synth (8 params) stays on the shared layout. Next ideas: device cards in the chain; Drum Rack window polish.

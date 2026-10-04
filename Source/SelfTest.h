@@ -4039,8 +4039,17 @@ namespace SelfTest
                 panel.setSize (1260, 800);
                 missF = controlsFor (*fm, panel, nullptr, 1);
             }
-            rep.check (missW.isEmpty() && missF.isEmpty(), "Wavetable and FM windows have a control for every parameter",
-                       missW.isEmpty() && missF.isEmpty() ? String ("nothing missing") : "missing: " + missW.joinIntoString (" ") + " | " + missF.joinIntoString (" "));
+            StringArray missS;
+            {
+                auto sp = edit->getPluginCache().createNewPlugin (pulse::Simpler::xmlTypeName, {});
+                auto* simp = dynamic_cast<pulse::Simpler*> (sp.get());
+                DeviceEditors::SimplerPanel panel (sevs, *simp);
+                panel.setSize (1260, 800);
+                missS = controlsFor (*simp, panel, nullptr, 1);
+            }
+            const bool allThere = missW.isEmpty() && missF.isEmpty() && missS.isEmpty();
+            rep.check (allThere, "Wavetable, FM and Simpler windows have a control for every parameter",
+                       allThere ? String ("nothing missing") : "missing: " + missW.joinIntoString (" ") + " | " + missF.joinIntoString (" ") + " | " + missS.joinIntoString (" "));
         }
 
         // --- v0.55: Wavetable overhaul (tables, noise, sub, macros, effects, tabbed window) ------------------

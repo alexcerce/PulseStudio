@@ -1398,6 +1398,127 @@ namespace DeviceEditors
     };
 
     //==============================================================================
+    /** Simpler's window: the sample across the top (region handles on the waveform, region and pitch
+        knobs under it), then the filter, both envelopes with all their knobs, granular and output. */
+    class SimplerPanel : public Component
+    {
+    public:
+        using S = pulse::Simpler;
+        using Card = WavetablePanel::Card;
+
+        SimplerPanel (EditViewState& e, S& sm) : evs (e), simpler (sm), holder (&sm)
+        {
+            using EG = Graphs::EnvelopeGraph;
+            using L = std::initializer_list<std::pair<int, const char*>>;
+            auto card = [this] (const String& t, Colour c) { auto* k = cards.add (new Card (t, c)); addAndMakeVisible (k); return k; };
+            const auto smp = Theme::orange, filt = Colour (0xffff6b6b), amp = Colour (0xff69db7c), gran = Colour (0xffda77f2), out = Colour (0xff748ffc);
+
+            cSample = card ("SAMPLE", smp);
+            display = std::make_unique<DeviceDisplays::SimplerDisplay> (sm);
+            cSample->addAndMakeVisible (*display);
+            mode = new ParamChoice (*sm.param (S::pMode), smp, false); owned.add (mode); cSample->addAndMakeVisible (mode);
+            for (auto [pi, l] : L { { S::pStart, "Start" }, { S::pEnd, "End" }, { S::pLoopStart, "Loop start" }, { S::pXfade, "Crossfade" } }) knobsRegion.add (knob (*cSample, pi, l, smp));
+            loop = new ParamToggle (*sm.param (S::pLoop), "Loop", smp); owned.add (loop); cSample->addAndMakeVisible (loop);
+            for (auto [pi, l] : L { { S::pRoot, "Root note" }, { S::pTranspose, "Transpose" }, { S::pFine, "Detune" } }) knobsPitch.add (knob (*cSample, pi, l, smp));
+
+            cFilter = card ("FILTER", filt);
+            filterGraph = std::make_unique<Graphs::FilterGraph> (sm.param (S::pCutoff), sm.param (S::pReso), sm.param (S::pFilterType),
+                                                                 [] (int t) { return jlimit (0, 3, t); }, filt, sm.param (S::pFEnv));
+            cFilter->addAndMakeVisible (*filterGraph);
+            filterType = new ParamCombo (*sm.param (S::pFilterType), false); owned.add (filterType); cFilter->addAndMakeVisible (filterType);
+            for (auto [pi, l] : L { { S::pCutoff, "Cutoff" }, { S::pReso, "Resonance" }, { S::pFEnv, "Envelope" } }) knobsFilter.add (knob (*cFilter, pi, l, filt));
+
+            cAmp = card ("AMP ENVELOPE", amp);
+            ampGraph = std::make_unique<EG> (std::vector<EG::Env> { { sm.param (S::pA), sm.param (S::pD), sm.param (S::pS), sm.param (S::pR), amp, "AMP" } });
+            cAmp->addAndMakeVisible (*ampGraph);
+            for (auto [pi, l] : L { { S::pA, "Attack" }, { S::pD, "Decay" }, { S::pS, "Sustain" }, { S::pR, "Release" } }) knobsAmp.add (knob (*cAmp, pi, l, amp));
+
+            cFEnv = card ("FILTER ENVELOPE", filt);
+            fenvGraph = std::make_unique<EG> (std::vector<EG::Env> { { sm.param (S::pFA), sm.param (S::pFD), sm.param (S::pFS), sm.param (S::pFR), filt, "FILTER" } });
+            cFEnv->addAndMakeVisible (*fenvGraph);
+            for (auto [pi, l] : L { { S::pFA, "Attack" }, { S::pFD, "Decay" }, { S::pFS, "Sustain" }, { S::pFR, "Release" } }) knobsFEnv.add (knob (*cFEnv, pi, l, filt));
+
+            cGrain = card ("GRANULAR  (when the mode is Granular)", gran);
+            for (auto [pi, l] : L { { S::pGrainSize, "Grain size" }, { S::pDensity, "Density" }, { S::pSpray, "Spray" }, { S::pGrainPos, "Scan" } }) knobsGrain.add (knob (*cGrain, pi, l, gran));
+            cOut = card ("OUTPUT", out);
+            for (auto [pi, l] : L { { S::pVelSens, "Velocity" }, { S::pGain, "Gain" }, { S::pPan, "Pan" } }) knobsOut.add (knob (*cOut, pi, l, out));
+        }
+
+        void paint (Graphics& g) override { g.fillAll (Pro::bg()); }
+
+        void resized() override
+        {
+            const int gap = 8;
+            auto a = getLocalBounds().reduced (8);
+            cSample->setBounds (a.removeFromTop (a.getHeight() * 44 / 100)); a.removeFromTop (gap);
+            {
+                auto head = cSample->header();
+                mode->setBounds (head.removeFromRight (jmin (340, head.getWidth())));
+                auto c = cSample->content();
+                auto row = c.removeFromBottom (jmin (100, c.getHeight() * 40 / 100));
+                c.removeFromBottom (6);
+                display->setBounds (c);
+                cSample->wells.clear();
+                auto region = row.removeFromLeft (row.getWidth() * 60 / 100); row.removeFromLeft (8);
+                cSample->wells.push_back ({ region, "REGION" });
+                cSample->wells.push_back ({ row, "PITCH" });
+                auto ri = region.reduced (6, 0).withTrimmedTop (12);
+                loop->setBounds (ri.removeFromRight (90).withSizeKeepingCentre (80, 28));
+                WavetablePanel::placeKnobs (ri, knobsRegion);
+                WavetablePanel::placeKnobs (row.reduced (6, 0).withTrimmedTop (12), knobsPitch);
+            }
+            auto graphAndKnobs = [] (Card& cd, Component& graph, Array<ParamKnob*>& ks)
+            {
+                auto c = cd.content();
+                WavetablePanel::placeKnobs (c.removeFromBottom (jmin (90, c.getHeight() * 40 / 100)), ks);
+                c.removeFromBottom (4);
+                graph.setBounds (c);
+            };
+            auto right = a.removeFromRight (a.getWidth() * 24 / 100); a.removeFromRight (gap);
+            const int cw = (a.getWidth() - 2 * gap) / 3;
+            cFilter->setBounds (a.removeFromLeft (cw)); a.removeFromLeft (gap);
+            cAmp->setBounds (a.removeFromLeft (cw)); a.removeFromLeft (gap);
+            cFEnv->setBounds (a);
+            {
+                auto head = cFilter->header();
+                filterType->setBounds (head.removeFromRight (jmin (140, head.getWidth())));
+            }
+            graphAndKnobs (*cFilter, *filterGraph, knobsFilter);
+            graphAndKnobs (*cAmp, *ampGraph, knobsAmp);
+            graphAndKnobs (*cFEnv, *fenvGraph, knobsFEnv);
+            cGrain->setBounds (right.removeFromTop (right.getHeight() * 58 / 100)); right.removeFromTop (gap);
+            cOut->setBounds (right);
+            WavetablePanel::placeKnobs (cGrain->content(), knobsGrain, 2, 96, 96);
+            WavetablePanel::placeKnobs (cOut->content(), knobsOut, 0, 96, 96);
+        }
+
+    private:
+        ParamKnob* knob (Card& c, int pi, const char* label, Colour col)
+        {
+            auto* k = new ParamKnob (evs, *simpler.param (pi));
+            k->setLabel (label);
+            k->setCompact (col);
+            owned.add (k);
+            c.addAndMakeVisible (k);
+            return k;
+        }
+
+        EditViewState& evs;
+        S& simpler;
+        te::Plugin::Ptr holder;
+        OwnedArray<Card> cards;
+        OwnedArray<Component> owned;
+        Card *cSample = nullptr, *cFilter = nullptr, *cAmp = nullptr, *cFEnv = nullptr, *cGrain = nullptr, *cOut = nullptr;
+        std::unique_ptr<DeviceDisplays::SimplerDisplay> display;
+        std::unique_ptr<Graphs::FilterGraph> filterGraph;
+        std::unique_ptr<Graphs::EnvelopeGraph> ampGraph, fenvGraph;
+        ParamChoice* mode = nullptr;
+        ParamCombo* filterType = nullptr;
+        ParamToggle* loop = nullptr;
+        Array<ParamKnob*> knobsRegion, knobsPitch, knobsFilter, knobsAmp, knobsFEnv, knobsGrain, knobsOut;
+    };
+
+    //==============================================================================
     using Graph = std::pair<String, std::unique_ptr<Component>>;
 
     /** Every view of a device, big. */
@@ -1411,14 +1532,7 @@ namespace DeviceEditors
         if (auto s = dynamic_cast<pulse::WavetableSynth*> (&p))
             add ("Wavetable", std::make_unique<WavetablePanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::Simpler*> (&p))
-        {
-            using S = pulse::Simpler;
-            add ("Sample", std::make_unique<DeviceDisplays::SimplerDisplay> (*s));
-            add ("Filter", std::make_unique<Graphs::FilterGraph> (s->param (S::pCutoff), s->param (S::pReso), s->param (S::pFilterType),
-                                                                  [] (int t) { return jlimit (0, 3, t); }, Theme::orange, s->param (S::pFEnv)));
-            add ("Envelopes", env ({ { s->param (S::pA), s->param (S::pD), s->param (S::pS), s->param (S::pR), Theme::accent, "AMP" },
-                                     { s->param (S::pFA), s->param (S::pFD), s->param (S::pFS), s->param (S::pFR), Theme::orange, "FILTER" } }));
-        }
+            add ("Simpler", std::make_unique<SimplerPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::FMSynth*> (&p))
             add ("FM Synth", std::make_unique<FMPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::DrumSynth*> (&p))
@@ -1482,6 +1596,7 @@ namespace DeviceEditors
         return dynamic_cast<pulse::PrismEQ*> (&p) != nullptr || dynamic_cast<pulse::ProCompressor*> (&p) != nullptr
             || dynamic_cast<pulse::WavetableSynth*> (&p) != nullptr
             || dynamic_cast<pulse::FMSynth*> (&p) != nullptr
+            || dynamic_cast<pulse::Simpler*> (&p) != nullptr
             || dynamic_cast<pulse::Reverb*> (&p) != nullptr || dynamic_cast<pulse::Delay*> (&p) != nullptr || dynamic_cast<pulse::Saturator*> (&p) != nullptr
             || dynamic_cast<pulse::MultibandDynamics*> (&p) != nullptr || dynamic_cast<pulse::Limiter*> (&p) != nullptr;
     }
@@ -1614,7 +1729,7 @@ namespace DeviceEditors
                 m.showMenuAsync (PopupMenu::Options().withTargetComponent (&presetBtn));
             };
             addAndMakeVisible (presetBtn);
-            if (dynamic_cast<pulse::WavetableSynth*> (&p) != nullptr || dynamic_cast<pulse::FMSynth*> (&p) != nullptr) setSize (1280, 860); else setSize (1100, 760);
+            if (dynamic_cast<pulse::WavetableSynth*> (&p) != nullptr || dynamic_cast<pulse::FMSynth*> (&p) != nullptr || dynamic_cast<pulse::Simpler*> (&p) != nullptr) setSize (1280, 860); else setSize (1100, 760);
         }
 
         void paint (Graphics& g) override
