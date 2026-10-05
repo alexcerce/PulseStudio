@@ -30,6 +30,8 @@ public:
         cancel();
         for (int i = 0; i < 400 && isThreadRunning(); ++i)
             MessageManager::getInstance()->runDispatchLoopUntil (25);
+        // if the thread was stopped before it could finish up, finish up here
+        if (! isThreadRunning()) { detached = nullptr; busyFlag() = false; }
     }
 
     bool isBusy() const                 { return busyFlag().load() || isThreadRunning(); }
@@ -48,7 +50,9 @@ public:
         busyFlag() = true;
         if (auto* e = job.renders.front().edit)
         {
+            // off the live audio engine until the job is done (the devices are shared with playback)
             te::TransportControl::stopAllTransports (e->engine, false, true);
+            detached = std::make_unique<te::Edit::ScopedRenderStatus> (*e, true);
             te::Renderer::turnOffAllPlugins (*e);
         }
         startThread();
@@ -106,6 +110,7 @@ private:
         MessageManager::callAsync ([this, total, edit = job.renders.front().edit]
         {
             if (edit != nullptr) te::Renderer::turnOffAllPlugins (*edit);
+            detached = nullptr;   // back on the audio engine
             busyFlag() = false;
             progress = 1.0f;
             setStatus ({});
@@ -119,5 +124,6 @@ private:
     std::atomic<int> okCount { 0 };
     CriticalSection taskLock, statusLock;
     te::Renderer::RenderTask* task = nullptr;
+    std::unique_ptr<te::Edit::ScopedRenderStatus> detached;   // made and released on the message thread
     String status;
 };

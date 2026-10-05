@@ -193,6 +193,25 @@ namespace EditingOps
         return true;
     }
 
+    /** Renders with the project taken off the live audio engine for the duration, and put back afterwards.
+        The engine shares each device between playback and rendering, so a render next to live playback has
+        two threads inside the same device at once (wrong audio at best, a crash at worst). Message thread only. */
+    inline File renderDetached (const String& taskName, te::Renderer::Parameters& p)
+    {
+        if (p.edit == nullptr) return {};
+        te::TransportControl::stopAllTransports (p.edit->engine, false, true);
+        const te::Edit::ScopedRenderStatus detached (*p.edit, true);
+        return te::Renderer::renderToFile (taskName, p);
+    }
+
+    /** The whole project to one file, detached in the same way. */
+    inline bool renderDetached (te::Edit& e, const File& f, bool useThread = false)
+    {
+        te::TransportControl::stopAllTransports (e.engine, false, true);
+        const te::Edit::ScopedRenderStatus detached (e, true);
+        return te::Renderer::renderToFile (e, f, useThread);
+    }
+
     inline File renderTrack (te::AudioTrack& track, te::TimeRange range, const String& suffix)
     {
         auto& e = track.edit;
@@ -208,7 +227,7 @@ namespace EditingOps
         p.usePlugins = true;
         p.useMasterPlugins = false;
         p.checkNodesForAudio = false;
-        return te::Renderer::renderToFile ("Bouncing " + track.getName(), p);
+        return renderDetached ("Bouncing " + track.getName(), p);
     }
 
     inline te::TimeRange songRange (te::Edit& e)
@@ -254,7 +273,7 @@ namespace EditingOps
         p.usePlugins = true;
         p.useMasterPlugins = false;
         p.checkNodesForAudio = false;
-        return te::Renderer::renderToFile ("Rendering " + folder.getName(), p);
+        return renderDetached ("Rendering " + folder.getName(), p);
     }
 
     inline te::AudioTrack* frozenTrackOf (te::FolderTrack& folder)

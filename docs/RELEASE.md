@@ -26,6 +26,9 @@ What has to be true before a build goes to other people, and how to make one.
   random clicks, drags, wheel turns and key presses on the main window. If it stops early, the last line of
   the file is the last thing it did, and a crash report is in the Crashes folder of the "Pulse Studio Dev" profile.
 - `Pulse Studio.exe --dev-profile --idle-cpu <file>`: processor use stopped and playing has not gone up.
+- Build the debug configuration too (`cmake --build build-dev --config Debug --target PulseStudio`) and run the
+  self-test under it with `--log <file>`: it must pass with no crash report (a debug build checks things the
+  release build lets through, such as reading past the end of a list).
 - `Pulse Studio.exe --dev-profile --snapshots <folder>` and `--device-shots <folder>`: look at the pictures.
 - Install the build on a machine (or user account) that has never had Pulse Studio: first run creates the
   built-in sounds, the demo song plays, a VST3 plugin scans and loads, export to WAV and MP3 works.

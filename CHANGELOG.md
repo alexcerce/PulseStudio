@@ -2,6 +2,12 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.4 - 2026-10-05
+
+- Fixed: bouncing, freezing a group or exporting while the audio engine was live could crash or glitch; the project is now taken off the engine for the duration of a render
+- Fixed: a rare click or crash in the Delay and Reverb (a read just past the end of the delay line)
+- Mixer strips in the card look (0.99.3)
+
 ## 0.99.2 - 2026-10-05
 
 - Fixed: a crash in the piano roll after undoing the creation of the clip it was showing (or deleting its track)

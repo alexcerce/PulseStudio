@@ -285,3 +285,12 @@ when you start, touch it after each step, and delete it when you stop.
 - 2026-10-05: v0.99.3 (RC work) mixer strips in the card look; picture / measurement / fuzz runs no longer change the
   saved theme or the last-opened project of the profile they run in (I restored the Dev profile's theme, which a fuzz
   run had cycled to "Ocean"); monkey run also switches views (4 more seeds x 8000 events clean). 243 checks.
+- 2026-10-05: v0.99.4 (RC work). Ran the self-test under a DEBUG build (`cmake --build build-dev --config Debug`;
+  `--log <file>`; debug-build check failures and abort / terminate now write a crash report instead of a window -
+  CrashGuardWin::installDebugCheckHook, SIGABRT and set_terminate hooks). It found the ROOT CAUSE of the intermittent
+  crashes: every render path ran while the project was still attached to the live audio engine ("Rendering whilst
+  attached to audio device"), so two threads were inside the same devices. Fixed with EditingOps::renderDetached
+  (stopAllTransports + te::Edit::ScopedRenderStatus) in bounce, group render, --render and BackgroundRender (exports).
+  Also found: DelayLine::read could index one past the end (float rounding of the read position; positions are now
+  double, which also restores sub-sample precision in long delays). Debug self-test: 243 passed, no failed checks.
+  The monkey run can open device windows and send events to them (not yet run long). Release: 3 clean runs.

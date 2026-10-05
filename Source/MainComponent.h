@@ -145,7 +145,7 @@ public:
     {
         if (edit == nullptr) return false;
         EditingOps::waitForClipProxies (*edit);
-        return te::Renderer::renderToFile (*edit, f, false);
+        return EditingOps::renderDetached (*edit, f);
     }
 
     bool keyPressed (const KeyPress& k) override
@@ -667,6 +667,17 @@ public:
         edit->getTransport().setPosition (te::TimePosition::fromSeconds (rng.nextDouble() * 12.0));
     }
     int numTracksForTest() const { return edit != nullptr ? EngineHelpers::getUserTracks (*edit).size() : -1; }
+    /** Opens the window of one of the project's built-in devices (a different one each time). */
+    Component* openDeviceWindowForTest (Random& rng)
+    {
+        if (edit == nullptr || evs == nullptr) return nullptr;
+        Array<pulse::PulsePlugin*> devices;
+        for (auto* t : te::getAudioTracks (*edit))
+            for (auto* pl : t->pluginList)
+                if (auto* pp = dynamic_cast<pulse::PulsePlugin*> (pl)) devices.add (pp);
+        if (devices.isEmpty()) return nullptr;
+        return DeviceEditors::show (*evs, *devices[rng.nextInt (devices.size())]);
+    }
 
     /** Starts playback from the top (for the idle / playing processor measurement). */
     void playForMeasurement()

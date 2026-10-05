@@ -428,13 +428,13 @@ namespace SelfTest
                 p.bitDepth = 24;
                 p.time = { te::TimePosition(), bars (2) };
                 p.checkNodesForAudio = false;
-                if (te::Renderer::renderToFile ("stem", p).existsAsFile() && peakDb (engine, p.destFile) > -60.0f)
+                if (EditingOps::renderDetached ("stem", p).existsAsFile() && peakDb (engine, p.destFile) > -60.0f)
                     ++stemsOk;
             }
             rep.check (stemsOk == 2, "Render stems (non-silent)", String (stemsOk) + "/2");
 
             auto mix = dir.getChildFile ("mix.wav");
-            te::Renderer::renderToFile (*edit, mix, false);
+            EditingOps::renderDetached (*edit, mix);
             rep.check (peakDb (engine, mix) > -40.0f, "Full mix render", String (peakDb (engine, mix), 1) + " dBFS");
         }
 
@@ -2332,7 +2332,7 @@ namespace SelfTest
                     rp.bitDepth = 24; rp.sampleRateForAudio = 44100.0;
                     rp.time = { te::TimePosition(), te::TimePosition::fromSeconds (1.2) };
                     rp.usePlugins = true;
-                    return te::Renderer::renderToFile ("duck", rp);
+                    return EditingOps::renderDetached ("duck", rp);
                 };
                 auto windowPeak = [&engine] (const File& f, double t0, double t1)
                 {
@@ -2713,7 +2713,7 @@ namespace SelfTest
             rp.time = { te::TimePosition(), te::TimePosition::fromSeconds (8.0) };
             rp.usePlugins = true;
             const auto t0 = Time::getMillisecondCounterHiRes();
-            te::Renderer::renderToFile ("stress", rp);
+            EditingOps::renderDetached ("stress", rp);
             const double secs = (Time::getMillisecondCounterHiRes() - t0) * 0.001;
             bool finite = false;
             float peak = 0;
@@ -2913,7 +2913,7 @@ namespace SelfTest
                         EditingOps::waitForClipProxies (*ed);
                         auto out = dir.getChildFile ("house_template.wav");
                         out.deleteFile();
-                        te::Renderer::renderToFile (*ed, out, false);
+                        EditingOps::renderDetached (*ed, out);
                         housePeak = peakDb (engine, out);
                     }
                 }

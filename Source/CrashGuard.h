@@ -1,8 +1,13 @@
 #pragma once
 
+#include <csignal>
+#include <cstdlib>
+#include <exception>
+
 #include "Common.h"
 
-namespace CrashGuardWin { void describe (void* exceptionPointers, String& modulePath, String& description); }
+namespace CrashGuardWin { void describe (void* exceptionPointers, String& modulePath, String& description);
+                          void installDebugCheckHook (void (*onFail) (const char*)); }
 
 /** Crash reporting, plugin blocklist and safe mode.
     - A crash handler writes a log (with a stack trace) and notes which plugin it happened in:
@@ -70,10 +75,11 @@ namespace CrashGuard
         return idx >= 0 ? modulePath.substring (0, idx + 5) : modulePath;
     }
 
-    inline void writeCrashReport (void* exceptionPointers)
+    inline void writeCrashReport (void* exceptionPointers, const String& what = {})
     {
         String modulePath, description;
         CrashGuardWin::describe (exceptionPointers, modulePath, description);
+        if (what.isNotEmpty()) description = what;
 
         String plugin, pluginName;
         if (looksLikePlugin (modulePath))
@@ -120,6 +126,26 @@ namespace CrashGuard
         rootFolder() = File::getSpecialLocation (File::userApplicationDataDirectory).getChildFile (profileName);
         rootFolder().createDirectory();
         SystemStats::setApplicationCrashHandler (handler);
+        // The program can also stop itself without a hardware fault: abort() (a failed check in the C++ runtime
+        // or a library) and std::terminate (an error nobody caught). Those get a report with a stack trace too.
+        std::signal (SIGABRT, [] (int)
+        {
+            static std::atomic<bool> once { false };
+            if (! once.exchange (true)) writeCrashReport (nullptr, "The program stopped itself (abort)");
+            std::_Exit (3);
+        });
+        CrashGuardWin::installDebugCheckHook ([] (const char* message)
+        {
+            static std::atomic<bool> once { false };
+            if (! once.exchange (true)) writeCrashReport (nullptr, "A check in the debug build failed: " + String (message).trim());
+            std::_Exit (3);
+        });
+        std::set_terminate ([]
+        {
+            static std::atomic<bool> once { false };
+            if (! once.exchange (true)) writeCrashReport (nullptr, "An error nobody handled (terminate)");
+            std::_Exit (3);
+        });
     }
 
     //==============================================================================

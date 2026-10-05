@@ -106,6 +106,16 @@ public:
             return;
 
         auto args = StringArray::fromTokens (getCommandLineParameters(), true);
+
+        // --log <file> : everything the engine, JUCE and the app report (in a debug build that includes failed
+        // assertions and leaked objects) goes to this file; used when running the tests under a debug build
+        if (auto li = args.indexOf ("--log"); li >= 0 && li + 1 < args.size())
+        {
+            auto f = File::getCurrentWorkingDirectory().getChildFile (args[li + 1].unquoted());
+            f.deleteFile();
+            // never freed on purpose: objects found leaked are reported after the app object itself has gone
+            Logger::setCurrentLogger (new FileLogger (f, "Pulse Studio log", 64 * 1024 * 1024));
+        }
         StartupTimer::origin();
 
         // --crash-test : used by the self-test to check the crash handler (crashes "inside" a fake plugin load)
@@ -300,14 +310,17 @@ public:
                     out.replaceWithText ("monkey run, seed " + String (seed) + ", " + String (numEvents) + " events\n");
                     startTimer (5000);
                 }
+                /** The window the next events go to: a device window for a while after one was opened, else the main one. */
+                Component& target() { return deviceWindow != nullptr && deviceEvents > 0 ? *deviceWindow : static_cast<Component&> (window); }
                 juce::Point<float> anywhere()
                 {
+                    if (&target() != &window) return { rng.nextFloat() * (float) target().getWidth(), rng.nextFloat() * (float) target().getHeight() };
                     // below the top bar (its buttons open settings and file menus, which need a person)
                     return { rng.nextFloat() * (float) window.getWidth(), 64.0f + rng.nextFloat() * (float) (window.getHeight() - 70) };
                 }
                 void mouse (juce::Point<float> p, ModifierKeys mods)
                 {
-                    if (auto* peer = window.getPeer())
+                    if (auto* peer = target().getPeer())
                         peer->handleMouseEvent (MouseInputSource::InputSourceType::mouse, p, mods, MouseInputSource::defaultPressure, MouseInputSource::defaultOrientation, Time::currentTimeMillis());
                 }
                 void tidy()
@@ -316,9 +329,10 @@ public:
                     PopupMenu::dismissAllActiveMenus();
                     for (int guard = 0; guard < 8; ++guard)
                         if (auto* m = Component::getCurrentlyModalComponent()) m->exitModalState (0); else break;
-                    DeviceEditors::closeAll();
+                    const bool keepDevice = deviceWindow != nullptr && deviceEvents > 0;
+                    if (! keepDevice) DeviceEditors::closeAll();
                     for (int w = TopLevelWindow::getNumTopLevelWindows(); --w >= 0;)
-                        if (auto* tw = TopLevelWindow::getTopLevelWindow (w); tw != nullptr && tw != &window)
+                        if (auto* tw = TopLevelWindow::getTopLevelWindow (w); tw != nullptr && tw != &window && ! (keepDevice && tw == deviceWindow.getComponent()))
                         {
                             if (auto* dw = dynamic_cast<DialogWindow*> (tw)) dw->closeButtonPressed();
                             else if (auto* doc = dynamic_cast<DocumentWindow*> (tw)) doc->closeButtonPressed();
@@ -334,6 +348,16 @@ public:
                         out.appendText ("DONE " + String (done) + " events\n");
                         JUCEApplication::getInstance()->setApplicationReturnValue (0);
                         JUCEApplication::quit();
+                        return;
+                    }
+                    if (deviceEvents > 0) --deviceEvents;
+                    if (done % 300 == 20)    // a device window every so often, and the next 120 events go to it
+                    {
+                        tidy();
+                        deviceWindow = mc.openDeviceWindowForTest (rng);
+                        deviceEvents = deviceWindow != nullptr ? 120 : 0;
+                        out.appendText (String (done) + " device window " + (deviceWindow != nullptr ? deviceWindow->getName() : String ("(none)")) + newLine);
+                        ++done;
                         return;
                     }
                     if (done % 300 == 150)   // another view every so often: session, mixer, piano roll, other tracks
@@ -376,7 +400,7 @@ public:
                         wd.isReversed = false; wd.isSmooth = false; wd.isInertial = false;
                         out.appendText (String (done) + " wheel " + p.toString() + "\n");
                         mouse (p, none);
-                        if (auto* peer = window.getPeer()) peer->handleMouseWheel (MouseInputSource::InputSourceType::mouse, p, Time::currentTimeMillis(), wd);
+                        if (auto* peer = target().getPeer()) peer->handleMouseWheel (MouseInputSource::InputSourceType::mouse, p, Time::currentTimeMillis(), wd);
                     }
                     else
                     {
@@ -387,12 +411,14 @@ public:
                                                   KeyPress ('e', ModifierKeys::ctrlModifier, 0), KeyPress ('b'), KeyPress ('q'), KeyPress ('l'), KeyPress ('m'), KeyPress (KeyPress::homeKey) };
                         const auto k = keys[rng.nextInt ((int) std::size (keys))];
                         out.appendText (String (done) + " key " + k.getTextDescription() + "\n");
-                        if (auto* peer = window.getPeer()) peer->handleKeyPress (k);
+                        if (auto* peer = target().getPeer()) peer->handleKeyPress (k);
                     }
                     ++done;
                 }
                 DocumentWindow& window;
                 MainComponent& mc;
+                Component::SafePointer<Component> deviceWindow;
+                int deviceEvents = 0;
                 File out;
                 Random rng;
                 int done = 0, total = 2000;

@@ -60,3 +60,33 @@ namespace CrashGuardWin
         return alive;
     }
 }
+
+#include <crtdbg.h>
+
+namespace CrashGuardWin
+{
+    static void (*debugCheckFailed) (const char*) = nullptr;
+
+   #ifdef _DEBUG
+    static int debugReportHook (int reportType, char* message, int* returnValue)
+    {
+        if (reportType == _CRT_ASSERT || reportType == _CRT_ERROR)
+        {
+            if (debugCheckFailed != nullptr) debugCheckFailed (message != nullptr ? message : "");   // writes the report and ends the program
+            if (returnValue != nullptr) *returnValue = 0;
+            return 1;   // handled: no window
+        }
+        return 0;
+    }
+   #endif
+
+    /** Debug builds: a failed check in the C++ runtime (such as reading past the end of a list) calls `onFail`
+        with its message instead of putting a window on the screen. Does nothing in release builds. */
+    void installDebugCheckHook (void (*onFail) (const char*))
+    {
+        debugCheckFailed = onFail;
+       #ifdef _DEBUG
+        _CrtSetReportHook (debugReportHook);
+       #endif
+    }
+}

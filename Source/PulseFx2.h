@@ -14,15 +14,20 @@ namespace pulse
         int w = 0;
         void setMax (int n) { buf.assign ((size_t) jmax (4, n), 0.0f); w = 0; }
         void clear() { std::fill (buf.begin(), buf.end(), 0.0f); }
-        void push (float x) noexcept { buf[(size_t) w] = x; if (++w >= (int) buf.size()) w = 0; }
+        void push (float x) noexcept { if (buf.empty()) return; buf[(size_t) w] = x; if (++w >= (int) buf.size()) w = 0; }
         float read (float delay) const noexcept   // samples ago (>= 1)
         {
             const int n = (int) buf.size();
-            float pos = (float) w - jlimit (1.0f, (float) n - 2.0f, delay);
-            while (pos < 0) pos += (float) n;
-            const int i = (int) pos;
-            const float f = pos - (float) i;
-            return buf[(size_t) i] * (1.0f - f) + buf[(size_t) ((i + 1) % n)] * f;
+            if (n < 4) return 0.0f;   // not prepared yet
+            // in double: a float cannot hold a position in a several-second buffer to a fraction of a sample, and
+            // could round a position just below the end up to the end itself (one past the last sample)
+            double pos = (double) w - (double) jlimit (1.0f, (float) n - 2.0f, delay);
+            if (pos < 0.0) pos += (double) n;
+            int i = (int) pos;
+            const float f = (float) (pos - (double) i);
+            if (i >= n) i -= n;
+            const int j = i + 1 < n ? i + 1 : 0;
+            return buf[(size_t) i] * (1.0f - f) + buf[(size_t) j] * f;
         }
     };
 
