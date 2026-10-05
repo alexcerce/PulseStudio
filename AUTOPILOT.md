@@ -270,3 +270,6 @@ when you start, touch it after each step, and delete it when you stop.
   with the undo manager; all buttons and Push use them); File > User guide (F1) opens the installed README; About and
   User guide are commands; tooltips on the value boxes and modulation amount bars; Wavetable speed test (8 held notes:
   default patch about 47x real time, heaviest patch about 10x, one core) - no engine optimisation needed. 241 checks.
+- 2026-10-05: v0.99.0 (RC work) `--command-fuzz <file> [--seed n]`: the full app runs every unattended command (45 of
+  them) 456 times in a random order on the demo project with different selections; four seeds, no crash. Added to the
+  release checklist with --idle-cpu.

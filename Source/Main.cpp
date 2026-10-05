@@ -242,6 +242,53 @@ public:
             }
         }
 
+        // Pulse Studio.exe --command-fuzz <file> : runs every unattended command many times in a random order on the
+        // demo project (with different things selected), writing each one to the file first so a crash names its cause
+        if (auto i = args.indexOf ("--command-fuzz"); i >= 0 && i + 1 < args.size())
+        {
+            struct Runner : public Timer
+            {
+                Runner (MainComponent& m, File f, int64 seed) : mc (m), out (f), ids (m.commandsForTest()), rng (seed)
+                {
+                    out.replaceWithText ("commands: " + ids.joinIntoString (" ") + "\n");
+                    startTimer (4000);
+                }
+                void timerCallback() override
+                {
+                    startTimer (120);
+                    if (done >= rounds * ids.size())
+                    {
+                        stopTimer();
+                        out.appendText ("DONE " + String (done) + " commands, " + String (mc.numTracksForTest()) + " tracks at the end\n");
+                        JUCEApplication::getInstance()->setApplicationReturnValue (0);
+                        JUCEApplication::quit();
+                        return;
+                    }
+                    if (done % 3 == 0) mc.selectSomethingForTest (rng);
+                    const auto id = ids[rng.nextInt (ids.size())];
+                    out.appendText (String (done) + " " + id + "\n");
+                    mc.runCommandForTest (id);
+                    ++done;
+                }
+                MainComponent& mc;
+                File out;
+                StringArray ids;
+                Random rng;
+                int done = 0;
+                const int rounds = 12;
+            };
+            if (auto* mc = dynamic_cast<MainComponent*> (mainWindow->getContentComponent()))
+            {
+                setApplicationReturnValue (1);   // stays 1 unless the run reaches its end
+                mainWindow->setBounds (40, 40, 1600, 940);
+                auto file = File::getCurrentWorkingDirectory().getChildFile (args[i + 1].unquoted());
+                file.getParentDirectory().createDirectory();
+                mc->startSnapshotDemo (file.getParentDirectory());
+                const auto seedAt = args.indexOf ("--seed");   // optional: --seed <number> for a different order
+                idleRunner = std::make_unique<Runner> (*mc, file, seedAt >= 0 ? args[seedAt + 1].getLargeIntValue() : 20261005);
+            }
+        }
+
         // Pulse Studio.exe --render out.wav : bounce the last project and exit
         if (auto i = args.indexOf ("--render"); i >= 0 && i + 1 < args.size())
         {

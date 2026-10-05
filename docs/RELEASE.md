@@ -20,6 +20,9 @@ What has to be true before a build goes to other people, and how to make one.
 
 - `Pulse Studio.exe --dev-profile --selftest report.txt` passes (exit code 0) **three times in a row**.
   The report lists every check; `report.progress.txt` shows how far it got if it stops.
+- `Pulse Studio.exe --dev-profile --command-fuzz <file> --seed <n>` ends with `DONE` (exit code 0) for a few
+  different seeds: every unattended command, many times, in a random order, on the demo project.
+- `Pulse Studio.exe --dev-profile --idle-cpu <file>`: processor use stopped and playing has not gone up.
 - `Pulse Studio.exe --dev-profile --snapshots <folder>` and `--device-shots <folder>`: look at the pictures.
 - Install the build on a machine (or user account) that has never had Pulse Studio: first run creates the
   built-in sounds, the demo song plays, a VST3 plugin scans and loads, export to WAV and MP3 works.

@@ -635,6 +635,39 @@ private:
 public:
     void stopForMeasurement() { if (edit != nullptr) edit->getTransport().stop (false, false); }
 
+    /** The commands that can be run unattended (no file choosers, dialogs, recording or long renders). */
+    StringArray commandsForTest() const
+    {
+        StringArray ids;
+        for (auto& c : commands->all())
+        {
+            const bool needsAPerson = c.id.startsWith ("file.") || c.id.startsWith ("app.") || c.name.contains ("...")
+                                      || c.id == "view.palette" || c.id == "transport.record" || c.id == "edit.bounce" || c.id == "edit.undoHistory";
+            if (! needsAPerson || c.id == "app.nextTheme") ids.add (c.id);
+        }
+        return ids;
+    }
+    bool runCommandForTest (const String& id)
+    {
+        if (auto* c = commands->find (id)) { if (c->run) c->run(); return true; }
+        return false;
+    }
+    /** Selects something different each time (a clip, a track, several clips), so commands have something to act on. */
+    void selectSomethingForTest (Random& rng)
+    {
+        if (edit == nullptr) return;
+        auto tracks = EngineHelpers::getUserTracks (*edit);
+        if (tracks.isEmpty()) return;
+        auto* t = tracks[rng.nextInt (tracks.size())];
+        const int kind = rng.nextInt (4);
+        if (kind == 0) selectionManager.selectOnly (t);
+        else if (kind == 1) { if (auto c = t->getClips()[rng.nextInt (jmax (1, t->getClips().size()))]) selectionManager.selectOnly (c); }
+        else if (kind == 2) EditingOps::selectAllClips (*edit, selectionManager);
+        else selectionManager.deselectAll();
+        edit->getTransport().setPosition (te::TimePosition::fromSeconds (rng.nextDouble() * 12.0));
+    }
+    int numTracksForTest() const { return edit != nullptr ? EngineHelpers::getUserTracks (*edit).size() : -1; }
+
     /** Starts playback from the top (for the idle / playing processor measurement). */
     void playForMeasurement()
     {
