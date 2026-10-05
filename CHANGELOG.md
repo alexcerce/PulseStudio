@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.1 - 2026-10-05
+
+- Automation inside a song section moves and duplicates with the section
+
 ## 0.98.0 - 2026-10-05
 
 - Mute and solo can be undone

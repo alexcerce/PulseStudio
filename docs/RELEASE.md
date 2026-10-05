@@ -55,4 +55,3 @@ unusual display scaling, and anything that needs a person to look at it for tast
 
 - The Wavetable's *Level* is before its effects (it sets how hard the distortion is driven); *Output* is after.
 - Audio loop takes are not implemented (MIDI takes are).
-- Automation inside a moved song section is not copied with it.

@@ -4388,6 +4388,35 @@ namespace SelfTest
                        "default patch " + String (plain, 1) + "x, heaviest patch " + String (heavy, 1) + "x");
         }
 
+        // --- 1.0 RC: automation travels with a song section -------------------------------------------------------
+        {
+            rep.step ("section automation");
+            auto e2 = te::createEmptyEdit (engine, dir.getChildFile ("sections-automation.tracktionedit"));
+            auto t = ClipImport::createContentTrack (*e2, "Auto", false);
+            auto vol = t->getVolumePlugin()->volParam;
+            auto& curve = vol->getCurve();
+            auto at = [&] (double beat) { return EngineHelpers::beatToTime (*e2, beat); };
+            // section A = beats 0..8 with a dip at beat 4; section B = beats 8..16, flat
+            curve.addPoint (at (0.0), 0.8f, 0.0f, nullptr);
+            curve.addPoint (at (4.0), 0.2f, 0.0f, nullptr);
+            curve.addPoint (at (7.9), 0.8f, 0.0f, nullptr);
+            curve.addPoint (at (8.0), 0.6f, 0.0f, nullptr);
+            curve.addPoint (at (16.0), 0.6f, 0.0f, nullptr);
+            Sections::add (*e2, "A", 0.0, 8.0);
+            Sections::add (*e2, "B", 8.0, 8.0);
+            auto v = [&] (double beat) { return curve.getValueAt (at (beat), 0.0f); };
+            Sections::duplicate (*e2, 0);   // A A B
+            const bool dup = std::abs (v (4.0) - 0.2f) < 0.02f && std::abs (v (12.0) - 0.2f) < 0.02f && std::abs (v (9.0) - 0.8f) < 0.2f && std::abs (v (20.0) - 0.6f) < 0.02f;
+            const float d4 = v (4.0), d12 = v (12.0), d20 = v (20.0);
+            // move the first A to the end: A B A  ->  the dip is at 4 and at 16 + 4
+            int first = -1;
+            for (auto& sct : Sections::all (*e2)) if (first < 0) first = sct.index;
+            Sections::move (*e2, first, 24.0);
+            const bool moved = std::abs (v (4.0) - 0.2f) < 0.02f && std::abs (v (12.0) - 0.6f) < 0.02f && std::abs (v (20.0) - 0.2f) < 0.02f;
+            rep.check (dup && moved, "Automation travels with a song section when it is duplicated or moved",
+                       "after duplicate: " + String (d4, 2) + " / " + String (d12, 2) + " / " + String (d20, 2) + "; after move: " + String (v (4.0), 2) + " / " + String (v (12.0), 2) + " / " + String (v (20.0), 2));
+        }
+
         // --- 1.0 RC: release pieces ---------------------------------------------------------------------------
         {
             rep.step ("release pieces");

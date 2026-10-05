@@ -100,6 +100,33 @@ namespace Sections
         for (auto c : toCopy)
             if (auto copy = te::duplicateClip (*c))
                 copy->setStart (c->getPosition().getStart() + offset, false, true);
+
+        // automation in the range goes too: the points inside it, held between the values at its two ends
+        auto* um = &e.getUndoManager();
+        const auto edge = te::TimeDuration::fromSeconds (0.0005);
+        const te::TimeRange destRange { dest, dest + range.getLength() };
+        for (auto track : te::getAllTracks (e))
+            for (auto* ap : track->getAllAutomatableParams())
+            {
+                auto& curve = ap->getCurve();
+                if (curve.getNumPoints() == 0) continue;
+                struct Pt { te::TimePosition time; float value, curve; };
+                std::vector<Pt> pts;
+                const float def = ap->getCurrentBaseValue();
+                pts.push_back ({ dest, curve.getValueAt (range.getStart(), def), 0.0f });
+                for (int i = 0; i < curve.getNumPoints(); ++i)
+                    if (const auto t = curve.getPointTime (i); t > range.getStart() + edge && t < range.getEnd() - edge)
+                        pts.push_back ({ t + offset, curve.getPointValue (i), curve.getPointCurve (i) });
+                pts.push_back ({ destRange.getEnd() - edge, curve.getValueAt (range.getEnd() - edge, def), 0.0f });
+                // what comes before and after the copy keeps its values right up to the edges
+                const bool hasBefore = dest > te::TimePosition() + edge * 2.0;
+                const float before = hasBefore ? curve.getValueAt (dest - edge, def) : 0.0f;
+                const float after = curve.getValueAt (destRange.getEnd(), def);
+                curve.removePointsInRegion ({ hasBefore ? dest - edge : dest, destRange.getEnd() }, um);
+                if (hasBefore) curve.addPoint (dest - edge, before, 0.0f, um);
+                for (auto& pt : pts) curve.addPoint (pt.time, pt.value, pt.curve, um);
+                curve.addPoint (destRange.getEnd(), after, 0.0f, um);
+            }
     }
 
     /** Duplicates a section right after itself (everything later moves along). */

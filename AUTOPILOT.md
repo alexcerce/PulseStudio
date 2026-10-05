@@ -273,3 +273,6 @@ when you start, touch it after each step, and delete it when you stop.
 - 2026-10-05: v0.99.0 (RC work) `--command-fuzz <file> [--seed n]`: the full app runs every unattended command (45 of
   them) 456 times in a random order on the demo project with different selections; four seeds, no crash. Added to the
   release checklist with --idle-cpu.
+- 2026-10-05: v0.99.1 (RC work) automation travels with a song section when it is duplicated or moved
+  (Sections::copyContent copies the points in the range, held between the values at its ends, and keeps the
+  neighbours' values at the edges). 242 checks.
