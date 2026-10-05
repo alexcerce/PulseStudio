@@ -120,7 +120,9 @@ public:
         {
             // the range an envelope or LFO moves this value over, as a thin arc outside the knob's ring
             auto b = slider.getBounds().toFloat().reduced (3.0f);
-            const float r = jmin (b.getWidth(), b.getHeight()) * 0.5f + 3.5f;
+            // outside the modulation arc when there is one, so both stay readable
+            const bool hasDepth = ModDrop::depth && std::abs (ModDrop::depth (*param)) > 0.001f;
+            const float r = jmin (b.getWidth(), b.getHeight()) * 0.5f + (hasDepth ? 6.5f : 3.5f);
             auto rp = slider.getRotaryParameters();
             const float span = rp.endAngleRadians - rp.startAngleRadians;
             const auto& range = param->valueRange;
@@ -130,10 +132,10 @@ public:
                 Path arc;
                 arc.addCentredArc (b.getCentreX(), b.getCentreY(), r, r, 0.0f, rp.startAngleRadians + jmin (n0, n1) * span, rp.startAngleRadians + jmax (n0, n1) * span, true);
                 const auto c = slider.findColour (Slider::rotarySliderFillColourId).brighter (0.6f);
-                g.setColour (c.withAlpha (0.25f));
-                g.strokePath (arc, PathStrokeType (5.0f, PathStrokeType::curved, PathStrokeType::rounded));
+                g.setColour (c.withAlpha (0.3f));
+                g.strokePath (arc, PathStrokeType (6.0f, PathStrokeType::curved, PathStrokeType::rounded));
                 g.setColour (c);
-                g.strokePath (arc, PathStrokeType (2.0f, PathStrokeType::curved, PathStrokeType::rounded));
+                g.strokePath (arc, PathStrokeType (2.6f, PathStrokeType::curved, PathStrokeType::rounded));
                 // a dot at the far end (where the envelope takes it)
                 const float cur = param->getCurrentNormalisedValue();
                 const float far = std::abs (n1 - cur) >= std::abs (n0 - cur) ? n1 : n0;
@@ -226,7 +228,7 @@ namespace ParamButtons
         const auto& r = p.valueRange;
         if (r.interval < 0.999f || r.start != 0.0f) return 0;
         const int n = roundToInt (r.end - r.start) + 1;
-        return n >= 2 && n <= 16 ? n : 0;
+        return n >= 2 && n <= 40 ? n : 0;
     }
 
     /** True for an on / off style parameter (two options, the second meaning "on"). */
@@ -324,6 +326,70 @@ private:
     te::AutomatableParameter::Ptr param;
     OwnedArray<TextButton> buttons;
     Label name;
+};
+
+/** A choice in the space of one knob: the name, and the current option in a small box. Click for
+    the list of options, or use the wheel to step through them. */
+class ParamMenuBox : public Component, public SettableTooltipClient, private Timer
+{
+public:
+    te::AutomatableParameter& getParameter() const { return *param; }
+    ParamMenuBox (te::AutomatableParameter& p, Colour c = Theme::accent) : param (&p), colour (c)
+    {
+        label = p.getParameterName();
+        setTooltip (p.getParameterName() + ": click to choose");
+        setMouseCursor (MouseCursor::PointingHandCursor);
+        startTimerHz (8);
+    }
+    void setLabel (const String& t) { label = t; repaint(); }
+    void paint (Graphics& g) override
+    {
+        auto r = getLocalBounds().toFloat();
+        g.setColour (Theme::muted);
+        g.setFont (FontOptions (10.5f));
+        g.drawText (label, r.removeFromTop (12.0f), Justification::centred, true);
+        auto box = r.withSizeKeepingCentre (r.getWidth() - 4.0f, jmin (26.0f, r.getHeight() - 6.0f));
+        g.setColour (Theme::well);
+        g.fillRoundedRectangle (box, 4.0f);
+        g.setColour (over ? colour : Theme::line);
+        g.drawRoundedRectangle (box, 4.0f, 1.0f);
+        g.setColour (colour);
+        g.fillRoundedRectangle (box.withWidth (2.5f).reduced (0.0f, 4.0f).translated (2.0f, 0.0f), 1.2f);
+        g.setColour (Theme::text);
+        g.setFont (FontOptions (10.5f, Font::bold));
+        g.drawFittedText (shown, box.reduced (6.0f, 1.0f).toNearestInt(), Justification::centred, 2, 0.75f);
+    }
+    void mouseEnter (const MouseEvent&) override { over = true; repaint(); }
+    void mouseExit (const MouseEvent&) override  { over = false; repaint(); }
+    void mouseDown (const MouseEvent&) override
+    {
+        PopupMenu m;
+        const int n = jmax (2, ParamButtons::numOptions (*param));
+        const int cur = roundToInt (param->getCurrentValue());
+        for (int i = 0; i < n; ++i)
+            m.addItem (i + 1, param->valueToString ((float) i), true, i == cur);
+        m.showMenuAsync (PopupMenu::Options().withTargetComponent (this), [sp = SafePointer<ParamMenuBox> (this)] (int r)
+        {
+            if (sp == nullptr || r <= 0) return;
+            sp->param->getEdit().getUndoManager().beginNewTransaction ("Change " + sp->param->getParameterName());
+            sp->param->setParameter ((float) (r - 1), sendNotificationSync);
+        });
+    }
+    void mouseWheelMove (const MouseEvent&, const MouseWheelDetails& w) override
+    {
+        const int n = jmax (2, ParamButtons::numOptions (*param));
+        param->setParameter ((float) jlimit (0, n - 1, roundToInt (param->getCurrentValue()) + (w.deltaY > 0 ? -1 : 1)), sendNotificationSync);
+    }
+private:
+    void timerCallback() override
+    {
+        auto t = param->getCurrentValueAsString();
+        if (t != shown) { shown = t; repaint(); }
+    }
+    te::AutomatableParameter::Ptr param;
+    Colour colour;
+    String label, shown;
+    bool over = false;
 };
 
 /** A drop-down for a choice parameter with many options (tables, shapes, sync values). */

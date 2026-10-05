@@ -214,3 +214,7 @@ when you start, touch it after each step, and delete it when you stop.
 - 2026-10-04: v0.59.0 Simpler window (SimplerPanel, same cards): sample + region / pitch, filter, amp env, filter env,
   granular, output; every parameter keeps a control (self-test covers Wavetable, FM, Simpler). 223 checks pass.
   Drum Synth (8 params) stays on the shared layout. Next ideas: device cards in the chain; Drum Rack window polish.
+- 2026-10-04: v0.60.0 device cards in the chain use the windows' card look; on/off parameters on cards are buttons and
+  choices are small menus (ParamMenuBox) instead of knobs (also on Drum Rack pages); Drum Rack pads restyled; sweep arc
+  sits outside the modulation arc; Matrix tab no longer repeats the source chips; ParamButtons::numOptions allows up to 40
+  options (the Wavetable has 17 tables). 223 checks pass. Owner asked for a v1 release candidate: see "Release candidate".

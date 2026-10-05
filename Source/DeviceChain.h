@@ -47,25 +47,28 @@ public:
     void paintCard (Graphics& g, Colour stripe, bool enabled)
     {
         auto r = getLocalBounds().toFloat().reduced (0.5f);
-        g.setColour (Colours::black.withAlpha (0.35f));                       // drop shadow
-        g.fillRoundedRectangle (r.translated (0.0f, 2.0f), 8.0f);
-        g.setGradientFill (ColourGradient (Theme::panel2.brighter (0.04f), 0.0f, r.getY(), Theme::panel2.darker (0.12f), 0.0f, r.getBottom(), false));
-        g.fillRoundedRectangle (r, 8.0f);
-
-        auto head = r.withHeight ((float) headerH);
-        g.setGradientFill (ColourGradient (stripe.withAlpha (0.16f), 0.0f, head.getY(), stripe.withAlpha (0.03f), 0.0f, head.getBottom(), false));
-        g.fillRoundedRectangle (head, 8.0f);
-        g.setColour (stripe);
-        g.fillRoundedRectangle (r.withHeight (3.0f).reduced (6.0f, 0.0f), 1.5f);
-        g.setColour (Theme::line.brighter (0.1f));
-        g.drawRoundedRectangle (r, 8.0f, 1.0f);
-        g.setColour (Colours::black.withAlpha (0.3f));
+        g.setColour (Pro::shade (0.4f));                                      // drop shadow
+        g.fillRoundedRectangle (r.translated (0.0f, 2.0f), 9.0f);
+        g.setGradientFill (ColourGradient (Pro::cardTop(), 0.0f, r.getY(), Pro::cardBot(), 0.0f, r.getY() + 70.0f, false));
+        g.fillRoundedRectangle (r, 9.0f);
+        {
+            // the header: a faint wash of the device's colour and a thin line of it along the top
+            Graphics::ScopedSaveState ss (g);
+            g.reduceClipRegion (getLocalBounds().removeFromTop (headerH));
+            g.setGradientFill (ColourGradient (stripe.withAlpha (0.10f), 0.0f, r.getY(), stripe.withAlpha (0.0f), 0.0f, r.getY() + (float) headerH, false));
+            g.fillRoundedRectangle (r.withHeight ((float) headerH + 12.0f), 9.0f);
+        }
+        g.setColour (stripe.withAlpha (0.9f));
+        g.fillRoundedRectangle (r.withHeight (2.0f).reduced (10.0f, 0.0f), 1.0f);
+        g.setColour (Theme::ink.withAlpha (0.07f));
+        g.drawRoundedRectangle (r, 9.0f, 1.0f);
+        g.setColour (Pro::shade (0.35f));
         g.drawHorizontalLine (headerH, 1.0f, (float) getWidth() - 1.0f);
 
         if (! enabled)
         {
-            g.setColour (Colours::black.withAlpha (0.35f));
-            g.fillRoundedRectangle (r.withTrimmedTop ((float) headerH), 8.0f);
+            g.setColour (Pro::bg().withAlpha (0.55f));
+            g.fillRoundedRectangle (r.withTrimmedTop ((float) headerH), 9.0f);
         }
     }
 };
@@ -468,14 +471,29 @@ private:
             addAndMakeVisible (*ps.label);
             for (auto idx : sec.params)
             {
-                auto* k = new ParamKnob (evs, *pp.param (idx));
-                k->setCompact (accent);
-                knobs.add (k);
+                auto& prm = *pp.param (idx);
                 // drop the section prefix ("Osc 1 Position" in "Osc 1" -> "Position")
-                auto name = k->name.getText();
-                if (name.startsWithIgnoreCase (sec.name + " ")) k->name.setText (name.substring (sec.name.length() + 1), dontSendNotification);
-                addAndMakeVisible (k);
-                ps.knobs.push_back (k);
+                auto name = prm.getParameterName();
+                if (name.startsWithIgnoreCase (sec.name + " ")) name = name.substring (sec.name.length() + 1);
+                Component* c = nullptr;
+                if (ParamButtons::isToggle (prm))
+                    c = new ParamToggle (prm, name, accent);
+                else if (ParamButtons::numOptions (prm) > 2)
+                {
+                    auto* mb = new ParamMenuBox (prm, accent);
+                    mb->setLabel (name);
+                    c = mb;
+                }
+                else
+                {
+                    auto* k = new ParamKnob (evs, prm);
+                    k->setCompact (accent);
+                    k->name.setText (name, dontSendNotification);
+                    c = k;
+                }
+                knobs.add (c);
+                addAndMakeVisible (c);
+                ps.knobs.push_back (c);
             }
             sections.push_back (std::move (ps));
         }
@@ -604,7 +622,10 @@ private:
             for (int i = 0; i < (int) sec.knobs.size(); ++i)
             {
                 sec.knobs[(size_t) i]->setVisible (true);
-                sec.knobs[(size_t) i]->setBounds (area.getX() + (i / layoutRows) * cKnobW, area.getY() + (i % layoutRows) * cKnobH, cKnobW, cKnobH);
+                auto cell = Rectangle<int> (area.getX() + (i / layoutRows) * cKnobW, area.getY() + (i % layoutRows) * cKnobH, cKnobW, cKnobH);
+                if (dynamic_cast<ParamToggle*> (sec.knobs[(size_t) i]) != nullptr) cell = cell.withSizeKeepingCentre (cKnobW - 4, 24);
+                else if (dynamic_cast<ParamMenuBox*> (sec.knobs[(size_t) i]) != nullptr) cell = cell.reduced (1, 8);
+                sec.knobs[(size_t) i]->setBounds (cell);
             }
         }
     }

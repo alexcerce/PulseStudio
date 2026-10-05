@@ -237,15 +237,25 @@ private:
             const bool sel = owner.selected == s;
             auto col = owner.instance->getOwnerTrack() != nullptr ? owner.instance->getOwnerTrack()->getColour() : Theme::orange;
 
-            g.setColour (filled ? col.withAlpha (hover ? 0.55f : 0.38f) : Theme::header);
-            g.fillRoundedRectangle (r, 5.0f);
+            // a dark pad tinted with the track colour (a line of it along the top); it lights up when hit
+            if (filled)
+                g.setGradientFill (ColourGradient (Pro::cardTop().interpolatedWith (col, hover ? 0.42f : 0.30f), 0.0f, r.getY(),
+                                                   Pro::cardBot().interpolatedWith (col, hover ? 0.26f : 0.16f), 0.0f, r.getBottom(), false));
+            else
+                g.setColour (hover ? Pro::cardTop() : Pro::deep());
+            g.fillRoundedRectangle (r, 6.0f);
+            if (filled)
+            {
+                g.setColour (col);
+                g.fillRoundedRectangle (r.withHeight (2.5f).reduced (6.0f, 0.0f).translated (0.0f, 1.0f), 1.2f);
+            }
             if (flash > 0.01f)
             {
-                g.setColour (Theme::ink.withAlpha (flash * 0.45f));
-                g.fillRoundedRectangle (r, 5.0f);
+                g.setColour (col.brighter (0.5f).withAlpha (flash * 0.55f));
+                g.fillRoundedRectangle (r, 6.0f);
             }
-            g.setColour (sel ? Colours::white : (highlight ? Theme::accent : Theme::line));
-            g.drawRoundedRectangle (r, 5.0f, sel || highlight ? 1.8f : 1.0f);
+            g.setColour (sel ? col.brighter (0.7f) : (highlight ? Theme::accent : Theme::ink.withAlpha (filled ? 0.12f : 0.06f)));
+            g.drawRoundedRectangle (r, 6.0f, sel || highlight ? 1.8f : 1.0f);
 
             g.setColour (filled ? Theme::text : Theme::muted.withAlpha (0.8f));
             g.setFont (FontOptions (11.5f, filled ? Font::bold : Font::plain));
@@ -645,8 +655,14 @@ private:
         for (int id : ids)
         {
             if (x + kw > area.getRight()) { x = area.getX(); y += kh; }
-            auto* k = new ParamKnob (evs, *p.param (id));
-            k->setBounds (x, y, kw, kh);
+            // on / off settings are buttons, choices are small menus, the rest are knobs
+            auto& prm = *p.param (id);
+            Component* k = nullptr;
+            auto cell = Rectangle<int> (x, y, kw, kh);
+            if (ParamButtons::isToggle (prm))             { k = new ParamToggle (prm, {}, Theme::orange); cell = cell.withSizeKeepingCentre (kw - 6, 24); }
+            else if (ParamButtons::numOptions (prm) > 2)  { k = new ParamMenuBox (prm, Theme::orange); cell = cell.reduced (1, 12); }
+            else                                          k = new ParamKnob (evs, prm);
+            k->setBounds (cell);
             pageHolder.addAndMakeVisible (pageItems.add (k));
             x += kw;
         }

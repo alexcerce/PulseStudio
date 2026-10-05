@@ -773,7 +773,7 @@ namespace DeviceEditors
 
             // ---- matrix page
             cMatrix = card (2, "MODULATION MATRIX", lfo.withRotatedHue (0.1f));
-            matrix = std::make_unique<WavetableUI::MatrixView> (w);
+            matrix = std::make_unique<WavetableUI::MatrixView> (w, false);
             cMatrix->addAndMakeVisible (*matrix);
             cSources = card (2, "SOURCES NOW", lfo);
             meters = std::make_unique<SourceMeters> (w);

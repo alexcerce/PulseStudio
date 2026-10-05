@@ -235,9 +235,10 @@ namespace WavetableUI
     class MatrixView : public Component, private Timer
     {
     public:
-        explicit MatrixView (W& w) : synth (w), holder (&w)
+        /** withChips = false when the sources are already on show elsewhere (the Wavetable window's bottom bar). */
+        explicit MatrixView (W& w, bool withChips = true) : synth (w), holder (&w)
         {
-            for (int s = 1; s < W::sourceNames.size(); ++s) addAndMakeVisible (chips.add (new SourceChip (s)));
+            if (withChips) for (int s = 1; s < W::sourceNames.size(); ++s) addAndMakeVisible (chips.add (new SourceChip (s)));
             addBtn.onClick = [this]
             {
                 synth.edit.getUndoManager().beginNewTransaction ("Add modulation");
@@ -262,7 +263,7 @@ namespace WavetableUI
         void resized() override
         {
             auto r = getLocalBounds();
-            auto chipArea = r.removeFromTop (jmin (52, r.getHeight() / 3));
+            auto chipArea = r.removeFromTop (chips.isEmpty() ? 0 : jmin (52, r.getHeight() / 3));
             const int perRow = jmax (1, (int) std::ceil (chips.size() / 2.0));
             const int cw = chipArea.getWidth() / perRow, ch = chipArea.getHeight() / 2;
             for (int i = 0; i < chips.size(); ++i) chips[i]->setBounds (chipArea.getX() + (i % perRow) * cw, chipArea.getY() + (i / perRow) * ch, cw, ch);
@@ -372,7 +373,10 @@ namespace WavetableUI
             {
                 auto* b = tabs.add (new TextButton ("LFO " + String (l + 1)));
                 b->setClickingTogglesState (false);
-                b->setColour (TextButton::buttonOnColourId, sourceColour (l + 1).withAlpha (0.7f));
+                b->setColour (TextButton::buttonColourId, Colours::transparentBlack);
+                b->setColour (TextButton::buttonOnColourId, sourceColour (l + 1).withAlpha (0.28f));
+                b->setColour (TextButton::textColourOnId, Theme::text);
+                b->setColour (TextButton::textColourOffId, Theme::muted);
                 b->onClick = [this, l] { current = l; repaint(); updateTabs(); if (onSelect) onSelect (l); };
                 addAndMakeVisible (b);
             }
