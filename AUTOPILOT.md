@@ -233,3 +233,10 @@ when you start, touch it after each step, and delete it when you stop.
   a message, an empty "Untitled" project instead); instrument preset level check (chord peaks -30 .. +1 dBFS) and ten
   hot presets turned down 4 dB. Known: the Wavetable's Level is before its effects, so driven presets sit near 0 dBFS
   whatever Level says. 227 checks, 4 clean runs.
+- 2026-10-05: v0.92.0 (RC work). BUG FOUND by a new save / reload test: Saturator and Auto Filter kept their "Type"
+  parameter under the state property "type", which is the engine's record of the device kind, so a project saved after
+  changing Type lost that device on reload. Fixed (PulsePlugin::storageID keeps reserved names under "pulse_<id>") and
+  Upgrade::repairProjectFile puts affected projects right on opening (copy kept as "... (before repair)").
+  Also: one app at a time (a double-clicked project goes to the running app; anything with "--" stays separate);
+  Wavetable Output knob after the effects (pOutput) and 20 presets trimmed to about -6 dBFS; shorter page names on cards.
+  230 checks. RULE: never give a parameter the id type / id / name / enabled (storageID guards it anyway).

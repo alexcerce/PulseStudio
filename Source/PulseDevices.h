@@ -64,11 +64,21 @@ namespace pulse
         String getShortName (int) override               { return getName().substring (0, 6); }
         String getSelectableDescription() override       { return getName(); }
 
+        /** Where a parameter's value is kept in the project. Almost always under its own id; but a few
+            names belong to the engine's own record of a device (above all "type", which says what kind of
+            device it is), so a parameter with such an id is kept under "pulse_<id>" instead. */
+        static Identifier storageID (const String& paramID)
+        {
+            for (auto reserved : { "type", "id", "name", "enabled", "base", "process", "frozen", "windowX", "windowY", "windowLocked", "quickParamName", "remapOnTempoChange" })
+                if (paramID == reserved) return Identifier ("pulse_" + paramID);
+            return Identifier (paramID);
+        }
+
     protected:
         int add (const String& id, const String& name, NormalisableRange<float> range, float def, std::function<String (float)> toText)
         {
             auto cv = std::make_unique<CachedValue<float>>();
-            cv->referTo (state, Identifier (id), getUndoManager(), def);
+            cv->referTo (state, storageID (id), getUndoManager(), def);
             auto p = addParam (id, name, range, toText, [] (const String& s) { return s.getFloatValue(); });
             p->attachToCurrentValue (*cv);
             params.push_back ({ p, std::move (cv) });

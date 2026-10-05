@@ -797,7 +797,13 @@ namespace DeviceEditors
             levelKnob = std::make_unique<ParamKnob> (evs, *w.param (W::pLevel));
             levelKnob->setLabel ("Level");
             levelKnob->setCompact (voice);
+            levelKnob->setTooltip ("Level of the voices, before the effects (it sets how hard the distortion is driven)");
             addAndMakeVisible (*levelKnob);
+            outputKnob = std::make_unique<ParamKnob> (evs, *w.param (W::pOutput));
+            outputKnob->setLabel ("Output");
+            outputKnob->setCompact (voice);
+            outputKnob->setTooltip ("Output volume, after the effects");
+            addAndMakeVisible (*outputKnob);
             addAndMakeVisible (scope);
             showEnv (0);
             showLfo (0);
@@ -861,7 +867,8 @@ namespace DeviceEditors
             bar.removeFromLeft (14);
             scope.setBounds (bar.removeFromRight (jlimit (150, 300, bar.getWidth() / 4)));
             bar.removeFromRight (6);
-            levelKnob->setBounds (bar.removeFromRight (74));
+            outputKnob->setBounds (bar.removeFromRight (70));
+            levelKnob->setBounds (bar.removeFromRight (70));
             bar.removeFromRight (14);
             {
                 const int perRow = (chips.size() + 1) / 2;
@@ -1091,7 +1098,7 @@ namespace DeviceEditors
         OwnedArray<Component> owned;
         OwnedArray<WavetableUI::SourceChip> chips, macroChips;
         OwnedArray<ParamKnob> macroKnobs;
-        std::unique_ptr<ParamKnob> levelKnob;
+        std::unique_ptr<ParamKnob> levelKnob, outputKnob;
         OwnedArray<FxSlot> fx;
         Card *cOscA = nullptr, *cOscB = nullptr, *cMix = nullptr, *cF1 = nullptr, *cF2 = nullptr, *cEnv = nullptr, *cLfo = nullptr,
              *cMatrix = nullptr, *cSources = nullptr, *cVoice = nullptr, *cUser = nullptr;

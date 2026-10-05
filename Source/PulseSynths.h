@@ -434,6 +434,7 @@ namespace pulse
                pOct1, pOct2, pLevel1, pLevel2, pPan1, pPan2, pSpread, pSubShape, pSubOct, pNoise, pNoiseColour,
                pFDrive, pKeyTrack, pMode, pMacro1, pMacro2, pMacro3, pMacro4,
                pDriveType, pPhaserMix, pPhaserRate, pPhaserDepth, pEqLow, pEqHigh,
+               pOutput,   // v0.92: after the effects (Level is before them)
                numParamsTotal };
         static inline const char* xmlTypeName = "pulseWavetable";
         static const char* getPluginName() { return "Wavetable"; }
@@ -549,6 +550,7 @@ namespace pulse
             add ("phaserdepth", "Phaser Depth", { 0.0f, 1.0f }, 0.6f, fmt::pct);
             add ("eqlow", "EQ Low", { -12.0f, 12.0f }, 0.0f, fmt::db);
             add ("eqhigh", "EQ High", { -12.0f, 12.0f }, 0.0f, fmt::db);
+            add ("output", "Output", { -24.0f, 12.0f }, 0.0f, fmt::db);
             jassert (numParams() == numParamsTotal);
 
             WavetableBank::get();   // build the tables now rather than on the audio thread
@@ -770,13 +772,14 @@ namespace pulse
                      { "Effects", { pDrive, pDriveType, pPhaserMix, pPhaserRate, pPhaserDepth, pChorusMix, pChorusRate, pChorusDepth,
                                     pDelayMix, pDelayTime, pDelayFb, pReverbMix, pReverbSize, pEqLow, pEqHigh } },
                      { "Macros", { pMacro1, pMacro2, pMacro3, pMacro4 } },
-                     { "Play", { pMode, pGlide, pBendRange, pPressure, pSlide, pLevel } } };
+                     { "Play", { pMode, pGlide, pBendRange, pPressure, pSlide, pLevel, pOutput } } };
         }
 
         void initialise (const te::PluginInitialisationInfo& info) override
         {
             PulseSynth::initialise (info);
             fx.prepare (info.sampleRate);
+            outGain = -1.0f;
         }
 
     private:
@@ -838,6 +841,13 @@ namespace pulse
         void afterBlock (AudioBuffer<float>& b, int start, int n) override
         {
             fx.process (*this, b, start, n);
+            // the output trim comes after the effects (a ramp between blocks, so turning it makes no clicks)
+            if (const float target = Decibels::decibelsToGain (get (pOutput)); std::abs (target - 1.0f) > 1.0e-4f || std::abs (outGain - 1.0f) > 1.0e-4f)
+            {
+                if (outGain < 0.0f) outGain = target;   // the first block starts at the set value
+                for (int ch = 0; ch < jmin (2, b.getNumChannels()); ++ch) b.applyGainRamp (ch, start, n, outGain, target);
+                outGain = target;
+            }
             activeVoices.store (countActive());
             // the output for the panel's scope and meter
             const float* l = b.getReadPointer (0, start);
@@ -873,6 +883,7 @@ namespace pulse
 
     private:
         int scopeSkip = 0;
+        float outGain = -1.0f;
 
         mutable SpinLock userLock;
         std::shared_ptr<const WavetableBank::UserTable> userTable, audioUserTable;

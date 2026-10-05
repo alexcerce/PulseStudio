@@ -67,6 +67,10 @@ namespace About
         return false;
     }
 
+    /** True for command lines that must not be handed to an already running Pulse Studio: helper
+        processes and test / development runs all carry an option that starts with "--". */
+    inline bool wantsOwnInstance (const String& commandLine) { return commandLine.contains ("--"); }
+
     /** A project file named on the command line (double-clicked in Explorer), if there is one. */
     inline File projectFromCommandLine (const StringArray& args)
     {

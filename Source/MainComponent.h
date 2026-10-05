@@ -628,6 +628,16 @@ private:
 
     PropertiesFile& settings() { return engine.getPropertyStorage().getPropertiesFile(); }
 
+public:
+    /** Opens a project handed over from outside (double-clicked while the app is running). */
+    void openProjectFile (const File& f)
+    {
+        if (! f.existsAsFile() || f == editFile) return;
+        saveIfNeeded();
+        loadEdit (f, false);
+    }
+private:
+
     void openStartupProject()
     {
         File last (settings().getValue ("lastEdit"));
@@ -696,7 +706,18 @@ private:
 
         StartupTimer::mark ("closed previous edit");
         if (file.existsAsFile())
+        {
+            const int repaired = Upgrade::repairProjectFile (file);   // devices an older version saved in a way it could not load again
             edit = te::loadEditFromFile (engine, file);
+            if (repaired > 0)
+                MessageManager::callAsync ([repaired]
+                {
+                    AlertWindow::showMessageBoxAsync (MessageBoxIconType::InfoIcon, "Project repaired",
+                                                      String (repaired) + (repaired == 1 ? " device" : " devices") + " that an older version of Pulse Studio saved incorrectly "
+                                                      "(a Saturator or Auto Filter whose Type had been changed) " + (repaired == 1 ? "is" : "are") + " back. "
+                                                      "A copy of the project as it was is next to it (\"... (before repair)\").");
+                });
+        }
         else
             edit = te::createEmptyEdit (engine, file);
         StartupTimer::mark ("edit file read");

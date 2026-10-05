@@ -570,7 +570,9 @@ private:
         {
             StringArray names;
             for (int s : pages[(size_t) i].sections) names.add (sections[(size_t) s].name);
-            auto* t = pageTabs.add (new TextButton (names.joinIntoString (" / ")));
+            const auto full = names.joinIntoString (" / ");
+            auto* t = pageTabs.add (new TextButton (full.length() > 18 && names.size() > 1 ? names[0] + " +" + String (names.size() - 1) : full));
+            t->setTooltip (full);
             t->setTooltip (names.joinIntoString (", "));
             t->onClick = [this, i] { currentPage = i; resized(); repaint(); };
             addAndMakeVisible (t);

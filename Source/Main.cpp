@@ -36,7 +36,19 @@ class PulseStudioApplication : public JUCEApplication
 public:
     const String getApplicationName() override       { return JUCE_APPLICATION_NAME_STRING; }
     const String getApplicationVersion() override    { return JUCE_APPLICATION_VERSION_STRING; }
-    bool moreThanOneInstanceAllowed() override       { return true; }   // the plugin scanner is a second instance
+    // One Pulse Studio at a time: a project double-clicked while it runs opens in the running one. Helper
+    // processes (plugin scanner, plugin sandbox) and runs with options (--dev-profile, --selftest ...) are separate.
+    bool moreThanOneInstanceAllowed() override       { return About::wantsOwnInstance (getCommandLineParameters()); }
+
+    void anotherInstanceStarted (const String& commandLine) override
+    {
+        if (mainWindow == nullptr) return;
+        mainWindow->setMinimised (false);
+        mainWindow->toFront (true);
+        if (auto f = About::projectFromCommandLine (StringArray::fromTokens (commandLine, true)); f.existsAsFile())
+            if (auto* mc = dynamic_cast<MainComponent*> (mainWindow->getContentComponent()))
+                mc->openProjectFile (f);
+    }
 
     void initialise (const String& commandLine) override
     {

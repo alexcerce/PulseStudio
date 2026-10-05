@@ -2,6 +2,12 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.92.0 - 2026-10-05
+
+- Fixed: a Saturator or Auto Filter whose Type had been changed could be missing after reopening the project. Affected projects are repaired when opened (a copy of the original is kept next to them)
+- A project double-clicked while Pulse Studio is running opens in the running app
+- Wavetable: an Output knob after the effects; presets play at more even levels
+
 ## 0.91.0 - 2026-10-05
 
 - A damaged project file is left untouched (an empty project opens instead, with a pointer to the backups)

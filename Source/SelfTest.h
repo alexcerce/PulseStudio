@@ -3995,6 +3995,66 @@ namespace SelfTest
             edit->deleteTrack (plain);
         }
 
+        // --- 1.0 RC: every device comes back from a saved project exactly as it was ----------------------------
+        {
+            rep.step ("device state round trip");
+            StringArray bad;
+            int devices = 0, values = 0;
+            Random rng (20261005);
+            for (auto& b : ClipImport::builtIns())
+            {
+                auto p = edit->getPluginCache().createNewPlugin (b.type, {});
+                auto* pp = dynamic_cast<pulse::PulsePlugin*> (p.get());
+                if (pp == nullptr) continue;
+                ++devices;
+                for (int i = 0; i < pp->numParams(); ++i)   // every parameter somewhere new
+                {
+                    auto* prm = pp->param (i);
+                    pp->set (i, prm->valueRange.snapToLegalValue (prm->valueRange.convertFrom0to1 (rng.nextFloat())));
+                }
+                if (auto* w = dynamic_cast<pulse::WavetableSynth*> (pp)) { w->setRoute (3, "cutoff", 0.37f); w->setRoute (15, "pos2", -0.62f); }
+                p->flushPluginStateToValueTree();
+                // through text, as a project file does it
+                auto xml = p->state.createXml();
+                auto v = xml != nullptr ? ValueTree::fromXml (xml->toString()) : ValueTree();
+                te::EditItemID::remapIDs (v, nullptr, *edit);
+                auto q = edit->getPluginCache().createNewPlugin (v);
+                auto* qq = dynamic_cast<pulse::PulsePlugin*> (q.get());
+                if (qq == nullptr || qq->numParams() != pp->numParams()) { bad.add (String (b.name) + " (not recreated: " + (q == nullptr ? String ("null, tree ") + (v.isValid() ? v.getType().toString() + " type=" + v["type"].toString() : String ("invalid"))
+                                                                                                 : q->getName() + " params " + String (qq != nullptr ? qq->numParams() : -1)) + ")"); continue; }
+                for (int i = 0; i < pp->numParams(); ++i)
+                {
+                    ++values;
+                    const float a = pp->get (i), c = qq->get (i);
+                    const float tol = 1.0e-4f * jmax (1.0f, std::abs (a));
+                    if (std::abs (a - c) > tol) { bad.add (String (b.name) + "." + pp->param (i)->paramID + " " + String (a) + " -> " + String (c)); break; }
+                }
+                if (auto* w = dynamic_cast<pulse::WavetableSynth*> (qq))
+                {
+                    auto routes = w->getRoutes();
+                    if (routes.size() != 2 || routes[0].source != 3 || std::abs (routes[1].amount + 0.62f) > 1.0e-4f) bad.add ("Wavetable routes");
+                }
+            }
+            {
+                // a project from an older version with a Saturator whose Type had been changed (it was saved under the device's own "type")
+                auto xml = parseXML ("<EDIT><TRACK><PLUGIN type=\"3.0\" id=\"1099\" enabled=\"1\" drive=\"12.0\" bias=\"0.2\"/><PLUGIN type=\"pulseReverb\" id=\"1100\"/></TRACK>"
+                                     "<MASTERPLUGINS><PLUGIN type=\"2.0\" id=\"1101\" lfoamount=\"0.5\"/><PLUGIN type=\"volume\" id=\"1102\"/></MASTERPLUGINS></EDIT>");
+                const int fixed = xml != nullptr ? Upgrade::repairDeviceTypes (*xml) : -1;
+                auto* sat = xml->getChildByName ("TRACK")->getChildElement (0);
+                auto* af = xml->getChildByName ("MASTERPLUGINS")->getChildElement (0);
+                const bool ok = fixed == 2 && sat->getStringAttribute ("type") == "pulseSaturator" && sat->getDoubleAttribute ("pulse_type") == 3.0
+                                && af->getStringAttribute ("type") == "pulseAutoFilter" && xml->getChildByName ("TRACK")->getChildElement (1)->getStringAttribute ("type") == "pulseReverb";
+                auto v = ValueTree::fromXml (*sat);
+                te::EditItemID::remapIDs (v, nullptr, *edit);
+                auto back = edit->getPluginCache().createNewPlugin (v);
+                auto* bs = dynamic_cast<pulse::Saturator*> (back.get());
+                rep.check (ok && bs != nullptr && bs->getInt (pulse::Saturator::pType) == 3 && std::abs (bs->get (pulse::Saturator::pDrive) - 12.0f) < 0.01f,
+                           "Projects from older versions: a Saturator / Auto Filter saved with a changed Type is repaired on opening", String (fixed) + " repaired");
+            }
+            rep.check (bad.isEmpty() && devices >= 20, "Every built-in device reloads from a saved project with every value intact",
+                       bad.isEmpty() ? String (devices) + " devices, " + String (values) + " values" : bad.joinIntoString ("; "));
+        }
+
         // --- 1.0 RC: release pieces ---------------------------------------------------------------------------
         {
             rep.step ("release pieces");
@@ -4009,6 +4069,9 @@ namespace SelfTest
             tmp.replaceWithText ("<?xml version=\"1.0\"?><EDIT appVersion=\"x\"><TRACK/></EDIT>");
             const bool acceptsEdit = About::isProjectFile (tmp);
             tmp.deleteFile();
+            rep.check (About::wantsOwnInstance ("--PluginScan:abc") && About::wantsOwnInstance ("--dev-profile --selftest r.txt")
+                       && ! About::wantsOwnInstance ("") && ! About::wantsOwnInstance (String ("C:/Music/My Song.tracktionedit").quoted()),
+                       "One app at a time: a double-clicked project goes to the running app; helpers and test runs stay separate", {});
             rep.check (rejectsJunk && acceptsEdit, "A damaged file is recognised (it is left untouched instead of being opened and saved over)", {});
             rep.check (found && ignored && About::versionLine().contains (JUCEApplication::getInstance()->getApplicationVersion()) && About::licenceSummary().contains ("Tracktion"),
                        "A project named on the command line is opened; the About box has the version and the licences", About::versionLine());
