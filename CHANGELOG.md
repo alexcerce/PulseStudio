@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.93.0 - 2026-10-05
+
+- Device windows: presets grouped by kind of sound, previous / next buttons, and the name of the current preset
+
 ## 0.92.0 - 2026-10-05
 
 - Fixed: a Saturator or Auto Filter whose Type had been changed could be missing after reopening the project. Affected projects are repaired when opened (a copy of the original is kept next to them)

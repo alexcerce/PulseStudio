@@ -32,7 +32,7 @@ namespace FactoryPresetsMore
                                                      { "drive", 0.35f }, { "drivetype", 1 }, { "s", 0.8f }, { "r", 90 }, { "level", -13 }, { "output", -8 } } },
                 { "Cathedral Organ", { { "set1", 7 }, { "pos1", 0.8f }, { "set2", 7 }, { "pos2", 0.35f }, { "oct2", 1 }, { "mix", 0.4f }, { "voices", 3 }, { "detune", 0.08f }, { "sub", 0.35f },
                                        { "ftype", 0 }, { "cutoff", 9000 }, { "fenv", 0 }, { "a", 20 }, { "s", 1 }, { "r", 400 }, { "chorusmix", 0.3f }, { "reverbmix", 0.45f }, { "reverbsize", 0.85f }, { "level", -10 } } },
-                { "Glass Bells", { { "set1", 8 }, { "pos1", 0.45f }, { "set2", 16 }, { "pos2", 0.6f }, { "oct2", 1 }, { "mix", 0.35f }, { "voices", 2 }, { "detune", 0.1f }, { "mod:5:pos1", -0.35f },
+                { "Crystal Bells", { { "set1", 8 }, { "pos1", 0.45f }, { "set2", 16 }, { "pos2", 0.6f }, { "oct2", 1 }, { "mix", 0.35f }, { "voices", 2 }, { "detune", 0.1f }, { "mod:5:pos1", -0.35f },
                                    { "md", 900 }, { "ms", 0 }, { "ftype", 0 }, { "cutoff", 12000 }, { "a", 1 }, { "d", 1800 }, { "s", 0 }, { "r", 1500 }, { "delaymix", 0.2f }, { "reverbmix", 0.4f }, { "level", -10 } } },
                 { "FM Tines (keys)", { { "set1", 9 }, { "pos1", 0.18f }, { "mix", 0 }, { "voices", 1 }, { "mod:8:pos1", 0.35f }, { "mod:5:pos1", 0.25f }, { "md", 500 }, { "ms", 0 }, { "ftype", 0 },
                                        { "cutoff", 8000 }, { "keytrack", 0.5f }, { "a", 1 }, { "d", 2200 }, { "s", 0.15f }, { "r", 500 }, { "chorusmix", 0.35f }, { "phasermix", 0.25f }, { "phaserrate", 0.4f }, { "level", -9 } } },

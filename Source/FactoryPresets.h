@@ -121,6 +121,58 @@ namespace FactoryPresets
         return it != m.end() ? it->second : none;
     }
 
+    /** The factory preset a device was last set to (kept in the project; empty if none). */
+    static inline const Identifier currentID { "pulsePreset" };
+    inline String current (te::Plugin& p) { return p.state[currentID].toString(); }
+
+    /** The kind of sound a preset is, from its name (used to group long preset lists). */
+    inline String category (const String& presetName)
+    {
+        const auto n = presetName.toLowerCase();
+        auto has = [&n] (std::initializer_list<const char*> words) { for (auto w : words) if (n.contains (w)) return true; return false; };
+        if (has ({ "riser", "drop", "noise", "fx", "gate", "stutter", "arcade", "texture", "drone", "sweep" })) return "FX and motion";
+        if (has ({ "bass", "sub", "reese", "808", "acid", "growl", "wobble" }))                               return "Bass";
+        if (has ({ "pad", "choir", "strings", "organ", "atmos", "warm", "dream", "glass ch" }))               return "Pads and strings";
+        if (has ({ "pluck", "bell", "keys", "tines", "piano", "marimba", "mallet", "kalimba", "harp", "stab", "chord" })) return "Keys, plucks and bells";
+        if (has ({ "lead", "hoover", "saw", "sync", "brass", "solo", "whistle", "flute" }))                   return "Leads and brass";
+        return "More";
+    }
+
+    /** The presets of a device type in menu order: by category when there are many, as listed otherwise. */
+    inline StringArray ordered (const String& type)
+    {
+        auto& list = forType (type);
+        StringArray names;
+        if (list.size() <= 12) { for (auto& p : list) names.add (p.name); return names; }
+        for (auto cat : { "Bass", "Leads and brass", "Keys, plucks and bells", "Pads and strings", "FX and motion", "More" })
+            for (auto& p : list) if (category (p.name) == cat) names.add (p.name);
+        return names;
+    }
+
+    /** Adds a device type's factory presets to a menu (in sub-menus by category when there are many). */
+    inline void addToMenu (PopupMenu& m, const String& type, const String& tick, std::function<void (const String&)> choose)
+    {
+        auto& list = forType (type);
+        if (list.size() <= 12)
+        {
+            for (auto& p : list) m.addItem (PopupMenu::Item (p.name).setTicked (tick == p.name).setAction ([choose, n = String (p.name)] { choose (n); }));
+            return;
+        }
+        for (auto cat : { "Bass", "Leads and brass", "Keys, plucks and bells", "Pads and strings", "FX and motion", "More" })
+        {
+            PopupMenu sub;
+            bool any = false, ticked = false;
+            for (auto& p : list)
+                if (category (p.name) == cat)
+                {
+                    sub.addItem (PopupMenu::Item (p.name).setTicked (tick == p.name).setAction ([choose, n = String (p.name)] { choose (n); }));
+                    any = true;
+                    ticked = ticked || tick == p.name;
+                }
+            if (any) m.addSubMenu (cat, sub, true, nullptr, ticked);
+        }
+    }
+
     /** Applies a preset by name: defaults first, then the preset's values. */
     /** Device-internal modulation in presets: values named "mod:<source>:<parameter id>" are
         routes (the amount is the value). Devices with a matrix set these hooks. */
@@ -147,6 +199,7 @@ namespace FactoryPresets
                     if (auto prm = p.getAutomatableParameterByID (id))
                         prm->setParameter (prm->valueRange.snapToLegalValue (v), sendNotificationSync);
                 }
+                p.state.setProperty (currentID, name, nullptr);   // shown in the device window; kept with the project
                 return true;
             }
         return false;

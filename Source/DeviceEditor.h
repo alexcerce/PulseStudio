@@ -1709,12 +1709,7 @@ namespace DeviceEditors
             presetBtn.onClick = [this]
             {
                 PopupMenu m;
-                for (auto& pr : FactoryPresets::forType (plugin->getPluginType()))
-                    m.addItem (pr.name, [this, name = String (pr.name)]
-                    {
-                        plugin->edit.getUndoManager().beginNewTransaction ("Factory preset");
-                        FactoryPresets::apply (*plugin, name);
-                    });
+                FactoryPresets::addToMenu (m, plugin->getPluginType(), FactoryPresets::current (*plugin), [this] (const String& name) { choosePreset (name); });
                 auto mine = Presets::devicePresets (*plugin);
                 if (! mine.isEmpty())
                 {
@@ -1736,6 +1731,19 @@ namespace DeviceEditors
                 m.showMenuAsync (PopupMenu::Options().withTargetComponent (&presetBtn));
             };
             addAndMakeVisible (presetBtn);
+            // previous / next factory preset, and the name of the current one on the button
+            const bool hasPresets = ! FactoryPresets::forType (plugin->getPluginType()).empty();
+            for (auto* b : { &prevPreset, &nextPreset })
+            {
+                b->setVisible (hasPresets);
+                addChildComponent (b);
+                b->setVisible (hasPresets);
+                b->onClick = [this, b] { stepPreset (b == &nextPreset ? 1 : -1); };
+            }
+            prevPreset.setTooltip ("Previous preset");
+            nextPreset.setTooltip ("Next preset");
+            presetBtn.setTooltip ("Presets: the built-in ones (by kind of sound), your own, and Save preset");
+            updatePresetName();
             if (dynamic_cast<pulse::WavetableSynth*> (&p) != nullptr || dynamic_cast<pulse::FMSynth*> (&p) != nullptr || dynamic_cast<pulse::Simpler*> (&p) != nullptr) setSize (1280, 860); else setSize (1100, 760);
         }
 
@@ -1754,7 +1762,10 @@ namespace DeviceEditors
         {
             auto r = getLocalBounds();
             auto top = r.removeFromTop (44).reduced (12, 8);
-            for (auto* b : { &resetBtn, &randomBtn, &presetBtn }) { b->setBounds (top.removeFromRight (110)); top.removeFromRight (6); }
+            for (auto* b : { &resetBtn, &randomBtn }) { b->setBounds (top.removeFromRight (100)); top.removeFromRight (6); }
+            if (nextPreset.isVisible()) { nextPreset.setBounds (top.removeFromRight (26)); top.removeFromRight (2); }
+            presetBtn.setBounds (top.removeFromRight (jlimit (110, 230, top.getWidth() / 3))); top.removeFromRight (nextPreset.isVisible() ? 2 : 6);
+            if (prevPreset.isVisible()) { prevPreset.setBounds (top.removeFromRight (26)); top.removeFromRight (6); }
             abBtn.setBounds (top.removeFromRight (44)); top.removeFromRight (6);
             if (windowBtn.isVisible()) { windowBtn.setBounds (top.removeFromRight (130)); top.removeFromRight (6); }
             title.setBounds (top);
@@ -1788,6 +1799,28 @@ namespace DeviceEditors
                     graphs[(size_t) i]->setBounds (cell);
                 }
             }
+        }
+
+        /** Applies a factory preset (undoable) and shows its name. */
+        void choosePreset (const String& name)
+        {
+            plugin->edit.getUndoManager().beginNewTransaction ("Factory preset");
+            FactoryPresets::apply (*plugin, name);
+            updatePresetName();
+        }
+        /** Steps through the factory presets in menu order (wrapping round). */
+        void stepPreset (int delta)
+        {
+            const auto names = FactoryPresets::ordered (plugin->getPluginType());
+            if (names.isEmpty()) return;
+            const int at = names.indexOf (FactoryPresets::current (*plugin));
+            choosePreset (names[(at < 0 ? (delta > 0 ? 0 : names.size() - 1) : (at + delta + names.size()) % names.size())]);
+        }
+        String presetName() const { return FactoryPresets::current (*plugin); }
+        void updatePresetName()
+        {
+            const auto n = FactoryPresets::current (*plugin);
+            presetBtn.setButtonText (n.isNotEmpty() ? n : String ("Presets"));
         }
 
     private:
@@ -1860,6 +1893,7 @@ namespace DeviceEditors
         Rectangle<int> displayArea;
         OwnedArray<Group> groups;
         Label title;
+        TextButton prevPreset { "<" }, nextPreset { ">" };
         TextButton presetBtn { "Presets" }, randomBtn { "Randomise" }, resetBtn { "Reset" }, abBtn { "A" }, windowBtn { "Plugin window" };
         DeviceTools::Values slotA, slotB;
         bool abIsB = false;

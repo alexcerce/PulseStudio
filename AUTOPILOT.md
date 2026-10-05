@@ -240,3 +240,6 @@ when you start, touch it after each step, and delete it when you stop.
   Also: one app at a time (a double-clicked project goes to the running app; anything with "--" stays separate);
   Wavetable Output knob after the effects (pOutput) and 20 presets trimmed to about -6 dBFS; shorter page names on cards.
   230 checks. RULE: never give a parameter the id type / id / name / enabled (storageID guards it anyway).
+- 2026-10-05: v0.93.0 (RC work) preset browser in device windows (FactoryPresets::category / ordered / addToMenu,
+  "pulsePreset" kept in the device state, < > buttons, name on the Presets button; cards use the grouped menu too);
+  whole-project save / reopen comparison test (273 things); duplicate preset name removed. 232 checks.

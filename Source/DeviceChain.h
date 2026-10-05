@@ -394,12 +394,11 @@ private:
         if (auto& factory = FactoryPresets::forType (plugin->getPluginType()); ! factory.empty())
         {
             PopupMenu f;
-            for (auto& pr : factory)
-                f.addItem (pr.name, [p = plugin, name = String (pr.name)]
-                {
-                    p->edit.getUndoManager().beginNewTransaction ("Factory preset");
-                    FactoryPresets::apply (*p, name);
-                });
+            FactoryPresets::addToMenu (f, plugin->getPluginType(), FactoryPresets::current (*plugin), [p = plugin] (const String& name)
+            {
+                p->edit.getUndoManager().beginNewTransaction ("Factory preset");
+                FactoryPresets::apply (*p, name);
+            });
             m.addSubMenu ("Factory presets", f);
         }
         auto files = Presets::devicePresets (*plugin);

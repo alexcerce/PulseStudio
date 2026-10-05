@@ -4055,6 +4055,33 @@ namespace SelfTest
                        bad.isEmpty() ? String (devices) + " devices, " + String (values) + " values" : bad.joinIntoString ("; "));
         }
 
+        // --- 1.0 RC: preset browser in the device windows --------------------------------------------------------
+        {
+            rep.step ("preset browser");
+            auto wp = edit->getPluginCache().createNewPlugin (pulse::WavetableSynth::xmlTypeName, {});
+            auto* w = dynamic_cast<pulse::WavetableSynth*> (wp.get());
+            const auto names = FactoryPresets::ordered (pulse::WavetableSynth::xmlTypeName);
+            const int total = (int) FactoryPresets::forType (pulse::WavetableSynth::xmlTypeName).size();
+            StringArray unique (names);
+            unique.removeDuplicates (false);
+            int more = 0;
+            for (auto& n : names) if (FactoryPresets::category (n) == "More") ++more;
+            EditViewState pevs (*edit, sm);
+            DeviceEditors::Editor ed (pevs, *w);
+            ed.stepPreset (1);
+            const auto first = ed.presetName();
+            ed.stepPreset (1);
+            const auto second = ed.presetName();
+            ed.stepPreset (-1);
+            const bool steps = first == names[0] && second == names[1] && ed.presetName() == first && FactoryPresets::current (*w) == first;
+            ed.stepPreset (-1);
+            const bool wraps = ed.presetName() == names[names.size() - 1];
+            rep.check (names.size() == total && unique.size() == total && more < total / 3 && steps && wraps,
+                       "Preset browser: presets grouped by kind, previous / next steps through them, the name is kept with the project",
+                       String (total) + " Wavetable presets, " + String (more) + " ungrouped, first \"" + first + "\", ordered " + String (names.size()) + ", unique " + String (unique.size())
+                       + (steps ? "" : ", steps wrong: " + second + " vs " + names[1]) + (wraps ? "" : ", wrap wrong: " + ed.presetName() + " vs " + names[names.size() - 1]));
+        }
+
         // --- 1.0 RC: release pieces ---------------------------------------------------------------------------
         {
             rep.step ("release pieces");
@@ -4318,6 +4345,76 @@ namespace SelfTest
             const double ppbAfter = evs.pixelsPerBeat;
             rep.check (jumped > 20.0 && dragged < jumped - 5.0 && ppbAfter < ppbBefore, "Arrangement overview: jump, drag to scroll, drag an edge to zoom",
                        "jump to " + String (jumped, 1) + ", drag to " + String (dragged, 1) + ", zoom " + String (ppbBefore, 1) + " -> " + String (ppbAfter, 1) + " px/beat");
+        }
+
+        // --- 1.0 RC: the whole project comes back from disk as it was -----------------------------------------
+        {
+            rep.step ("project round trip");
+            // one line per thing in the project; two projects are the same if these lists are
+            auto fingerprint = [] (te::Edit& e)
+            {
+                StringArray out;
+                out.add ("tempo " + String (e.tempoSequence.getTempo (0)->getBpm(), 3) + " sig " + e.tempoSequence.getTimeSig (0)->getStringTimeSig());
+                auto plugins = [&out] (const String& where, te::PluginList& list)
+                {
+                    for (auto pl : list)
+                    {
+                        String line = where + " device " + pl->getPluginType() + (pl->isEnabled() ? "" : " (off)");
+                        if (auto* pp = dynamic_cast<pulse::PulsePlugin*> (pl))
+                        {
+                            double sum = 0;
+                            for (int i = 0; i < pp->numParams(); ++i) sum += pp->param (i)->valueRange.convertTo0to1 (pp->get (i)) * (i + 1);
+                            line << " params " << String (sum, 3);
+                        }
+                        out.add (line);
+                    }
+                };
+                int ti = 0;
+                for (auto t : te::getAudioTracks (e))
+                {
+                    const String where = "track " + String (ti++) + " \"" + t->getName() + "\"";
+                    out.add (where + (t->isMuted (false) ? " muted" : "") + (t->isSolo (false) ? " solo" : "") + " colour " + t->getColour().toString());
+                    if (auto vp = t->getVolumePlugin()) out.add (where + " vol " + String (vp->getVolumeDb(), 2) + " pan " + String (vp->getPan(), 3));
+                    plugins (where, t->pluginList);
+                    for (auto c : t->getClips())
+                    {
+                        String line = where + " clip \"" + c->getName() + "\" " + String (c->getPosition().getStart().inSeconds(), 4) + "-" + String (c->getPosition().getEnd().inSeconds(), 4)
+                                      + (c->isLooping() ? " looping" : "");
+                        if (auto mc = dynamic_cast<te::MidiClip*> (c))
+                        {
+                            double sum = 0;
+                            for (auto n : mc->getSequence().getNotes()) sum += n->getNoteNumber() * 1.0 + n->getStartBeat().inBeats() * 7.0 + n->getLengthBeats().inBeats() * 3.0 + n->getVelocity() * 0.1;
+                            line << " notes " << mc->getSequence().getNumNotes() << " sum " << String (sum, 3);
+                        }
+                        if (auto ac = dynamic_cast<te::WaveAudioClip*> (c)) line << " file " << ac->getOriginalFile().getFileName() << " gain " << String (ac->getGainDB(), 2);
+                        out.add (line);
+                    }
+                    for (auto ap : t->getAllAutomatableParams())
+                        if (ap->getCurve().getNumPoints() > 0) out.add (where + " automation " + ap->paramID + " points " + String (ap->getCurve().getNumPoints()));
+                }
+                plugins ("master", e.getMasterPluginList());
+                for (auto m : e.getMarkerManager().getMarkers()) out.add ("marker \"" + m->getName() + "\" " + String (m->getPosition().getStart().inSeconds(), 3));
+                return out;
+            };
+            te::EditFileOperations (*edit).save (true, true, false);
+            const auto before = fingerprint (*edit);
+            const auto file = te::EditFileOperations (*edit).getEditFile();
+            auto copyFile = file.getSiblingFile ("Round Trip Copy.tracktionedit");
+            file.copyFileTo (copyFile);
+            StringArray diffs;
+            int lines = 0;
+            if (auto again = te::loadEditFromFile (engine, copyFile))
+            {
+                DrumRack::migrateAll (*again);
+                const auto after = fingerprint (*again);
+                lines = after.size();
+                for (int i = 0; i < jmax (before.size(), after.size()); ++i)
+                    if (before[i] != after[i]) { diffs.add ("was: " + before[i] + " | now: " + after[i]); if (diffs.size() >= 4) break; }
+            }
+            else diffs.add ("the saved project did not load");
+            copyFile.deleteFile();
+            rep.check (diffs.isEmpty() && lines > 20, "A saved project reopens identical (tracks, clips, notes, devices and their settings, automation, markers)",
+                       diffs.isEmpty() ? String (lines) + " things compared" : diffs.joinIntoString ("  //  "));
         }
 
         // --- sharing: project zip, crash bundle, update check -----------------------------------------
