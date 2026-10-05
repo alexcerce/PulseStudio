@@ -4,6 +4,9 @@ What has to be true before a build goes to other people, and how to make one.
 
 ## Decisions only the publisher can make
 
+> **Deferred to version 2 (owner's decision, 2026-10-05).** Version 1 is not released to the public, so the
+> licence choice and code signing below do not block it. Take them up when version 2 is being prepared.
+
 1. **Licence.** JUCE 8 (AGPLv3 or commercial), Tracktion Engine (GPLv3 or commercial) and Ableton Link
    (GPLv2+ or proprietary) are all part of the program. Without commercial licences for them, Pulse Studio
    can only be given to others under the GPL family of licences, with its source code available to whoever

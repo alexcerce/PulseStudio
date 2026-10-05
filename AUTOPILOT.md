@@ -299,3 +299,6 @@ when you start, touch it after each step, and delete it when you stop.
   5 minutes). A one-off of about 55 MB appears the first time a full backup is written (5 minutes in); it is not a
   leak and I did not track down what allocates it. `--nobackup` skips the timed backups. Debug-build monkey run
   (2 seeds x 3000 events, with device windows) clean.
+- 2026-10-05: OWNER DECISION: Pulse Studio goes public only at version 2. Licence choice (GPL vs commercial JUCE /
+  Tracktion / Link) and code signing are version 2 matters; do not raise them as blockers or open questions for
+  version 1. Version 1 is a private release: aim for a solid, finished 1.0 on the owner's own machine.
