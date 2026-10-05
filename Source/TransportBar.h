@@ -208,6 +208,16 @@ public:
         startTimerHz (20);
     }
 
+    /** For the random-input test: true over the buttons it must leave alone. File, Audio and Plugins open menus
+        and dialogs that reach outside the test project (other projects, audio device settings, plugin scans),
+        and Record writes audio files for as long as it runs. Position is in this bar's own coordinates. */
+    bool needsAPersonAt (juce::Point<int> p)
+    {
+        for (auto* c : std::initializer_list<Component*> { &fileBtn, &audioBtn, &pluginsBtn, &recBtn })
+            if (c->getBounds().expanded (3).contains (p)) return true;
+        return false;
+    }
+
     void setEdit (te::Edit* e)
     {
         edit = e;

@@ -65,4 +65,4 @@ unusual display scaling, and anything that needs a person to look at it for tast
 ## Known limits in this release candidate
 
 - The Wavetable's *Level* is before its effects (it sets how hard the distortion is driven); *Output* is after.
-- Audio loop takes are not implemented (MIDI takes are).
+- Audio loop takes: the engine splits a loop recording into takes on its own files and the take menu and comping lanes read them, but this has not been checked with a real audio input (MIDI takes are tested).

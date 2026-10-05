@@ -1527,6 +1527,71 @@ namespace DeviceEditors
     };
 
     //==============================================================================
+    /** The Drum Synth's window: the hits it makes drawn large, the sound controls under them, and how it plays. */
+    class DrumSynthPanel : public Component
+    {
+    public:
+        using D = pulse::DrumSynth;
+        using Card = WavetablePanel::Card;
+
+        DrumSynthPanel (EditViewState& e, D& d) : evs (e), synth (d), holder (&d)
+        {
+            using L = std::initializer_list<std::pair<int, const char*>>;
+            auto card = [this] (const String& t, Colour c) { auto* k = cards.add (new Card (t, c)); addAndMakeVisible (k); return k; };
+            const auto hit = Theme::orange, sound = Colour (0xff4dabf7), play = Colour (0xff748ffc);
+            cHits = card ("THE HITS IT MAKES  (kick, snare, hat, clap with these settings)", hit);
+            hits = std::make_unique<DrumHitsView> (d);
+            cHits->addAndMakeVisible (*hits);
+            cSound = card ("SOUND", sound);
+            for (auto [pi, l] : L { { D::pTune, "Tune" }, { D::pDecay, "Decay" }, { D::pTone, "Tone" }, { D::pSnap, "Snap" }, { D::pDrive, "Drive" } }) knobsSound.add (knob (*cSound, pi, l, sound));
+            cPlay = card ("PLAY", play);
+            map = new ParamCombo (*d.param (D::pMap), true);
+            map->setLabel ("Keys play");
+            owned.add (map); cPlay->addAndMakeVisible (map);
+            for (auto [pi, l] : L { { D::pVelSens, "Velocity" }, { D::pGain, "Gain" } }) knobsPlay.add (knob (*cPlay, pi, l, play));
+        }
+
+        void paint (Graphics& g) override { g.fillAll (Pro::bg()); }
+
+        void resized() override
+        {
+            const int gap = 8;
+            auto a = getLocalBounds().reduced (8);
+            auto bottom = a.removeFromBottom (jlimit (130, 190, a.getHeight() * 30 / 100));
+            a.removeFromBottom (gap);
+            cHits->setBounds (a);
+            hits->setBounds (cHits->content());
+            cPlay->setBounds (bottom.removeFromRight (jlimit (300, 460, bottom.getWidth() * 38 / 100)));
+            bottom.removeFromRight (gap);
+            cSound->setBounds (bottom);
+            WavetablePanel::placeKnobs (cSound->content(), knobsSound, 0, 100, 100);
+            auto c = cPlay->content();
+            map->setBounds (c.removeFromLeft (jmin (190, c.getWidth() / 2)).withSizeKeepingCentre (jmin (180, c.getWidth() / 2 - 6), 48));
+            WavetablePanel::placeKnobs (c, knobsPlay, 0, 100, 100);
+        }
+
+    private:
+        ParamKnob* knob (Card& c, int pi, const char* label, Colour col)
+        {
+            auto* k = new ParamKnob (evs, *synth.param (pi));
+            k->setLabel (label);
+            k->setCompact (col);
+            owned.add (k);
+            c.addAndMakeVisible (k);
+            return k;
+        }
+        EditViewState& evs;
+        D& synth;
+        te::Plugin::Ptr holder;
+        OwnedArray<Card> cards;
+        OwnedArray<Component> owned;
+        Card *cHits = nullptr, *cSound = nullptr, *cPlay = nullptr;
+        std::unique_ptr<DrumHitsView> hits;
+        ParamCombo* map = nullptr;
+        Array<ParamKnob*> knobsSound, knobsPlay;
+    };
+
+    //==============================================================================
     using Graph = std::pair<String, std::unique_ptr<Component>>;
 
     /** Every view of a device, big. */
@@ -1544,7 +1609,7 @@ namespace DeviceEditors
         else if (auto s = dynamic_cast<pulse::FMSynth*> (&p))
             add ("FM Synth", std::make_unique<FMPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::DrumSynth*> (&p))
-            add ("Hits", std::make_unique<DrumHitsView> (*s));
+            add ("Drum Synth", std::make_unique<DrumSynthPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::GlueCompressor*> (&p))
         {
             add ("Transfer curve", DeviceDisplays::create (evs, p));
@@ -1605,6 +1670,7 @@ namespace DeviceEditors
             || dynamic_cast<pulse::WavetableSynth*> (&p) != nullptr
             || dynamic_cast<pulse::FMSynth*> (&p) != nullptr
             || dynamic_cast<pulse::Simpler*> (&p) != nullptr
+            || dynamic_cast<pulse::DrumSynth*> (&p) != nullptr
             || dynamic_cast<pulse::Reverb*> (&p) != nullptr || dynamic_cast<pulse::Delay*> (&p) != nullptr || dynamic_cast<pulse::Saturator*> (&p) != nullptr
             || dynamic_cast<pulse::MultibandDynamics*> (&p) != nullptr || dynamic_cast<pulse::Limiter*> (&p) != nullptr;
     }

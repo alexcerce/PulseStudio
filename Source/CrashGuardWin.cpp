@@ -90,3 +90,44 @@ namespace CrashGuardWin
        #endif
     }
 }
+
+#include <tlhelp32.h>
+#include <map>
+
+namespace CrashGuardWin
+{
+    /** Processor time used so far by each thread of this process, with the thread's name where it has one
+        (for --idle-cpu, to see which threads are busy when the app is doing nothing). */
+    std::map<unsigned long, std::pair<juce::String, double>> threadTimes()
+    {
+        std::map<unsigned long, std::pair<juce::String, double>> out;
+        const DWORD pid = GetCurrentProcessId();
+        HANDLE snap = CreateToolhelp32Snapshot (TH32CS_SNAPTHREAD, 0);
+        if (snap == INVALID_HANDLE_VALUE) return out;
+        THREADENTRY32 te {};
+        te.dwSize = sizeof (te);
+        if (Thread32First (snap, &te))
+            do
+            {
+                if (te.th32OwnerProcessID != pid) continue;
+                if (HANDLE h = OpenThread (THREAD_QUERY_LIMITED_INFORMATION, FALSE, te.th32ThreadID))
+                {
+                    FILETIME created, exited, kernel, user;
+                    double seconds = 0.0;
+                    if (GetThreadTimes (h, &created, &exited, &kernel, &user))
+                    {
+                        auto toSeconds = [] (FILETIME t) { return (((unsigned long long) t.dwHighDateTime << 32) | t.dwLowDateTime) * 1.0e-7; };
+                        seconds = toSeconds (kernel) + toSeconds (user);
+                    }
+                    juce::String name;
+                    PWSTR desc = nullptr;
+                    if (SUCCEEDED (GetThreadDescription (h, &desc)) && desc != nullptr) { name = juce::String (desc); LocalFree (desc); }
+                    out[te.th32ThreadID] = { name, seconds };
+                    CloseHandle (h);
+                }
+            }
+            while (Thread32Next (snap, &te));
+        CloseHandle (snap);
+        return out;
+    }
+}

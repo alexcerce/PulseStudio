@@ -49,6 +49,8 @@ extern "C" { struct PulseFileTime { unsigned long lo, hi; };
              struct PulseMemCounters { unsigned long cb, pageFaults; size_t peakWorkingSet, workingSet, quotaPeakPaged, quotaPaged, quotaPeakNonPaged, quotaNonPaged, pagefile, peakPagefile; };
              __declspec (dllimport) int __stdcall K32GetProcessMemoryInfo (void*, PulseMemCounters*, unsigned long); }
 #endif
+namespace CrashGuardWin { std::map<unsigned long, std::pair<juce::String, double>> threadTimes(); }
+
 namespace ProcessCpu
 {
     inline double seconds()
@@ -238,8 +240,23 @@ public:
                 {
                     const double cpu = ProcessCpu::seconds(), ui = ProcessCpu::thisThreadSeconds(), wall = Time::getMillisecondCounterHiRes() * 0.001;
                     if (step > 0)
+                    {
                         lines.add (names[step - 1] + ": " + String (100.0 * (cpu - lastCpu) / jmax (0.001, wall - lastWall), 1) + "% of one core in all, "
                                    + String (100.0 * (ui - lastUi) / jmax (0.001, wall - lastWall), 1) + "% for the user interface");
+                        // which threads did the work (busiest first)
+                        std::vector<std::pair<double, String>> busy;
+                        for (auto& [id, now] : CrashGuardWin::threadTimes())
+                        {
+                            const auto before = lastThreads.find (id);
+                            const double used = now.second - (before != lastThreads.end() ? before->second.second : 0.0);
+                            if (used > 0.0005 * (wall - lastWall)) busy.push_back ({ used, now.first.isNotEmpty() ? now.first : "thread " + String ((int) id) });
+                        }
+                        std::sort (busy.begin(), busy.end(), [] (auto& a, auto& b) { return a.first > b.first; });
+                        String detail = "      ";
+                        for (size_t k = 0; k < jmin<size_t> (8, busy.size()); ++k)
+                            detail << busy[k].second << " " << String (100.0 * busy[k].first / jmax (0.001, wall - lastWall), 1) << "%   ";
+                        lines.add (detail + "(" + String ((int) busy.size()) + " threads busy)");
+                    }
                     if (step >= 4) { stopTimer(); out.replaceWithText (lines.joinIntoString ("\n") + "\n"); JUCEApplication::quit(); return; }
                     if (step < 3) mc.stopForMeasurement();        // (the demo starts playing by itself)
                     if (step == 0) mc.prepareSnapshot (0);        // stopped, device chain showing
@@ -249,6 +266,7 @@ public:
                     ++step;
                     lastCpu = ProcessCpu::seconds();
                     lastUi = ProcessCpu::thisThreadSeconds();
+                    lastThreads = CrashGuardWin::threadTimes();
                     lastWall = Time::getMillisecondCounterHiRes() * 0.001;
                     startTimer (10000);
                 }
@@ -257,12 +275,14 @@ public:
                 StringArray lines, names { "stopped, devices showing", "stopped, mixer showing", "stopped, devices showing again", "playing" };
                 int step = 0;
                 double lastCpu = 0, lastUi = 0, lastWall = 0;
+                std::map<unsigned long, std::pair<String, double>> lastThreads;
             };
             if (auto* mc = dynamic_cast<MainComponent*> (mainWindow->getContentComponent()))
             {
                 mainWindow->setBounds (40, 40, 1600, 940);
                 auto file = File::getCurrentWorkingDirectory().getChildFile (args[i + 1].unquoted());
                 mc->startSnapshotDemo (file.getParentDirectory());
+                if (auto bigAt = args.indexOf ("--big"); bigAt >= 0) mc->makeBigProjectForTest (jlimit (8, 120, args[bigAt + 1].getIntValue()));
                 idleRunner = std::make_unique<Runner> (*mc, file);
             }
         }
@@ -309,6 +329,7 @@ public:
                 auto file = File::getCurrentWorkingDirectory().getChildFile (args[i + 1].unquoted());
                 file.getParentDirectory().createDirectory();
                 mc->startSnapshotDemo (file.getParentDirectory());
+                if (auto bigAt = args.indexOf ("--big"); bigAt >= 0) mc->makeBigProjectForTest (jlimit (8, 120, args[bigAt + 1].getIntValue()));
                 const auto seedAt = args.indexOf ("--seed");   // optional: --seed <number> for a different order
                 idleRunner = std::make_unique<Runner> (*mc, file, seedAt >= 0 ? args[seedAt + 1].getLargeIntValue() : 20261005);
             }
@@ -330,7 +351,12 @@ public:
                 juce::Point<float> anywhere()
                 {
                     if (&target() != &window) return { rng.nextFloat() * (float) target().getWidth(), rng.nextFloat() * (float) target().getHeight() };
-                    // below the top bar (its buttons open settings and file menus, which need a person)
+                    // anywhere in the window, top bar included, except a few buttons that reach outside the test project
+                    for (int attempt = 0; attempt < 20; ++attempt)
+                    {
+                        const juce::Point<float> p (rng.nextFloat() * (float) window.getWidth(), rng.nextFloat() * (float) window.getHeight());
+                        if (mc.safeForRandomInput (mc.getLocalPoint (&window, p.toInt()))) return p;
+                    }
                     return { rng.nextFloat() * (float) window.getWidth(), 64.0f + rng.nextFloat() * (float) (window.getHeight() - 70) };
                 }
                 void mouse (juce::Point<float> p, ModifierKeys mods)
@@ -445,6 +471,7 @@ public:
                 auto file = File::getCurrentWorkingDirectory().getChildFile (args[i + 1].unquoted());
                 file.getParentDirectory().createDirectory();
                 mc->startSnapshotDemo (file.getParentDirectory());
+                if (auto bigAt = args.indexOf ("--big"); bigAt >= 0) mc->makeBigProjectForTest (jlimit (8, 120, args[bigAt + 1].getIntValue()));
                 const auto seedAt = args.indexOf ("--seed"), eventsAt = args.indexOf ("--events");
                 idleRunner = std::make_unique<Runner> (*mainWindow, *mc, file, seedAt >= 0 ? args[seedAt + 1].getLargeIntValue() : 1,
                                                        eventsAt >= 0 ? args[eventsAt + 1].getIntValue() : 2000);
@@ -480,6 +507,7 @@ public:
                         JUCEApplication::quit();
                         return;
                     }
+                    if (readings.size() == 3) out.appendText ("backup steps: " + mc.backupStepsForTest ([] { return ProcessCpu::privateMegabytes(); }) + newLine);
                     mc.prepareSnapshot (readings.size() % 6);   // devices, mixer, session, piano roll ...
                     mc.playForMeasurement();
                 }
@@ -495,6 +523,7 @@ public:
                 auto file = File::getCurrentWorkingDirectory().getChildFile (args[i + 1].unquoted());
                 file.getParentDirectory().createDirectory();
                 mc->startSnapshotDemo (file.getParentDirectory());
+                if (auto bigAt = args.indexOf ("--big"); bigAt >= 0) mc->makeBigProjectForTest (jlimit (8, 120, args[bigAt + 1].getIntValue()));
                 const auto minsAt = args.indexOf ("--minutes");
                 idleRunner = std::make_unique<Runner> (*mc, file, minsAt >= 0 ? jmax (2, args[minsAt + 1].getIntValue()) : 6);
             }

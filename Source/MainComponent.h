@@ -667,6 +667,62 @@ public:
         edit->getTransport().setPosition (te::TimePosition::fromSeconds (rng.nextDouble() * 12.0));
     }
     int numTracksForTest() const { return edit != nullptr ? EngineHelpers::getUserTracks (*edit).size() : -1; }
+    /** Does what a timed backup does, one step at a time, reporting the memory in use after each (for --soak). */
+    String backupStepsForTest (std::function<double()> megabytes)
+    {
+        if (edit == nullptr) return {};
+        String out;
+        auto note = [&] (const String& what) { out << what << " " << String (megabytes(), 1) << " MB; "; };
+        note ("before");
+        for (auto* pl : te::getAllPlugins (*edit, true)) pl->flushPluginStateToValueTree();
+        note ("devices written to the project");
+        edit->flushState();
+        note ("whole project flushed");
+        auto xml = edit->state.createXml();
+        note ("as XML");
+        const auto text = xml != nullptr ? xml->toString() : String();
+        note ("as text (" + String (text.length() / 1024) + " KB)");
+        xml = nullptr;
+        Backups::write (*edit);
+        note ("backup written");
+        return out;
+    }
+
+    /** True where the random-input test may click (anywhere except a few top-bar buttons). Window coordinates. */
+    bool safeForRandomInput (juce::Point<int> p)
+    {
+        const auto inBar = transport.getLocalPoint (this, p);
+        return ! (transport.getLocalBounds().contains (inBar) && transport.needsAPersonAt (inBar));
+    }
+
+    /** Fills the test project out to `numTracks` tracks, each with an instrument, effects and clips along a
+        four-minute song, so the tests also run on something the size of a real project. */
+    void makeBigProjectForTest (int numTracks)
+    {
+        if (edit == nullptr) return;
+        Random rng (4711);
+        const char* fx[] = { pulse::Reverb::xmlTypeName, pulse::Delay::xmlTypeName, pulse::PrismEQ::xmlTypeName, pulse::ProCompressor::xmlTypeName,
+                             pulse::Saturator::xmlTypeName, pulse::AutoFilter::xmlTypeName, pulse::Limiter::xmlTypeName, pulse::Utility::xmlTypeName };
+        const char* synths[] = { pulse::WavetableSynth::xmlTypeName, pulse::FMSynth::xmlTypeName, pulse::WavetableSynth::xmlTypeName };
+        for (int t = EngineHelpers::getUserTracks (*edit).size(); t < numTracks; ++t)
+        {
+            auto track = ClipImport::createContentTrack (*edit, "Big " + String (t + 1), false);
+            if (track == nullptr) break;
+            PluginMenu::insertPlugin (track, track->pluginList, edit->getPluginCache().createNewPlugin (synths[t % 3], {}), nullptr);
+            for (int k = 0; k < 2 + t % 3; ++k)
+                PluginMenu::insertPlugin (track, track->pluginList, edit->getPluginCache().createNewPlugin (fx[(t * 3 + k) % 8], {}), nullptr);
+            for (int bar = (t % 4) * 4; bar < 120; bar += 8 + (t % 3) * 4)
+            {
+                const auto start = EngineHelpers::beatToTime (*edit, bar * 4.0), end = EngineHelpers::beatToTime (*edit, (bar + 4 + t % 5) * 4.0);
+                if (auto clip = te::insertMIDIClip (*track, "Part " + String (bar / 4 + 1), { start, end }))
+                    for (int n = 0; n < 24 + rng.nextInt (40); ++n)
+                        clip->getSequence().addNote (36 + rng.nextInt (48), te::BeatPosition::fromBeats (rng.nextInt (64) * 0.25), te::BeatDuration::fromBeats (0.25 + rng.nextInt (4) * 0.25),
+                                                     60 + rng.nextInt (60), 0, nullptr);
+            }
+        }
+        edit->getUndoManager().clearUndoHistory();
+    }
+
     /** Opens the window of one of the project's built-in devices (a different one each time). */
     Component* openDeviceWindowForTest (Random& rng)
     {

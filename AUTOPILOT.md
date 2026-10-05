@@ -302,3 +302,12 @@ when you start, touch it after each step, and delete it when you stop.
 - 2026-10-05: OWNER DECISION: Pulse Studio goes public only at version 2. Licence choice (GPL vs commercial JUCE /
   Tracktion / Link) and code signing are version 2 matters; do not raise them as blockers or open questions for
   version 1. Version 1 is a private release: aim for a solid, finished 1.0 on the owner's own machine.
+- 2026-10-05: v0.99.6 (owner: "do 3 and 4"). Drum Synth window (DrumSynthPanel). Test tools: `--big <tracks>` enlarges
+  the demo for --command-fuzz / --monkey / --idle-cpu / --soak (48 tracks: fuzz and 6000-event monkey clean; playing
+  uses about 64% of one core); the monkey run now uses the whole window including the top bar, except File, Audio,
+  Plugins and Record (TransportBar::needsAPersonAt); --idle-cpu lists the busiest threads (CrashGuardWin::threadTimes;
+  JUCE gives threads no description so they show as ids): at idle the UI thread is 4-5% (8% with the mixer), audio
+  workers about 3% once settled. Memory: the rise at ~5 minutes is NOT the backup (probed step by step: 0.1 MB);
+  about +80 MB between minutes 5 and 7, then flat; cause not found (caches suspected). Audio loop takes: the engine
+  already adds file-based takes after a loop recording (WaveInputDevice applyLastRecording); unverified without an
+  audio input. 243 checks.

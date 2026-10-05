@@ -4551,8 +4551,15 @@ namespace SelfTest
                 panel.setSize (1260, 800);
                 missS = controlsFor (*simp, panel, nullptr, 1);
             }
+            {
+                auto dp = edit->getPluginCache().createNewPlugin (pulse::DrumSynth::xmlTypeName, {});
+                auto* ds = dynamic_cast<pulse::DrumSynth*> (dp.get());
+                DeviceEditors::DrumSynthPanel panel (sevs, *ds);
+                panel.setSize (1000, 700);
+                missS.addArray (controlsFor (*ds, panel, nullptr, 1));
+            }
             const bool allThere = missW.isEmpty() && missF.isEmpty() && missS.isEmpty();
-            rep.check (allThere, "Wavetable, FM and Simpler windows have a control for every parameter",
+            rep.check (allThere, "Wavetable, FM, Simpler and Drum Synth windows have a control for every parameter",
                        allThere ? String ("nothing missing") : "missing: " + missW.joinIntoString (" ") + " | " + missF.joinIntoString (" ") + " | " + missS.joinIntoString (" "));
         }
 
