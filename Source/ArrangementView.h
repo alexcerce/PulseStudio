@@ -1907,7 +1907,14 @@ public:
     }
 
 private:
-    void timerCallback() override { repaint(); }
+    void timerCallback() override
+    {
+        auto& tc = evs.edit.getTransport();
+        const auto lr = tc.getLoopRange();
+        if (evs.changedSince (lastSig, lr.getStart().inSeconds() * 1.7 + lr.getEnd().inSeconds() * 2.9 + (tc.looping ? 11.0 : 0.0) + (evs.edit.recordingPunchInOut.get() ? 23.0 : 0.0) + getWidth()))
+            repaint();
+    }
+    double lastSig = -1.0;
     void changeListenerCallback (ChangeBroadcaster*) override { repaint(); }
 
     EditViewState& evs;
@@ -2205,7 +2212,13 @@ private:
         if (std::abs (x - r) < 5.0f) return 2;
         return x > l && x < r ? 0 : -1;
     }
-    void timerCallback() override { repaint(); }
+    void timerCallback() override
+    {
+        // the playhead (to the pixel), the song's length and the size; the view and the clips are in the signature
+        const double ph = EngineHelpers::timeToBeat (evs.edit, evs.edit.getTransport().getPosition());
+        if (evs.changedSince (lastSig, std::floor (xFor (ph)) * 13.0 + evs.edit.getLength().inSeconds() + getWidth() * 0.01)) repaint();
+    }
+    double lastSig = -1.0;
 
     EditViewState& evs;
     std::function<int()> visibleWidth;
@@ -2621,7 +2634,8 @@ private:
         });
     }
 
-    void timerCallback() override { repaint(); }
+    void timerCallback() override { if (evs.changedSince (lastSig, getWidth())) repaint(); }
+    double lastSig = -1.0;
 
     EditViewState& evs;
     te::MarkerClip* dragged = nullptr;
@@ -2755,7 +2769,8 @@ private:
         return -1;
     }
 
-    void timerCallback() override { if (dragIndex < 0) repaint(); }
+    void timerCallback() override { if (dragIndex < 0 && evs.changedSince (lastSig, getWidth())) repaint(); }
+    double lastSig = -1.0;
 
     EditViewState& evs;
     int dragIndex = -1;

@@ -71,6 +71,13 @@ namespace About
         processes and test / development runs all carry an option that starts with "--". */
     inline bool wantsOwnInstance (const String& commandLine) { return commandLine.contains ("--"); }
 
+    /** True while the app runs to take pictures or measurements of itself (no welcome screen, no background scans). */
+    inline bool isCapturing()
+    {
+        const auto cl = JUCEApplication::getCommandLineParameters();
+        return cl.contains ("--snapshots") || cl.contains ("--idle-cpu");
+    }
+
     /** A project file named on the command line (double-clicked in Explorer), if there is one. */
     inline File projectFromCommandLine (const StringArray& args)
     {

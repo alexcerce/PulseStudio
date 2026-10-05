@@ -120,6 +120,7 @@ namespace pulse
         {
             sampleRate = info.sampleRate;
             blockSize = info.blockSizeSamples;
+            quietSamples = 0;
             prepare();
         }
 
@@ -143,9 +144,33 @@ namespace pulse
             }
 
             te::clearChannels (b, 2, -1, fc.bufferStartSample, fc.bufferNumSamples);
+
+            // Asleep on silence: once nothing has come in and nothing has come out for six seconds (longer than
+            // any echo or tail still to come can stay hidden), there is nothing to work out until sound arrives.
+            constexpr float quiet = 1.0e-7f;   // -140 dB
+            const bool inputQuiet = b.getMagnitude (0, fc.bufferStartSample, fc.bufferNumSamples) < quiet
+                                    && b.getMagnitude (1, fc.bufferStartSample, fc.bufferNumSamples) < quiet
+                                    && (sidechain == nullptr || sidechain->getMagnitude (0, fc.bufferNumSamples) < quiet);
+            if (inputQuiet && quietSamples > (int64) (sampleRate * 6.0) && canSleepOnSilence())
+            {
+                asleep.store (true, std::memory_order_relaxed);
+                return;   // the buffer already holds silence
+            }
+            asleep.store (false, std::memory_order_relaxed);
+
             process (b.getWritePointer (0, fc.bufferStartSample), b.getWritePointer (1, fc.bufferStartSample), fc.bufferNumSamples, fc);
             te::sanitiseValues (b, fc.bufferStartSample, fc.bufferNumSamples, 4.0f);
+
+            const bool outputQuiet = b.getMagnitude (0, fc.bufferStartSample, fc.bufferNumSamples) < quiet
+                                     && b.getMagnitude (1, fc.bufferStartSample, fc.bufferNumSamples) < quiet;
+            quietSamples = inputQuiet && outputQuiet ? quietSamples + fc.bufferNumSamples : 0;
         }
+
+        /** True while the effect is resting because there has been silence in and out for a while. */
+        std::atomic<bool> asleep { false };
+
+        /** Devices that must keep running on silence (none of the built-in ones need to) can say no. */
+        virtual bool canSleepOnSilence() const { return true; }
 
         /** Effects that can be keyed from another track declare two extra inputs. */
         virtual bool wantsSidechain() const { return false; }
@@ -161,6 +186,7 @@ namespace pulse
         /** The sidechain signal for this block (nullptr when none is routed in). */
         const AudioBuffer<float>* sidechain = nullptr;
         AudioBuffer<float> scBuffer;
+        int64 quietSamples = 0;
 
         virtual void prepare() = 0;
         virtual void process (float* l, float* r, int n, const te::PluginRenderContext&) = 0;

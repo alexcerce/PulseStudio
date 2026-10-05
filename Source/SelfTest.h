@@ -4309,6 +4309,42 @@ namespace SelfTest
                        blank.isEmpty() ? String (drawn) + " drawings" : "blank: " + blank.joinIntoString (", "));
         }
 
+        // --- 1.0 RC: effects rest on silence and wake with the sound ------------------------------------------
+        {
+            rep.step ("sleep on silence");
+            const double sr = 48000.0;
+            const int block = 480;
+            auto run = [&] (te::Plugin& p, float level, int blocks, int& k)
+            {
+                AudioBuffer<float> audio (2, block);
+                float peak = 0.0f;
+                for (int j = 0; j < blocks; ++j, ++k)
+                {
+                    for (int i = 0; i < block; ++i) { const float v = level * (float) std::sin ((k * block + i) * 0.05); audio.setSample (0, i, v); audio.setSample (1, i, v); }
+                    te::MidiMessageArray midi;
+                    te::PluginRenderContext fc (&audio, 0, block, &midi, 0.0, { te::TimePosition::fromSeconds (k * block / sr), te::TimePosition::fromSeconds ((k + 1) * block / sr) }, true, false, true, false);
+                    p.applyToBuffer (fc);
+                    peak = jmax (peak, audio.getMagnitude (0, block));
+                }
+                return peak;
+            };
+            auto dp = edit->getPluginCache().createNewPlugin (pulse::Delay::xmlTypeName, {});
+            auto* dl = dynamic_cast<pulse::Delay*> (dp.get());
+            dl->set (pulse::Delay::pSync, 0.0f); dl->set (pulse::Delay::pTime, 2000.0f); dl->set (pulse::Delay::pFeedback, 0.6f); dl->set (pulse::Delay::pMix, 1.0f);
+            dp->initialise ({ te::TimePosition(), sr, block });
+            int k = 0;
+            run (*dp, 0.5f, 50, k);                                  // half a second of sound
+            const float echo = run (*dp, 0.0f, 300, k);               // three seconds of silence: the 2 s echo must still come
+            const bool awakeForEcho = echo > 0.05f && ! dl->asleep.load();
+            run (*dp, 0.0f, 6000, k);                                 // a minute of silence: the echoes die away, then it rests
+            const bool rests = dl->asleep.load();
+            const float woke = run (*dp, 0.5f, 300, k);               // sound again: it works at once (and echoes after 2 s)
+            const bool wakes = ! dl->asleep.load() && woke > 0.05f;
+            dp->deinitialise();
+            rep.check (awakeForEcho && rests && wakes, "Effects rest when there is silence in and out, never cut an echo short, and wake with the sound",
+                       "echo after silence " + String (echo, 3) + ", resting " + String ((int) rests) + ", after waking " + String (woke, 3));
+        }
+
         // --- 1.0 RC: release pieces ---------------------------------------------------------------------------
         {
             rep.step ("release pieces");

@@ -205,11 +205,18 @@ private:
         if (! slider.isMouseButtonDown())
             slider.setValue (Modulators::isModulated (*param) ? param->getCurrentBaseValue() : param->getCurrentValue(), dontSendNotification);
         value.setText (formatter ? formatter (param->getCurrentBaseValue()) : param->getCurrentValueAsStringWithLabel(), dontSendNotification);
-        repaint();
+        // the overlays (modulation arcs and dots) only need drawing again when one of them has moved
+        float lo = 0, hi = 0;
+        const bool swept = ModDrop::sweep && ModDrop::sweep (*param, lo, hi);
+        const double sig = param->getCurrentValue() * 3.1 + (ModDrop::depth ? ModDrop::depth (*param) : 0.0f) * 17.0 + (swept ? lo * 0.37 + hi * 0.11 : 0.0)
+                           + param->getModifiers().size() * 101.0 + (Modulators::isModulated (*param) ? 1009.0 : 0.0)
+                           + (evs.midiLearn != nullptr && evs.midiLearn->isMapped (*param) ? 5003.0 : 0.0) + (modHover ? 7.0 : 0.0);
+        if (sig != lastOverlaySig) { lastOverlaySig = sig; repaint(); }
     }
 
     EditViewState& evs;
     te::AutomatableParameter::Ptr param;
+    double lastOverlaySig = -1.0e30;
     Slider slider;
     Label value;
     bool compact = false;

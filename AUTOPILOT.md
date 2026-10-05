@@ -258,3 +258,11 @@ when you start, touch it after each step, and delete it when you stop.
   sections, clips, MIDI tools, devices, knobs, faders), each compared against a whole-project fingerprint after undo and
   after redo. It found: the loop range drifting when a tempo change is undone (fixed in UndoSync: the loop is put back
   on its beats). Fingerprint leaves out values that follow automation at the playhead. 239 checks, 2 clean runs.
+- 2026-10-05: v0.97.0 (RC work, performance). `--idle-cpu <file>` measures processor use (whole process and the UI thread)
+  stopped with devices showing, stopped with the mixer, and playing; plugin scans and the welcome screen are off while
+  capturing (About::isCapturing). Idle use about halved (roughly 12-13% of a core -> 6-10%; UI thread 3-4% stopped):
+  knobs, ruler, section / marker / tempo strips and the overview redraw only when something changed
+  (EditViewState::signature / changedSince, a change counter on the project); effects sleep after 6 s of silence in and
+  out (PulseEffect::asleep, canSleepOnSilence); audio worker threads = physical cores (2..8) and they sleep on a
+  semaphore (lightweightSemaphore) instead of yielding. The off-UI share still varies run to run (7-30%) and I could
+  not attribute it further without a per-thread profile. 240 checks, 3 clean runs.

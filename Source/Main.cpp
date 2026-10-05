@@ -12,6 +12,14 @@ struct PulseEngineBehaviour : public te::EngineBehaviour
 {
     bool canScanPluginsOutOfProcess() override { return true; }
 
+    // Audio worker threads: one per physical core is plenty (the engine's default is every logical core but one,
+    // and each of them wakes for every block of audio even when the project is doing nothing).
+    int getNumberOfCPUsToUseForAudio() override
+    {
+        const int logical = jmax (1, SystemStats::getNumCpus()), physical = jmax (1, SystemStats::getNumPhysicalCpus());
+        return jlimit (2, 8, jmin (logical, physical));
+    }
+
     // the app opens the audio device itself (timed, see StartupTimer); tests keep the default
     bool openDevicesInEngine = true;
     bool autoInitialiseDeviceManager() override { return openDevicesInEngine; }
@@ -29,6 +37,43 @@ struct PulseEngineBehaviour : public te::EngineBehaviour
     bool isPluginDisabled (const String& id) override               { return CrashGuard::isDisabled (id); }
     void setPluginDisabled (const String& id, bool d) override       { CrashGuard::setDisabled (id, d); }
 };
+
+//==============================================================================
+/** Processor time this process has used so far (for --idle-cpu). */
+#if JUCE_WINDOWS
+extern "C" { struct PulseFileTime { unsigned long lo, hi; };
+             __declspec (dllimport) void* __stdcall GetCurrentProcess();
+             __declspec (dllimport) int __stdcall GetProcessTimes (void*, PulseFileTime*, PulseFileTime*, PulseFileTime*, PulseFileTime*);
+             __declspec (dllimport) void* __stdcall GetCurrentThread();
+             __declspec (dllimport) int __stdcall GetThreadTimes (void*, PulseFileTime*, PulseFileTime*, PulseFileTime*, PulseFileTime*); }
+#endif
+namespace ProcessCpu
+{
+    inline double seconds()
+    {
+       #if JUCE_WINDOWS
+        PulseFileTime created, exited, kernel, user;
+        if (GetProcessTimes (GetCurrentProcess(), &created, &exited, &kernel, &user) == 0) return 0.0;
+        auto toSeconds = [] (PulseFileTime t) { return (((unsigned long long) t.hi << 32) | t.lo) * 1.0e-7; };
+        return toSeconds (kernel) + toSeconds (user);
+       #else
+        return 0.0;
+       #endif
+    }
+
+    /** The same for the calling thread only (call it on the message thread for the cost of the user interface). */
+    inline double thisThreadSeconds()
+    {
+       #if JUCE_WINDOWS
+        PulseFileTime created, exited, kernel, user;
+        if (GetThreadTimes (GetCurrentThread(), &created, &exited, &kernel, &user) == 0) return 0.0;
+        auto toSeconds = [] (PulseFileTime t) { return (((unsigned long long) t.hi << 32) | t.lo) * 1.0e-7; };
+        return toSeconds (kernel) + toSeconds (user);
+       #else
+        return 0.0;
+       #endif
+    }
+}
 
 //==============================================================================
 class PulseStudioApplication : public JUCEApplication
@@ -116,6 +161,8 @@ public:
         StartupTimer::mark ("look and feel, crash guard");
         auto behaviour = std::make_unique<PulseEngineBehaviour>();
         behaviour->openDevicesInEngine = false;
+        // idle worker threads sleep on a semaphore after a short spin (the default keeps yielding, which costs processor all the time)
+        te::EditPlaybackContext::setThreadPoolStrategy ((int) te::graph::ThreadPoolStrategy::lightweightSemaphore);
         engine = std::make_unique<te::Engine> (profile, std::make_unique<PulseUIBehaviour>(), std::move (behaviour));
         StartupTimer::mark ("engine (no devices)");
         if (splash != nullptr) splash->setStatus ("Opening the audio device (this can take a moment)...");
@@ -153,6 +200,45 @@ public:
                 auto dir = File::getCurrentWorkingDirectory().getChildFile (args[i + 1].unquoted());
                 mc->startSnapshotDemo (dir);
                 snapshotRunner = std::make_unique<Runner> (*mc, dir);
+            }
+        }
+
+        // Pulse Studio.exe --idle-cpu <file> : how much processor the app uses doing nothing, in three states, then exit
+        if (auto i = args.indexOf ("--idle-cpu"); i >= 0 && i + 1 < args.size())
+        {
+            struct Runner : public Timer
+            {
+                Runner (MainComponent& m, File f) : mc (m), out (f) { startTimer (12000); }   // let the start-up work finish first
+                void timerCallback() override
+                {
+                    const double cpu = ProcessCpu::seconds(), ui = ProcessCpu::thisThreadSeconds(), wall = Time::getMillisecondCounterHiRes() * 0.001;
+                    if (step > 0)
+                        lines.add (names[step - 1] + ": " + String (100.0 * (cpu - lastCpu) / jmax (0.001, wall - lastWall), 1) + "% of one core in all, "
+                                   + String (100.0 * (ui - lastUi) / jmax (0.001, wall - lastWall), 1) + "% for the user interface");
+                    if (step >= 4) { stopTimer(); out.replaceWithText (lines.joinIntoString ("\n") + "\n"); JUCEApplication::quit(); return; }
+                    if (step < 3) mc.stopForMeasurement();        // (the demo starts playing by itself)
+                    if (step == 0) mc.prepareSnapshot (0);        // stopped, device chain showing
+                    if (step == 1) mc.prepareSnapshot (1);        // stopped, mixer showing
+                    if (step == 2) mc.prepareSnapshot (0);        // devices again (shows whether the cost depends on the view or on time)
+                    if (step == 3) mc.playForMeasurement();       // playing
+                    ++step;
+                    lastCpu = ProcessCpu::seconds();
+                    lastUi = ProcessCpu::thisThreadSeconds();
+                    lastWall = Time::getMillisecondCounterHiRes() * 0.001;
+                    startTimer (10000);
+                }
+                MainComponent& mc;
+                File out;
+                StringArray lines, names { "stopped, devices showing", "stopped, mixer showing", "stopped, devices showing again", "playing" };
+                int step = 0;
+                double lastCpu = 0, lastUi = 0, lastWall = 0;
+            };
+            if (auto* mc = dynamic_cast<MainComponent*> (mainWindow->getContentComponent()))
+            {
+                mainWindow->setBounds (40, 40, 1600, 940);
+                auto file = File::getCurrentWorkingDirectory().getChildFile (args[i + 1].unquoted());
+                mc->startSnapshotDemo (file.getParentDirectory());
+                idleRunner = std::make_unique<Runner> (*mc, file);
             }
         }
 
@@ -210,6 +296,7 @@ private:
     std::unique_ptr<TooltipWindow> tooltips;
     std::unique_ptr<te::Engine> engine;
     std::unique_ptr<MainWindow> mainWindow;
+    std::unique_ptr<Timer> idleRunner;
     std::unique_ptr<Timer> snapshotRunner;
 
     /** Shown while the engine and audio device start. */

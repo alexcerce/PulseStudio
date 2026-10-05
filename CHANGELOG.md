@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.97.0 - 2026-10-05
+
+- Uses about half the processor when nothing is happening: controls redraw only when they change, effects rest on silence, audio worker threads sleep when idle
+
 ## 0.96.0 - 2026-10-05
 
 - Fixed: undoing a tempo change left the loop on the wrong beats

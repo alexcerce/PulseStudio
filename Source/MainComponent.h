@@ -630,6 +630,16 @@ private:
     PropertiesFile& settings() { return engine.getPropertyStorage().getPropertiesFile(); }
 
 public:
+    void stopForMeasurement() { if (edit != nullptr) edit->getTransport().stop (false, false); }
+
+    /** Starts playback from the top (for the idle / playing processor measurement). */
+    void playForMeasurement()
+    {
+        if (edit == nullptr) return;
+        edit->getTransport().setPosition (te::TimePosition());
+        edit->getTransport().play (false);
+    }
+
     /** Opens a project handed over from outside (double-clicked while the app is running). */
     void openProjectFile (const File& f)
     {
@@ -659,11 +669,11 @@ private:
         }
         FactoryContent::ensureTemplates (engine);
         StartupTimer::mark ("factory templates");
-        if (! JUCEApplication::getCommandLineParameters().contains ("--snapshots")) checkForUpdates (false);   // only if an address was set
-        if (settings().getBoolValue ("autoScanPlugins", true) && ! JUCEApplication::getCommandLineParameters().contains ("--snapshots"))
+        if (! About::isCapturing()) checkForUpdates (false);   // only if an address was set
+        if (settings().getBoolValue ("autoScanPlugins", true) && ! About::isCapturing())
             Timer::callAfterDelay (5000, [sp = SafePointer<MainComponent> (this)] { if (sp != nullptr) sp->pluginScan.start(); });
 
-        if (settings().getBoolValue ("showWelcome", true) && ! JUCEApplication::getCommandLineParameters().contains ("--snapshots"))
+        if (settings().getBoolValue ("showWelcome", true) && ! About::isCapturing())
             MessageManager::callAsync ([sp = SafePointer<MainComponent> (this)] { if (sp != nullptr) sp->showWelcome(); });
     }
 

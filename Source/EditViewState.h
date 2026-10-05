@@ -8,7 +8,33 @@ class MidiLearn;
 class EditViewState
 {
 public:
-    EditViewState (te::Edit& e, te::SelectionManager& sm) : edit (e), selectionManager (sm) {}
+    EditViewState (te::Edit& e, te::SelectionManager& sm) : edit (e), selectionManager (sm) { edit.state.addListener (&counter); }
+    ~EditViewState()                                                                         { edit.state.removeListener (&counter); }
+
+    /** A number that is different whenever the project or the view of it has changed. Views that used to
+        redraw several times a second "just in case" compare this instead (changedSince) and stay idle. */
+    double signature() const
+    {
+        return counter.count * 1.0 + viewStartBeat * 3.17 + pixelsPerBeat * 7.31 + trackHeight * 0.13 + (edit.getTransport().isPlaying() ? 0.5 : 0.0);
+    }
+    /** True (once) when the signature plus `extra` (anything else the view shows) differs from `last`. */
+    bool changedSince (double& last, double extra = 0.0) const
+    {
+        const double now = signature() + extra;
+        if (now == last) return false;
+        last = now;
+        return true;
+    }
+
+    struct ChangeCounter : public ValueTree::Listener
+    {
+        int64 count = 0;
+        void valueTreePropertyChanged (ValueTree&, const Identifier&) override { ++count; }
+        void valueTreeChildAdded (ValueTree&, ValueTree&) override             { ++count; }
+        void valueTreeChildRemoved (ValueTree&, ValueTree&, int) override      { ++count; }
+        void valueTreeChildOrderChanged (ValueTree&, int, int) override        { ++count; }
+        void valueTreeParentChanged (ValueTree&) override                      { ++count; }
+    } counter;
 
     te::Edit& edit;
     te::SelectionManager& selectionManager;
