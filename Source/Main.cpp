@@ -295,7 +295,7 @@ public:
         {
             struct Runner : public Timer
             {
-                Runner (DocumentWindow& w, File f, int64 seed, int numEvents) : window (w), out (f), rng (seed), total (numEvents)
+                Runner (DocumentWindow& w, MainComponent& m, File f, int64 seed, int numEvents) : window (w), mc (m), out (f), rng (seed), total (numEvents)
                 {
                     out.replaceWithText ("monkey run, seed " + String (seed) + ", " + String (numEvents) + " events\n");
                     startTimer (5000);
@@ -334,6 +334,15 @@ public:
                         out.appendText ("DONE " + String (done) + " events\n");
                         JUCEApplication::getInstance()->setApplicationReturnValue (0);
                         JUCEApplication::quit();
+                        return;
+                    }
+                    if (done % 300 == 150)   // another view every so often: session, mixer, piano roll, other tracks
+                    {
+                        const int view = rng.nextInt (6);
+                        out.appendText (String (done) + " view " + String (view) + newLine);
+                        tidy();
+                        mc.prepareSnapshot (view);
+                        ++done;
                         return;
                     }
                     if (done % 25 == 24) { out.appendText (String (done) + " tidy\n"); tidy(); ++done; return; }
@@ -383,6 +392,7 @@ public:
                     ++done;
                 }
                 DocumentWindow& window;
+                MainComponent& mc;
                 File out;
                 Random rng;
                 int done = 0, total = 2000;
@@ -395,7 +405,7 @@ public:
                 file.getParentDirectory().createDirectory();
                 mc->startSnapshotDemo (file.getParentDirectory());
                 const auto seedAt = args.indexOf ("--seed"), eventsAt = args.indexOf ("--events");
-                idleRunner = std::make_unique<Runner> (*mainWindow, file, seedAt >= 0 ? args[seedAt + 1].getLargeIntValue() : 1,
+                idleRunner = std::make_unique<Runner> (*mainWindow, *mc, file, seedAt >= 0 ? args[seedAt + 1].getLargeIntValue() : 1,
                                                        eventsAt >= 0 ? args[eventsAt + 1].getIntValue() : 2000);
             }
         }
