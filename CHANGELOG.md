@@ -2,6 +2,12 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.96.0 - 2026-10-05
+
+- Fixed: undoing a tempo change left the loop on the wrong beats
+- Presets and device chains saved by older versions load correctly (0.95)
+- Device windows fit smaller screens (0.95)
+
 ## 0.94.0 - 2026-10-05
 
 - Fixed: Undo and Redo after moving a knob or fader put the saved value back but left the knob (and the sound) where it was. They now move knobs, faders, pans and sends

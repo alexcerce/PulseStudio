@@ -4591,7 +4591,10 @@ namespace SelfTest
                         double sum = 0;
                         int index = 0;
                         for (auto* prm : pl->getAutomatableParameters())
-                            sum += prm->valueRange.convertTo0to1 (prm->getCurrentBaseValue()) * (++index);
+                        {
+                            ++index;
+                            if (prm->getCurve().getNumPoints() == 0) sum += prm->valueRange.convertTo0to1 (prm->getCurrentBaseValue()) * index;
+                        }
                         line << " params " << String (sum, 3);
                         out.add (line);
                     }
@@ -4601,7 +4604,10 @@ namespace SelfTest
                 {
                     const String where = "track " + String (ti++) + " \"" + t->getName() + "\"";
                     out.add (where + (t->isMuted (false) ? " muted" : "") + (t->isSolo (false) ? " solo" : "") + " colour " + t->getColour().toString());
-                    if (auto vp = t->getVolumePlugin()) out.add (where + " vol " + String (vp->getVolumeDb(), 2) + " pan " + String (vp->getPan(), 3));
+                    // (a fader with automation follows the playhead; its curve is counted below instead)
+                    if (auto vp = t->getVolumePlugin())
+                        out.add (where + " vol " + (vp->volParam->getCurve().getNumPoints() > 0 ? String ("automated") : String (vp->getVolumeDb(), 2))
+                                 + " pan " + (vp->panParam->getCurve().getNumPoints() > 0 ? String ("automated") : String (vp->getPan(), 3)));
                     plugins (where, t->pluginList);
                     for (auto c : t->getClips())
                     {
@@ -4630,8 +4636,10 @@ namespace SelfTest
                 }
                 plugins ("master", e.getMasterPluginList());
                 out.add ("tempos " + String (e.tempoSequence.getNumTempos()) + " time signatures " + String (e.tempoSequence.getNumTimeSigs())
-                         + " loop " + String (e.getTransport().getLoopRange().getStart().inSeconds(), 3) + "-" + String (e.getTransport().getLoopRange().getEnd().inSeconds(), 3));
+                         + " loop beats " + String (e.tempoSequence.toBeats (e.getTransport().getLoopRange().getStart()).inBeats(), 3)
+                         + "-" + String (e.tempoSequence.toBeats (e.getTransport().getLoopRange().getEnd()).inBeats(), 3));
                 out.add ("scenes " + String (e.getSceneList().getNumScenes()));
+                for (auto& sec : Sections::all (e)) out.add ("section \"" + sec.name + "\" " + String (sec.start, 3) + " + " + String (sec.length, 3));
                 for (auto m : e.getMarkerManager().getMarkers()) out.add ("marker \"" + m->getName() + "\" " + String (m->getPosition().getStart().inSeconds(), 3));
                 return out;
             };
@@ -4677,6 +4685,91 @@ namespace SelfTest
                 while (um.canUndo()) um.undo();   // leave the project as it was
                 um.clearUndoHistory();
                 settle();
+            }
+            {
+                // one editing step at a time: undo must give exactly the project before it, redo exactly the project after it
+                rep.step ("each editing step undone and redone");
+                auto& um = edit->getUndoManager();
+                auto settle = [] { MessageManager::getInstance()->runDispatchLoopUntil (60); };
+                UndoSync undoSync (*edit);
+                auto firstMidi = [&] () -> te::MidiClip*
+                {
+                    for (auto t : te::getAudioTracks (*edit))
+                        for (auto c : t->getClips())
+                            if (auto mc = dynamic_cast<te::MidiClip*> (c); mc != nullptr && mc->getSequence().getNumNotes() >= 4) return mc;
+                    return nullptr;
+                };
+                struct Step { String name; std::function<void()> run; };
+                Random rng (99);
+                te::AudioTrack* made = nullptr;
+                te::Plugin::Ptr addedFx;
+                std::vector<Step> steps {
+                    { "rename a track",        [&] { if (auto t = te::getAudioTracks (*edit).getFirst()) t->setName ("Step Test"); } },
+                    { "change the tempo",      [&] { edit->tempoSequence.getTempo (0)->setBpm (133.0); } },
+                    { "add a section",         [&] { Sections::add (*edit, "Step Section", 8.0, 8.0); } },
+                    { "rename a section",      [&] { if (! Sections::all (*edit).empty()) Sections::rename (*edit, 0, "Renamed"); } },
+                    { "duplicate a section",   [&] { if (! Sections::all (*edit).empty()) Sections::duplicate (*edit, 0); } },
+                    { "move a section",        [&] { if (Sections::all (*edit).size() > 1) Sections::move (*edit, 0, 64.0, &sm); } },
+                    { "remove a section",      [&] { if (! Sections::all (*edit).empty()) Sections::remove (*edit, 0, &sm); } },
+                    { "rename a clip",         [&] { if (auto c = firstMidi()) c->setName ("Step Clip"); } },
+                    { "move a clip",           [&] { if (auto c = firstMidi()) c->setStart (c->getPosition().getStart() + te::TimeDuration::fromSeconds (1.0), false, true); } },
+                    { "duplicate a clip",      [&] { if (auto c = firstMidi()) { sm.selectOnly (c); EditingOps::duplicate (sm); } } },
+                    { "split a clip",          [&] { if (auto c = firstMidi()) { sm.selectOnly (c); EditingOps::splitAtPlayhead (*edit, sm); } } },
+                    { "MIDI: legato",          [&] { if (auto c = firstMidi()) MidiTools::legato (*c, {}); } },
+                    { "MIDI: reverse",         [&] { if (auto c = firstMidi()) MidiTools::reverse (*c, {}); } },
+                    { "MIDI: invert",          [&] { if (auto c = firstMidi()) MidiTools::invert (*c, {}); } },
+                    { "MIDI: stretch",         [&] { if (auto c = firstMidi()) MidiTools::stretch (*c, {}, 0.5); } },
+                    { "MIDI: humanize",        [&] { if (auto c = firstMidi()) MidiTools::humanize (*c, {}, 0.05, 20, rng); } },
+                    { "MIDI: strum",           [&] { if (auto c = firstMidi()) MidiTools::strum (*c, {}, 0.05, true); } },
+                    { "MIDI: fit to scale",    [&] { if (auto c = firstMidi()) MidiTools::fitToScale (*c, {}, 1, 3); } },
+                    { "MIDI: velocities",      [&] { if (auto c = firstMidi()) MidiTools::velocities (*c, {}, MidiTools::Velocity::softer, rng); } },
+                    { "delete a clip",         [&] { if (auto c = firstMidi()) { sm.selectOnly (c); EditingOps::deleteSelected (sm); } } },
+                    { "add a track",           [&] { made = ClipImport::createContentTrack (*edit, "Step Track", true); } },
+                    { "add an effect",         [&] { if (made != nullptr) { addedFx = edit->getPluginCache().createNewPlugin (pulse::Delay::xmlTypeName, {}); PluginMenu::insertPlugin (made, made->pluginList, addedFx, nullptr); } } },
+                    { "turn an effect's knob", [&] { if (auto* d = dynamic_cast<pulse::Delay*> (addedFx.get())) d->param (pulse::Delay::pFeedback)->setParameter (0.83f, sendNotificationSync); } },
+                    { "remove an effect",      [&] { if (addedFx != nullptr) addedFx->deleteFromParent(); } },
+                    { "track colour",          [&] { if (made != nullptr) made->setColour (Colours::hotpink); } },
+                    { "track volume",          [&] { if (made != nullptr) if (auto vp = made->getVolumePlugin()) vp->volParam->setParameter (0.4f, sendNotificationSync); } },
+                    { "delete a track",        [&] { if (made != nullptr) { edit->deleteTrack (made); made = nullptr; } } },
+                };
+                StringArray wrong, skipped;
+                int done = 0;
+                um.clearUndoHistory();
+                for (auto& st : steps)
+                {
+                    rep.step ("  step: " + st.name);
+                    // the playhead sits in the middle of the first MIDI clip (for the split); moving it is not an edit
+                    if (auto c = firstMidi()) edit->getTransport().setPosition (c->getPosition().getStart() + c->getPosition().getLength() * 0.5);
+                    settle();
+                    um.beginNewTransaction (st.name);
+                    const auto fp0 = fingerprint (*edit);
+                    st.run();
+                    settle();
+                    um.beginNewTransaction ("after " + st.name);
+                    const auto fp1 = fingerprint (*edit);
+                    if (fp1 == fp0) { skipped.add (st.name); continue; }   // nothing for it to do in this project
+                    auto diff = [] (const StringArray& a, const StringArray& b)
+                    {
+                        for (int i = 0; i < jmax (a.size(), b.size()); ++i) if (a[i] != b[i]) return "was: " + a[i] + " | now: " + b[i];
+                        return String();
+                    };
+                    um.undo();
+                    settle();
+                    const auto fpU = fingerprint (*edit);
+                    if (fpU != fp0) { wrong.add (st.name + " not undone (" + diff (fp0, fpU) + ")"); }
+                    um.redo();
+                    settle();
+                    const auto fpR = fingerprint (*edit);
+                    if (fpR != fp1) wrong.add (st.name + " not redone (" + diff (fp1, fpR) + ")");
+                    ++done;
+                }
+                // back to where the project was before these steps
+                settle();
+                for (int i = 0; i < 200 && um.canUndo(); ++i) um.undo();
+                settle();
+                um.clearUndoHistory();
+                rep.check (wrong.isEmpty() && done >= 22, "Every editing step is undone and redone exactly (" + String ((int) steps.size()) + " kinds of edit)",
+                           wrong.isEmpty() ? String (done) + " steps" + (skipped.isEmpty() ? String() : ", nothing to do for: " + skipped.joinIntoString (", ")) : wrong.joinIntoString ("  //  "));
             }
             te::EditFileOperations (*edit).save (true, true, false);
             const auto before = fingerprint (*edit);

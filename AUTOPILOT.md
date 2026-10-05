@@ -254,3 +254,7 @@ when you start, touch it after each step, and delete it when you stop.
   parameters, session slots, tempo / time signature counts, loop, scenes); every device window drawn at four sizes;
   instrument windows fit the screen and cannot be shrunk below 1000 x 680; docs/RELEASE.md (decisions, checklist,
   what the self-test does not cover, known limits). 238 checks.
+- 2026-10-05: v0.96.0 (RC work) test "every editing step is undone and redone exactly": 27 kinds of edit (track, tempo,
+  sections, clips, MIDI tools, devices, knobs, faders), each compared against a whole-project fingerprint after undo and
+  after redo. It found: the loop range drifting when a tempo change is undone (fixed in UndoSync: the loop is put back
+  on its beats). Fingerprint leaves out values that follow automation at the playhead. 239 checks, 2 clean runs.
