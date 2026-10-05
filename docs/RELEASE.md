@@ -25,6 +25,8 @@ What has to be true before a build goes to other people, and how to make one.
 - `Pulse Studio.exe --dev-profile --monkey <file> --seed <n> --events 5000` ends with `DONE` for a few seeds:
   random clicks, drags, wheel turns and key presses on the main window. If it stops early, the last line of
   the file is the last thing it did, and a crash report is in the Crashes folder of the "Pulse Studio Dev" profile.
+- `Pulse Studio.exe --dev-profile --soak <file> --minutes 10` ends with `DONE` and exit code 0: the demo plays round
+  and round while the views change, and memory over the last third of the run stays level.
 - `Pulse Studio.exe --dev-profile --idle-cpu <file>`: processor use stopped and playing has not gone up.
 - Build the debug configuration too (`cmake --build build-dev --config Debug --target PulseStudio`) and run the
   self-test under it with `--log <file>`: it must pass with no crash report (a debug build checks things the

@@ -294,3 +294,8 @@ when you start, touch it after each step, and delete it when you stop.
   Also found: DelayLine::read could index one past the end (float rounding of the read position; positions are now
   double, which also restores sub-sample precision in long delays). Debug self-test: 243 passed, no failed checks.
   The monkey run can open device windows and send events to them (not yet run long). Release: 3 clean runs.
+- 2026-10-05: v0.99.5 (RC work) `--soak <file> [--minutes n]`: plays the demo on a loop with changing views and logs
+  memory (private bytes) every 30 s; passes if the last third of the run grows < 15 MB. Result: level (1.7 MB over
+  5 minutes). A one-off of about 55 MB appears the first time a full backup is written (5 minutes in); it is not a
+  leak and I did not track down what allocates it. `--nobackup` skips the timed backups. Debug-build monkey run
+  (2 seeds x 3000 events, with device windows) clean.

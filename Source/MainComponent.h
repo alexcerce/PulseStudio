@@ -588,7 +588,7 @@ private:
         if (edit != nullptr && edit->hasChangedSinceSaved())
         {
             te::EditFileOperations (*edit).saveTempVersion (false);
-            if (++minutesChanged >= 5) { Backups::write (*edit); minutesChanged = 0; }   // backup history
+            if (++minutesChanged >= 5) { if (! JUCEApplication::getCommandLineParameters().contains ("--nobackup")) Backups::write (*edit); minutesChanged = 0; }   // backup history
         }
     }
     int minutesChanged = 0;

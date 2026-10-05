@@ -45,7 +45,9 @@ extern "C" { struct PulseFileTime { unsigned long lo, hi; };
              __declspec (dllimport) void* __stdcall GetCurrentProcess();
              __declspec (dllimport) int __stdcall GetProcessTimes (void*, PulseFileTime*, PulseFileTime*, PulseFileTime*, PulseFileTime*);
              __declspec (dllimport) void* __stdcall GetCurrentThread();
-             __declspec (dllimport) int __stdcall GetThreadTimes (void*, PulseFileTime*, PulseFileTime*, PulseFileTime*, PulseFileTime*); }
+             __declspec (dllimport) int __stdcall GetThreadTimes (void*, PulseFileTime*, PulseFileTime*, PulseFileTime*, PulseFileTime*);
+             struct PulseMemCounters { unsigned long cb, pageFaults; size_t peakWorkingSet, workingSet, quotaPeakPaged, quotaPaged, quotaPeakNonPaged, quotaNonPaged, pagefile, peakPagefile; };
+             __declspec (dllimport) int __stdcall K32GetProcessMemoryInfo (void*, PulseMemCounters*, unsigned long); }
 #endif
 namespace ProcessCpu
 {
@@ -56,6 +58,19 @@ namespace ProcessCpu
         if (GetProcessTimes (GetCurrentProcess(), &created, &exited, &kernel, &user) == 0) return 0.0;
         auto toSeconds = [] (PulseFileTime t) { return (((unsigned long long) t.hi << 32) | t.lo) * 1.0e-7; };
         return toSeconds (kernel) + toSeconds (user);
+       #else
+        return 0.0;
+       #endif
+    }
+
+    /** Memory the process has committed (private bytes), in megabytes. */
+    inline double privateMegabytes()
+    {
+       #if JUCE_WINDOWS
+        PulseMemCounters c {};
+        c.cb = sizeof (c);
+        if (K32GetProcessMemoryInfo (GetCurrentProcess(), &c, sizeof (c)) == 0) return 0.0;
+        return (double) c.pagefile / (1024.0 * 1024.0);
        #else
         return 0.0;
        #endif
@@ -433,6 +448,55 @@ public:
                 const auto seedAt = args.indexOf ("--seed"), eventsAt = args.indexOf ("--events");
                 idleRunner = std::make_unique<Runner> (*mainWindow, *mc, file, seedAt >= 0 ? args[seedAt + 1].getLargeIntValue() : 1,
                                                        eventsAt >= 0 ? args[eventsAt + 1].getIntValue() : 2000);
+            }
+        }
+
+        // Pulse Studio.exe --soak <file> [--minutes n] : plays the demo song round and round, switching views, and writes
+        // the memory in use every half minute (a leak shows as a figure that keeps climbing)
+        if (auto i = args.indexOf ("--soak"); i >= 0 && i + 1 < args.size())
+        {
+            struct Runner : public Timer
+            {
+                Runner (MainComponent& m, File f, int mins) : mc (m), out (f), samples (mins * 2)
+                {
+                    out.replaceWithText ("soak for " + String (mins) + " minutes" + newLine);
+                    startTimer (15000);
+                }
+                void timerCallback() override
+                {
+                    startTimer (30000);
+                    const double mb = ProcessCpu::privateMegabytes();
+                    readings.add (mb);
+                    out.appendText (String (readings.size() * 0.5, 1) + " min: " + String (mb, 1) + " MB" + newLine);
+                    if (readings.size() > samples)
+                    {
+                        stopTimer();
+                        // judged over the last third of the run: start-up work, caches and the first full backup
+                        // (about five minutes in, a one-off of some tens of MB) are behind it by then
+                        const int from = readings.size() - 1 - jmax (2, readings.size() / 3);
+                        const double growth = readings.getLast() - readings[from];
+                        out.appendText ("GROWTH over the last " + String ((readings.size() - 1 - from) * 0.5, 1) + " minutes: " + String (growth, 1) + " MB" + newLine + "DONE" + newLine);
+                        JUCEApplication::getInstance()->setApplicationReturnValue (growth < 15.0 ? 0 : 2);
+                        JUCEApplication::quit();
+                        return;
+                    }
+                    mc.prepareSnapshot (readings.size() % 6);   // devices, mixer, session, piano roll ...
+                    mc.playForMeasurement();
+                }
+                MainComponent& mc;
+                File out;
+                int samples;
+                Array<double> readings;
+            };
+            if (auto* mc = dynamic_cast<MainComponent*> (mainWindow->getContentComponent()))
+            {
+                setApplicationReturnValue (1);
+                mainWindow->setBounds (40, 40, 1600, 940);
+                auto file = File::getCurrentWorkingDirectory().getChildFile (args[i + 1].unquoted());
+                file.getParentDirectory().createDirectory();
+                mc->startSnapshotDemo (file.getParentDirectory());
+                const auto minsAt = args.indexOf ("--minutes");
+                idleRunner = std::make_unique<Runner> (*mc, file, minsAt >= 0 ? jmax (2, args[minsAt + 1].getIntValue()) : 6);
             }
         }
 
