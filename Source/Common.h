@@ -127,6 +127,20 @@ namespace Theme
 //==============================================================================
 namespace EngineHelpers
 {
+    /** Mute and solo as undoable edits (the engine's own setMute / setSolo leave no undo step). */
+    inline void toggleMute (te::Track& t)
+    {
+        auto& um = t.edit.getUndoManager();
+        um.beginNewTransaction (t.isMuted (false) ? "Unmute " + t.getName() : "Mute " + t.getName());
+        t.state.setProperty (te::IDs::mute, ! t.isMuted (false), &um);
+    }
+    inline void toggleSolo (te::Track& t)
+    {
+        auto& um = t.edit.getUndoManager();
+        um.beginNewTransaction (t.isSolo (false) ? "Unsolo " + t.getName() : "Solo " + t.getName());
+        t.state.setProperty (te::IDs::solo, ! t.isSolo (false), &um);
+    }
+
     inline te::AudioTrack* getSelectedTrack (te::SelectionManager& sm)
     {
         if (auto t = sm.getFirstItemOfType<te::AudioTrack>())

@@ -146,13 +146,17 @@ namespace WavetableUI
 
     //==============================================================================
     /** A route's amount: a bar from the centre (left is negative), drag sideways, double-click = 0. */
-    struct AmountBar : public Component
+    struct AmountBar : public Component, public SettableTooltipClient
     {
         float value = 0.0f;
         Colour colour { Theme::accent };
         std::function<void()> onCommit;
 
-        AmountBar() { setMouseCursor (MouseCursor::LeftRightResizeCursor); }
+        AmountBar()
+        {
+            setMouseCursor (MouseCursor::LeftRightResizeCursor);
+            setTooltip ("How much, and which way: drag sideways (Shift for fine steps), or use the wheel; double-click for zero");
+        }
         void paint (Graphics& g) override
         {
             auto r = getLocalBounds().toFloat().reduced (0.5f, 3.0f);

@@ -1290,8 +1290,8 @@ public:
         armBtn.setTooltip ("Arm for recording");
         inBtn.setTooltip ("Input routing / monitoring");
 
-        muteBtn.onClick = [this] { track->setMute (! track->isMuted (false)); };
-        soloBtn.onClick = [this] { track->setSolo (! track->isSolo (false)); };
+        muteBtn.onClick = [this] { EngineHelpers::toggleMute (*track); };
+        soloBtn.onClick = [this] { EngineHelpers::toggleSolo (*track); };
         armBtn.onClick = [this] { toggleArm(); };
         inBtn.onClick = [this] { showInputMenu(); };
 
@@ -1987,8 +1987,8 @@ public:
         collapseBtn.setFlat (true);
         muteBtn.setColour (TextButton::buttonOnColourId, Theme::yellow);
         soloBtn.setColour (TextButton::buttonOnColourId, Theme::accent);
-        muteBtn.onClick = [this] { folder->setMute (! folder->isMuted (false)); };
-        soloBtn.onClick = [this] { folder->setSolo (! folder->isSolo (false)); };
+        muteBtn.onClick = [this] { EngineHelpers::toggleMute (*folder); };
+        soloBtn.onClick = [this] { EngineHelpers::toggleSolo (*folder); };
         for (auto* b : std::initializer_list<Component*> { &collapseBtn, &muteBtn, &soloBtn }) addAndMakeVisible (b);
 
         volume.setSliderStyle (Slider::LinearHorizontal);

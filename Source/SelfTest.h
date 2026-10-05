@@ -4345,6 +4345,49 @@ namespace SelfTest
                        "echo after silence " + String (echo, 3) + ", resting " + String ((int) rests) + ", after waking " + String (woke, 3));
         }
 
+        // --- 1.0 RC: how fast the Wavetable is --------------------------------------------------------------------
+        {
+            rep.step ("wavetable speed");
+            using W = pulse::WavetableSynth;
+            auto wp = edit->getPluginCache().createNewPlugin (W::xmlTypeName, {});
+            auto* w = dynamic_cast<W*> (wp.get());
+            auto bench = [&] (const String& what, std::function<void()> setup)
+            {
+                for (auto* prm : w->getAutomatableParameters()) if (auto d = prm->getDefaultValue()) prm->setParameter (*d, sendNotificationSync);
+                FactoryPresets::clearRoutes (*w);
+                setup();
+                const double sr = 48000.0;
+                const int block = 512, blocks = 470;   // five seconds
+                w->initialise ({ te::TimePosition(), sr, block });
+                AudioBuffer<float> audio (2, block);
+                const auto src = te::createUniqueMPESourceID();
+                const double t0 = Time::getMillisecondCounterHiRes();
+                for (int k = 0; k < blocks; ++k)
+                {
+                    audio.clear();
+                    te::MidiMessageArray midi;
+                    if (k == 0) for (int n : { 36, 43, 48, 52, 55, 60, 64, 67 }) midi.addMidiMessage (MidiMessage::noteOn (1, n, (uint8) 100), 0.0, src);
+                    te::PluginRenderContext fc (&audio, 0, block, &midi, 0.0, { te::TimePosition::fromSeconds (k * block / sr), te::TimePosition::fromSeconds ((k + 1) * block / sr) }, true, false, true, false);
+                    w->applyToBuffer (fc);
+                }
+                const double seconds = (Time::getMillisecondCounterHiRes() - t0) * 0.001;
+                w->deinitialise();
+                const double realTime = blocks * block / sr / jmax (1.0e-6, seconds);
+                rep.step ("  speed " + what + ": " + String (realTime, 1) + "x real time (8 notes)");
+                return realTime;
+            };
+            const double plain = bench ("default patch", [] {});
+            const double heavy = bench ("7 unison voices, both filters, warp, 4 routes, all effects", [&]
+            {
+                w->set (W::pVoices, 7); w->set (W::pMix, 0.5f); w->set (W::pWarp1, 1); w->set (W::pWarpAmt1, 0.5f); w->set (W::pWarp2, 3); w->set (W::pWarpAmt2, 0.4f);
+                w->set (W::pF2Type, 2); w->set (W::pSub, 0.5f); w->set (W::pNoise, 0.2f); w->set (W::pFDrive, 0.3f);
+                w->setRoute (1, "cutoff", 0.3f); w->setRoute (2, "pos1", 0.3f); w->setRoute (5, "pos2", 0.4f); w->setRoute (14, "reso", 0.2f);
+                w->set (W::pDrive, 0.3f); w->set (W::pChorusMix, 0.4f); w->set (W::pDelayMix, 0.3f); w->set (W::pReverbMix, 0.3f); w->set (W::pPhaserMix, 0.3f); w->set (W::pEqLow, 3.0f);
+            });
+            rep.check (plain > 8.0 && heavy > 2.0, "Wavetable: 8 held notes play many times faster than real time on one core",
+                       "default patch " + String (plain, 1) + "x, heaviest patch " + String (heavy, 1) + "x");
+        }
+
         // --- 1.0 RC: release pieces ---------------------------------------------------------------------------
         {
             rep.step ("release pieces");
@@ -4686,7 +4729,7 @@ namespace SelfTest
                 const auto start = fingerprint (*edit);
                 auto tracks = te::getAudioTracks (*edit);
                 um.beginNewTransaction ("t1");
-                if (auto t = tracks.getFirst()) t->setName ("Undo Test Name");   // (mute and solo are not part of undo, as in the engine)
+                if (auto t = tracks.getFirst()) t->setName ("Undo Test Name");
                 um.beginNewTransaction ("t2");
                 for (auto t : tracks)
                     for (auto pl : t->pluginList)
@@ -4742,6 +4785,8 @@ namespace SelfTest
                 std::vector<Step> steps {
                     { "rename a track",        [&] { if (auto t = te::getAudioTracks (*edit).getFirst()) t->setName ("Step Test"); } },
                     { "change the tempo",      [&] { edit->tempoSequence.getTempo (0)->setBpm (133.0); } },
+                    { "mute a track",          [&] { if (auto t = te::getAudioTracks (*edit).getFirst()) EngineHelpers::toggleMute (*t); } },
+                    { "solo a track",          [&] { if (auto t = te::getAudioTracks (*edit)[1]) EngineHelpers::toggleSolo (*t); } },
                     { "add a section",         [&] { Sections::add (*edit, "Step Section", 8.0, 8.0); } },
                     { "rename a section",      [&] { if (! Sections::all (*edit).empty()) Sections::rename (*edit, 0, "Renamed"); } },
                     { "duplicate a section",   [&] { if (! Sections::all (*edit).empty()) Sections::duplicate (*edit, 0); } },

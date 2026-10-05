@@ -78,6 +78,14 @@ namespace About
         return cl.contains ("--snapshots") || cl.contains ("--idle-cpu");
     }
 
+    /** The user guide (the README installed next to the program). */
+    inline File userGuideFile() { return installFolder().getChildFile ("README.md"); }
+    inline void showUserGuide (Component* parent)
+    {
+        if (userGuideFile().existsAsFile()) userGuideFile().startAsProcess();
+        else AlertWindow::showMessageBoxAsync (MessageBoxIconType::InfoIcon, "User guide", "The user guide (README.md) is installed next to the program; this copy of Pulse Studio was started without it.", "OK", parent);
+    }
+
     /** A project file named on the command line (double-clicked in Explorer), if there is one. */
     inline File projectFromCommandLine (const StringArray& args)
     {

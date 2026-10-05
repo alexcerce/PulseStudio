@@ -298,8 +298,8 @@ public:
         {
             muteBtn.setColour (TextButton::buttonOnColourId, Theme::yellow);
             soloBtn.setColour (TextButton::buttonOnColourId, Theme::accent);
-            muteBtn.onClick = [this] { track->setMute (! track->isMuted (false)); };
-            soloBtn.onClick = [this] { track->setSolo (! track->isSolo (false)); };
+            muteBtn.onClick = [this] { EngineHelpers::toggleMute (*track); };
+            soloBtn.onClick = [this] { EngineHelpers::toggleSolo (*track); };
             addAndMakeVisible (muteBtn);
             addAndMakeVisible (soloBtn);
 

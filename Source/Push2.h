@@ -357,8 +357,8 @@ private:
                 }
                 break;
             case ccTapTempo: tapTempo(); break;
-            case ccMute: if (auto t = selectedTrack()) t->setMute (! t->isMuted (false)); break;
-            case ccSolo: if (auto t = selectedTrack()) t->setSolo (! t->isSolo (false)); break;
+            case ccMute: if (auto t = selectedTrack()) EngineHelpers::toggleMute (*t); break;
+            case ccSolo: if (auto t = selectedTrack()) EngineHelpers::toggleSolo (*t); break;
             default: break;
         }
     }

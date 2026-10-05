@@ -266,3 +266,7 @@ when you start, touch it after each step, and delete it when you stop.
   out (PulseEffect::asleep, canSleepOnSilence); audio worker threads = physical cores (2..8) and they sleep on a
   semaphore (lightweightSemaphore) instead of yielding. The off-UI share still varies run to run (7-30%) and I could
   not attribute it further without a per-thread profile. 240 checks, 3 clean runs.
+- 2026-10-05: v0.98.0 (RC work) mute and solo are undoable (EngineHelpers::toggleMute / toggleSolo write the project
+  with the undo manager; all buttons and Push use them); File > User guide (F1) opens the installed README; About and
+  User guide are commands; tooltips on the value boxes and modulation amount bars; Wavetable speed test (8 held notes:
+  default patch about 47x real time, heaviest patch about 10x, one core) - no engine optimisation needed. 241 checks.

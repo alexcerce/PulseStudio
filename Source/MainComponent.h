@@ -282,6 +282,8 @@ public:
         c.add ("app.nextTheme", "Next colour theme", "View", {}, [this] { setTheme ((Theme::currentIndex() + 1) % (int) Theme::all().size()); });
         c.add ("app.plugins", "Plugin manager", "App", {}, [this] { showPluginManager(); });
         c.add ("app.shortcuts", "Keyboard shortcuts", "App", {}, [this] { showShortcutEditor(); });
+        c.add ("app.guide", "User guide", "App", key (KeyPress::F1Key), [this] { About::showUserGuide (this); });
+        c.add ("app.about", "About Pulse Studio", "App", {}, [this] { About::show (this); });
         c.add ("edit.undoHistory", "Undo history...", "Edit", key ('H', ctrl | shiftM), [this] { if (edit) UndoHistory::showWindow (*edit); });
         c.add ("app.welcome", "Welcome screen", "App", {}, [this] { showWelcome(); });
         c.add ("midi.humanize", "MIDI: humanize notes", "MIDI", key ('H', ctrl | altM), [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("humanize"); } });
@@ -415,6 +417,7 @@ private:
         };
         a.checkUpdates   = [this] { checkForUpdates (true); };
         a.about          = [this] { About::show (this); };
+        a.userGuide      = [this] { About::showUserGuide (this); };
         a.setMidiRecordMode = [this] (int m)
         {
             settings().setValue ("midiRecordMode", m);

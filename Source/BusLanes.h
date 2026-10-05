@@ -69,8 +69,8 @@ namespace BusLanes
                 soloBtn.setColour (TextButton::buttonOnColourId, Theme::accent);
                 muteBtn.setTooltip ("Mute");
                 soloBtn.setTooltip ("Solo");
-                muteBtn.onClick = [this] { track->setMute (! track->isMuted (false)); };
-                soloBtn.onClick = [this] { track->setSolo (! track->isSolo (false)); };
+                muteBtn.onClick = [this] { EngineHelpers::toggleMute (*track); };
+                soloBtn.onClick = [this] { EngineHelpers::toggleSolo (*track); };
             }
 
             volume.setSliderStyle (Slider::LinearHorizontal);

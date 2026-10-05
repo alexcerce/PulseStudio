@@ -376,12 +376,13 @@ namespace DeviceEditors
 
     //==============================================================================
     /** A value in a small box (octave, semitones, cents): drag up / down, wheel, double-click resets. */
-    class ParamValueBox : public Component, private Timer
+    class ParamValueBox : public Component, public SettableTooltipClient, private Timer
     {
     public:
         te::AutomatableParameter& getParameter() const { return *param; }
         ParamValueBox (te::AutomatableParameter& p, const String& l, Colour c) : param (&p), label (l), colour (c)
         {
+            setTooltip (p.getParameterName() + ": drag up or down (Shift for fine steps), or use the wheel; double-click to reset");
             setMouseCursor (MouseCursor::UpDownResizeCursor);
             startTimerHz (10);
         }

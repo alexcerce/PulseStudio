@@ -2,6 +2,11 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.98.0 - 2026-10-05
+
+- Mute and solo can be undone
+- File > User guide (F1)
+
 ## 0.97.0 - 2026-10-05
 
 - Uses about half the processor when nothing is happening: controls redraw only when they change, effects rest on silence, audio worker threads sleep when idle

@@ -818,8 +818,8 @@ private:
             mute.setColour (TextButton::buttonOnColourId, Theme::yellow);
             solo.setColour (TextButton::buttonOnColourId, Theme::accent);
             arm.setColour (TextButton::buttonOnColourId, Theme::red);
-            mute.onClick = [this] { track->setMute (! track->isMuted (false)); };
-            solo.onClick = [this] { track->setSolo (! track->isSolo (false)); };
+            mute.onClick = [this] { EngineHelpers::toggleMute (*track); };
+            solo.onClick = [this] { EngineHelpers::toggleSolo (*track); };
             arm.onClick = [this] { EngineHelpers::armTrack (*track, ! EngineHelpers::isTrackArmed (*track)); };
             arm.setTooltip ("Arm for recording into a clip slot");
             refresh();
