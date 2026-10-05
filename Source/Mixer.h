@@ -336,9 +336,14 @@ public:
     {
         auto r = getLocalBounds().toFloat().reduced (0.5f);
         const bool selected = track != nullptr && evs.selectionManager.isSelected (track);
-        g.setGradientFill (ColourGradient (Theme::panel2.brighter (selected ? 0.08f : 0.02f), 0.0f, r.getY(),
-                                          Theme::panel2.darker (0.15f), 0.0f, r.getBottom(), false));
-        g.fillRoundedRectangle (r, 6.0f);
+        // the same quiet card as the devices; the selected strip is a little lighter
+        g.setColour (Pro::shade (0.35f));
+        g.fillRoundedRectangle (r.translated (0.0f, 1.5f), 7.0f);
+        g.setGradientFill (ColourGradient (Pro::cardTop().brighter (selected ? 0.10f : 0.0f), 0.0f, r.getY(),
+                                          Pro::cardBot().brighter (selected ? 0.05f : 0.0f), 0.0f, r.getY() + 120.0f, false));
+        g.fillRoundedRectangle (r, 7.0f);
+        g.setColour (Theme::ink.withAlpha (0.07f));
+        g.drawRoundedRectangle (r, 7.0f, 1.0f);
         // name plate in the track colour
         const auto col = track != nullptr ? track->getColour() : Theme::line;
         auto plate = r.withHeight (24.0f);

@@ -643,7 +643,7 @@ public:
         {
             const bool needsAPerson = c.id.startsWith ("file.") || c.id.startsWith ("app.") || c.name.contains ("...")
                                       || c.id == "view.palette" || c.id == "transport.record" || c.id == "edit.bounce" || c.id == "edit.undoHistory";
-            if (! needsAPerson || c.id == "app.nextTheme") ids.add (c.id);
+            if (! needsAPerson) ids.add (c.id);   // (nothing that changes saved settings, such as the theme)
         }
         return ids;
     }
@@ -829,7 +829,7 @@ private:
         showTab (currentTab);
         restoreViewState();
         CrashGuard::endLoading();   // the project's plugins are loaded
-        settings().setValue ("lastEdit", file.getFullPathName());
+        if (! About::isCapturing()) settings().setValue ("lastEdit", file.getFullPathName());
         settings().setValue ("recentProjects", RecentProjects::push (StringArray::fromLines (settings().getValue ("recentProjects")), file).joinIntoString ("\n"));
         updateWindowTitle();
         resized();

@@ -282,3 +282,6 @@ when you start, touch it after each step, and delete it when you stop.
   dropClipIfGone), and Split at the playhead exactly on a clip's edge (or on a session-slot clip) made the app die
   without a crash report, intermittently (EditingOps::canSplitAt). After the fixes: 4 seeds x 5000 events clean.
   The earlier "exit 127 with no report" on Ctrl+E was not pinned to a root cause beyond that guard. 243 checks.
+- 2026-10-05: v0.99.3 (RC work) mixer strips in the card look; picture / measurement / fuzz runs no longer change the
+  saved theme or the last-opened project of the profile they run in (I restored the Dev profile's theme, which a fuzz
+  run had cycled to "Ocean"); monkey run also switches views (4 more seeds x 8000 events clean). 243 checks.
