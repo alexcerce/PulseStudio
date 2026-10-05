@@ -22,7 +22,7 @@ public:
         std::function<void()> clearRecent;
         std::function<StringArray()> backups;
         std::function<void (const File&)> restoreBackup;
-        std::function<void()> welcome, exportZip, importZip, crashReports, checkUpdates;
+        std::function<void()> welcome, exportZip, importZip, crashReports, checkUpdates, about;
         std::function<int()> midiRecordMode;
         std::function<void (int)> setMidiRecordMode;
         std::function<String()> controllerStatus;
@@ -189,6 +189,8 @@ public:
             add ("Open project from .zip...", {}, actions.importZip);
             add ("Collect crash reports...", {}, actions.crashReports);
             add ("Check for updates...", {}, actions.checkUpdates);
+            m.addSeparator();
+            add ("About Pulse Studio...", {}, actions.about);
             m.showMenuAsync (PopupMenu::Options().withTargetComponent (&fileBtn));
         };
         addAndMakeVisible (fileBtn);

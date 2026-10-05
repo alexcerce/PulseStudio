@@ -149,7 +149,9 @@ namespace pulse
             if (std::sqrt (rms / (float) n) < 0.003f) return 0.0;   // too quiet
 
             const int w = n - maxLag;
-            std::vector<float> d ((size_t) maxLag + 1, 0.0f);
+            // work buffers are kept per thread, so nothing is allocated once they have grown (this runs on the audio thread too)
+            static thread_local std::vector<float> d, dn;
+            d.assign ((size_t) maxLag + 1, 0.0f);
             for (int tau = 1; tau <= maxLag; ++tau)
             {
                 float s = 0;
@@ -157,7 +159,7 @@ namespace pulse
                 d[(size_t) tau] = s;
             }
             // cumulative mean normalised difference picks the period...
-            std::vector<float> dn (d.size(), 1.0f);
+            dn.assign (d.size(), 1.0f);
             float running = 0;
             for (int tau = 1; tau <= maxLag; ++tau)
             {

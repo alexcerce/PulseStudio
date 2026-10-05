@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(PulseStudio VERSION 0.60.0 LANGUAGES C CXX)
+project(PulseStudio VERSION 0.90.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -86,4 +86,7 @@ target_link_libraries(PulseStudio PRIVATE
 
 if (MSVC)
     target_compile_options(PulseStudio PRIVATE /bigobj /MP)
+    # Symbols for release builds (a .pdb next to the build, never installed): crash reports can name functions.
+    target_compile_options(PulseStudio PRIVATE /Zi)
+    target_link_options(PulseStudio PRIVATE /DEBUG /OPT:REF /OPT:ICF)
 endif()

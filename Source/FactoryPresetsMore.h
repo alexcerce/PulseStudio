@@ -5,6 +5,11 @@
 
 /** More factory presets (merged into FactoryPresets::all()). Values are in real units, by
     parameter id; anything not listed stays at the device's default. */
+#if JUCE_MSVC
+ #pragma warning (push)
+ #pragma warning (disable: 4244)   // whole numbers in the tables become floats
+#endif
+
 namespace FactoryPresetsMore
 {
     struct P { const char* name; std::vector<std::pair<const char*, float>> values; };
@@ -427,3 +432,7 @@ namespace FactoryPresetsMore
         return m;
     }
 }
+
+#if JUCE_MSVC
+ #pragma warning (pop)
+#endif

@@ -399,6 +399,7 @@ namespace pulse
         {
             line.setMax ((int) (sampleRate * 0.1) + 8);
             analysis.assign (analysisSize, 0.0f);
+            ordered.assign (analysisSize, 0.0f);
             aPos = 0;
             ratio = 1.0f;
             targetRatio = 1.0f;
@@ -421,7 +422,6 @@ namespace pulse
                 if (++sinceAnalysis >= analysisSize / 4)   // re-detect every ~10 ms
                 {
                     sinceAnalysis = 0;
-                    std::vector<float> ordered (analysisSize);
                     for (int i = 0; i < analysisSize; ++i) ordered[(size_t) i] = analysis[(size_t) ((aPos + i) % analysisSize)];
                     const double hz = Tuner::detectPitch (ordered.data(), analysisSize, sampleRate, 70.0, 1000.0);
                     if (hz > 0.0)
@@ -456,7 +456,7 @@ namespace pulse
 
     private:
         DelayLine line;
-        std::vector<float> analysis;
+        std::vector<float> analysis, ordered;
         int aPos = 0, sinceAnalysis = 0;
         float ratio = 1.0f, targetRatio = 1.0f, tapPhase = 0.0f;
     };

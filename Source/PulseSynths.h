@@ -68,7 +68,10 @@ namespace pulse
             auto& buffer = *fc.destBuffer;
             buffer.clear (fc.bufferStartSample, fc.bufferNumSamples);
 
-            MidiBuffer midi;
+            // One buffer per thread, reused between blocks (no allocation once it has grown). Not a member:
+            // a render and the live engine can both be inside the same instrument for a moment.
+            static thread_local MidiBuffer midi;
+            midi.clear();
             if (auto* m = fc.bufferForMidiMessages)
             {
                 if (m->isAllNotesOff)

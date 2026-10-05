@@ -428,6 +428,7 @@ namespace pulse
         {
             oversampler = std::make_unique<dsp::Oversampling<float>> (2, 2, dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true);
             oversampler->initProcessing ((size_t) jmax (16, blockSize));
+            dryBuf.assign ((size_t) jmax (16, blockSize) * 2, 0.0f);
             dcX[0] = dcX[1] = dcY[0] = dcY[1] = 0.0f;
             lp[0] = lp[1] = 0.0f;
         }
@@ -448,9 +449,10 @@ namespace pulse
             for (int start = 0; start < n; start += blockSize)
             {
                 const int num = jmin (blockSize, n - start);
-                HeapBlock<float> dry (num * 2);
-                std::copy (l + start, l + start + num, dry.get());
-                std::copy (r + start, r + start + num, dry.get() + num);
+                if ((int) dryBuf.size() < num * 2) dryBuf.resize ((size_t) num * 2);   // only if the host hands over a bigger block than announced
+                auto* dry = dryBuf.data();
+                std::copy (l + start, l + start + num, dry);
+                std::copy (r + start, r + start + num, dry + num);
 
                 float* chans[] = { l + start, r + start };
                 dsp::AudioBlock<float> block (chans, 2, (size_t) num);
@@ -466,7 +468,7 @@ namespace pulse
                 for (int ch = 0; ch < 2; ++ch)
                 {
                     auto* d = chans[ch];
-                    auto* dr = dry.get() + ch * num;
+                    auto* dr = dry + ch * num;
                     for (int i = 0; i < num; ++i)
                     {
                         // DC blocker (asymmetric shapes add DC)
@@ -484,6 +486,7 @@ namespace pulse
         }
 
     private:
+        std::vector<float> dryBuf;
         std::unique_ptr<dsp::Oversampling<float>> oversampler;
         float dcX[2] {}, dcY[2] {}, lp[2] {};
     };

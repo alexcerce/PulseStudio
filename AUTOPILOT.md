@@ -218,3 +218,14 @@ when you start, touch it after each step, and delete it when you stop.
   choices are small menus (ParamMenuBox) instead of knobs (also on Drum Rack pages); Drum Rack pads restyled; sweep arc
   sits outside the modulation arc; Matrix tab no longer repeats the source chips; ParamButtons::numOptions allows up to 40
   options (the Wavetable has 17 tables). 223 checks pass. Owner asked for a v1 release candidate: see "Release candidate".
+- 2026-10-04: PAUSED mid-way through 0.90.0 (1.0 RC 1). UNCOMMITTED in the working tree: About.h + File > About,
+  THIRD-PARTY-NOTICES.md, CHANGELOG.md, project from the command line, installer file association, release .pdb
+  (/Zi /DEBUG), audio-thread fixes (Saturator dry buffer, Pitch Correction buffers, thread_local MIDI buffer in PulseSynth),
+  LoudnessAnalyser rewritten (ring + histogram, try-lock; it crashed 1 run in 5 inside Limiter on the live engine thread).
+  OPEN: the self-test is still flaky about 1 run in 3-5 (last: "Device works: Prism EQ" read -200 dBFS once). Likely cause:
+  tests call initialise / applyToBuffer directly on plugins that the live engine is also processing. Find and fix before
+  committing 0.90.0; run the self-test 8+ times in a row. Version files already say 0.90.0.
+- 2026-10-05: resumed; 0.90.0 (1.0 RC 1) committed. Self-test passed 10 runs in a row (225 checks) after the
+  LoudnessAnalyser rewrite; the one-off "Prism EQ read -200 dBFS" did not recur (the audit now logs "!!" lines in the
+  .progress.txt if a render comes back missing or silent). Version stage text lives in About::stage().
+  Release blockers that need the owner: licence choice (GPL vs commercial JUCE / Tracktion / Link), code signing.

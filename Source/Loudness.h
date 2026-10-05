@@ -11,6 +11,7 @@ namespace pulse
     public:
         void prepare (double sampleRate)
         {
+            const SpinLock::ScopedLockType sl (busy);
             sr = sampleRate;
             // the exact BS.1770 K-weighting filters, re-derived for this sample rate (as in libebur128)
             {
@@ -35,25 +36,48 @@ namespace pulse
             subLen = jmax (1, (int) std::round (sr * 0.1));
             oversampler = std::make_unique<dsp::Oversampling<float>> (2, 2, dsp::Oversampling<float>::filterHalfBandFIREquiripple, true);
             oversampler->initProcessing (4096);
-            reset();
+            tpCopy.setSize (2, 4096);
+            clear();
         }
 
         void reset()
         {
+            const SpinLock::ScopedLockType sl (busy);
+            clear();
+        }
+
+    private:
+        void clear()
+        {
             for (auto& f : shelf) f.reset();
             for (auto& f : hpf) f.reset();
-            subs.clear();
-            blockPowers.clear();
+            subs.fill (0.0);
+            subPos = subCount = 0;
+            histSum.fill (0.0);
+            histCount.fill (0);
+            dirty = true;
             acc = 0.0;
             accN = 0;
             truePeak = 0.0f;
             if (oversampler != nullptr) oversampler->reset();
         }
 
-        /** Feeds stereo audio. */
+        /** The mean power of the last four 100 ms pieces (one 400 ms block). */
+        double lastBlockPower() const
+        {
+            double p = 0;
+            for (int k = 1; k <= 4; ++k) p += subs[(size_t) ((subPos - k + subSlots) % subSlots)];
+            return p * 0.25;
+        }
+
+    public:
+        /** Feeds stereo audio. Nothing is allocated here: the last 3 s are a ring, and the blocks for
+            the integrated loudness are counted in a histogram (0.1 LU steps), however long it runs. */
         void process (const float* l, const float* r, int n)
         {
-            if (sr <= 0.0) return;
+            // one caller at a time (a second one, e.g. a render next to live playback, skips its metering)
+            const SpinLock::ScopedTryLockType sl (busy);
+            if (! sl.isLocked() || sr <= 0.0 || oversampler == nullptr) return;
             for (int i = 0; i < n; ++i)
             {
                 const double kl = hpf[0].process (shelf[0].process (l[i], 0), 0);
@@ -61,14 +85,21 @@ namespace pulse
                 acc += kl * kl + kr * kr;
                 if (++accN >= subLen)
                 {
-                    subs.push_back (acc / accN);
-                    if (subs.size() > 30) subs.erase (subs.begin());   // keep 3 s
+                    subs[(size_t) subPos] = acc / accN;   // the ring keeps 3 s
+                    subPos = (subPos + 1) % subSlots;
+                    subCount = jmin (subSlots, subCount + 1);
                     acc = 0.0;
                     accN = 0;
-                    if (subs.size() >= 4)   // a new 400 ms block every 100 ms
+                    if (subCount >= 4)   // a new 400 ms block every 100 ms
                     {
-                        const size_t k = subs.size();
-                        blockPowers.push_back ((subs[k - 1] + subs[k - 2] + subs[k - 3] + subs[k - 4]) * 0.25);
+                        const double p = lastBlockPower(), lufs = toLufs (p);
+                        if (lufs > -70.0)   // the absolute gate
+                        {
+                            const int bin = jlimit (0, histBins - 1, (int) ((lufs + 70.0) * 10.0));
+                            histSum[(size_t) bin] += p;
+                            ++histCount[(size_t) bin];
+                            dirty = true;
+                        }
                     }
                 }
             }
@@ -77,7 +108,6 @@ namespace pulse
             {
                 const int len = jmin (4096, n - start);
                 float* chans[2] = { const_cast<float*> (l + start), const_cast<float*> (r + start) };
-                tpCopy.setSize (2, len, false, false, true);
                 tpCopy.copyFrom (0, 0, chans[0], len);
                 tpCopy.copyFrom (1, 0, chans[1], len);
                 dsp::AudioBlock<float> block (tpCopy);
@@ -92,33 +122,31 @@ namespace pulse
 
         static double toLufs (double power) { return power > 0.0 ? -0.691 + 10.0 * std::log10 (power) : -200.0; }
 
-        double momentary() const
-        {
-            if (subs.size() < 4) return -200.0;
-            const size_t k = subs.size();
-            return toLufs ((subs[k - 1] + subs[k - 2] + subs[k - 3] + subs[k - 4]) * 0.25);
-        }
+        double momentary() const { return subCount < 4 ? -200.0 : toLufs (lastBlockPower()); }
 
         double shortTerm() const
         {
-            if (subs.size() < 30) return -200.0;
+            if (subCount < subSlots) return -200.0;
             double s = 0;
             for (auto p : subs) s += p;
-            return toLufs (s / (double) subs.size());
+            return toLufs (s / (double) subSlots);
         }
 
-        /** Gated integrated loudness over everything since the last reset. */
+        /** Gated integrated loudness over everything since the last reset (worked out again only when a block was added). */
         double integrated() const
         {
+            if (! dirty) return cachedIntegrated;
+            dirty = false;
             double sum = 0;
-            int count = 0;
-            for (auto p : blockPowers) if (toLufs (p) > -70.0) { sum += p; ++count; }
-            if (count == 0) return -200.0;
-            const double relGate = toLufs (sum / count) - 10.0;
+            uint64 count = 0;
+            for (int b = 0; b < histBins; ++b) { sum += histSum[(size_t) b]; count += histCount[(size_t) b]; }
+            if (count == 0) return cachedIntegrated = -200.0;
+            const double relGate = toLufs (sum / (double) count) - 10.0;
             sum = 0;
             count = 0;
-            for (auto p : blockPowers) if (toLufs (p) > -70.0 && toLufs (p) > relGate) { sum += p; ++count; }
-            return count > 0 ? toLufs (sum / count) : -200.0;
+            for (int b = 0; b < histBins; ++b)
+                if (histCount[(size_t) b] > 0 && toLufs (histSum[(size_t) b] / histCount[(size_t) b]) > relGate) { sum += histSum[(size_t) b]; count += histCount[(size_t) b]; }
+            return cachedIntegrated = (count > 0 ? toLufs (sum / (double) count) : -200.0);
         }
 
         float truePeakDb() const { return Decibels::gainToDecibels (truePeak, -200.0f); }
@@ -150,7 +178,14 @@ namespace pulse
         std::array<Biquad, 2> shelf, hpf;
         int subLen = 4800, accN = 0;
         double acc = 0.0;
-        std::vector<double> subs, blockPowers;
+        static constexpr int subSlots = 30, histBins = 751;   // 3 s of 100 ms pieces; -70 .. +5 LUFS in 0.1 steps
+        std::array<double, subSlots> subs {};
+        int subPos = 0, subCount = 0;
+        std::array<double, histBins> histSum {};
+        std::array<uint32, histBins> histCount {};
+        mutable bool dirty = true;
+        mutable double cachedIntegrated = -200.0;
+        SpinLock busy;
         float truePeak = 0.0f;
         std::unique_ptr<dsp::Oversampling<float>> oversampler;
         AudioBuffer<float> tpCopy;

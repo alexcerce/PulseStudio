@@ -48,6 +48,7 @@
 #include "TransportBar.h"
 #include "Sections.h"
 #include "ExportTools.h"
+#include "About.h"
 
 /** "Pulse Studio.exe --selftest report.txt"
     Builds a scratch project in the temp folder, exercises the editing / routing / device
@@ -452,11 +453,12 @@ namespace SelfTest
             {
                 auto f = EditingOps::renderTrack (t, range, "audit" + String (++renderIndex));
                 std::unique_ptr<AudioFormatReader> r (engine.getAudioFileFormatManager().readFormatManager.createReaderFor (f));
-                if (r == nullptr) return {};
+                if (r == nullptr) { rep.step ("  !! render gave no readable file: " + f.getFullPathName() + (f.existsAsFile() ? " (exists, " + String (f.getSize()) + " bytes)" : " (missing)")); return {}; }
                 AudioBuffer<float> b ((int) r->numChannels, (int) r->lengthInSamples);
                 r->read (&b, 0, b.getNumSamples(), 0, true, true);
                 r = nullptr;
                 f.deleteFile();
+                if (b.getMagnitude (0, b.getNumSamples()) < 1.0e-9f) rep.step ("  !! render is silent (" + String (b.getNumSamples()) + " samples)");
                 float rms = 0.0f;
                 for (int ch = 0; ch < b.getNumChannels(); ++ch) rms = jmax (rms, b.getRMSLevel (ch, 0, b.getNumSamples()));
                 if (! std::isfinite (rms)) return { 999.0f, 999.0f, 0.0 };
@@ -3985,6 +3987,40 @@ namespace SelfTest
                        String (refused.size()) + " refused: " + refused[0].upToFirstOccurrenceOf (":", false, false));
             edit->deleteTrack (ret);
             edit->deleteTrack (plain);
+        }
+
+        // --- 1.0 RC: release pieces ---------------------------------------------------------------------------
+        {
+            rep.step ("release pieces");
+            auto projectFile = edit->editFileRetriever ? edit->editFileRetriever() : File();
+            auto tmp = File::getSpecialLocation (File::tempDirectory).getChildFile ("PulseStudioSelfTest").getChildFile ("Double Click.tracktionedit");
+            tmp.getParentDirectory().createDirectory();
+            tmp.replaceWithText ("<EDIT/>");
+            const bool found = About::projectFromCommandLine ({ "--dev-profile", tmp.getFullPathName().quoted() }) == tmp;
+            const bool ignored = ! About::projectFromCommandLine ({ "--selftest", "report.txt" }).existsAsFile();
+            tmp.deleteFile();
+            rep.check (found && ignored && About::versionLine().contains (JUCEApplication::getInstance()->getApplicationVersion()) && About::licenceSummary().contains ("Tracktion"),
+                       "A project named on the command line is opened; the About box has the version and the licences", About::versionLine());
+            // the Saturator and Pitch Correction keep their work buffers (nothing allocated while playing)
+            auto sp = edit->getPluginCache().createNewPlugin (pulse::Saturator::xmlTypeName, {});
+            auto pc = edit->getPluginCache().createNewPlugin (pulse::PitchCorrect::xmlTypeName, {});
+            bool finite = true;
+            for (auto* pl : { sp.get(), pc.get() })
+            {
+                te::PluginInitialisationInfo info { te::TimePosition(), 48000.0, 512 };
+                pl->initialise (info);
+                AudioBuffer<float> buf (2, 512);
+                for (int k = 0; k < 40; ++k)
+                {
+                    for (int i = 0; i < 512; ++i) { const float v = 0.5f * std::sin ((k * 512 + i) * 0.03f); buf.setSample (0, i, v); buf.setSample (1, i, v); }
+                    te::MidiMessageArray midi;
+                    te::PluginRenderContext fc (&buf, 0, 512, &midi, 0.0, { te::TimePosition::fromSeconds (k * 512 / 48000.0), te::TimePosition::fromSeconds ((k + 1) * 512 / 48000.0) }, true, false, true, false);
+                    pl->applyToBuffer (fc);
+                    finite = finite && std::isfinite (buf.getSample (0, 100)) && buf.getMagnitude (0, 512) < 4.01f;
+                }
+                pl->deinitialise();
+            }
+            rep.check (finite, "Saturator and Pitch Correction run with their own work buffers", {});
         }
 
         // --- v0.58: cutoff knobs show the envelope's sweep; nothing lost in the new windows ---------------------

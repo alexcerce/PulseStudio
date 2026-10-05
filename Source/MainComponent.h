@@ -1,5 +1,6 @@
 #pragma once
 
+#include "About.h"
 #include "Common.h"
 #include "EditViewState.h"
 #include "PluginMenu.h"
@@ -412,6 +413,7 @@ private:
                                                                  : String ("Couldn't create the zip."));
         };
         a.checkUpdates   = [this] { checkForUpdates (true); };
+        a.about          = [this] { About::show (this); };
         a.setMidiRecordMode = [this] (int m)
         {
             settings().setValue ("midiRecordMode", m);
@@ -629,6 +631,9 @@ private:
     void openStartupProject()
     {
         File last (settings().getValue ("lastEdit"));
+        // a project double-clicked in Explorer comes first
+        if (auto named = About::projectFromCommandLine (StringArray::fromTokens (JUCEApplication::getCommandLineParameters(), true)); named.existsAsFile())
+            last = named;
 
         if (last.existsAsFile())
             loadEdit (last, false);
