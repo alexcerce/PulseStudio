@@ -49,6 +49,7 @@
 #include "Sections.h"
 #include "ExportTools.h"
 #include "About.h"
+#include "UndoSync.h"
 
 /** "Pulse Studio.exe --selftest report.txt"
     Builds a scratch project in the temp folder, exercises the editing / routing / device
@@ -4082,6 +4083,136 @@ namespace SelfTest
                        + (steps ? "" : ", steps wrong: " + second + " vs " + names[1]) + (wraps ? "" : ", wrap wrong: " + ed.presetName() + " vs " + names[names.size() - 1]));
         }
 
+        // --- 1.0 RC: no setting of any device makes it blow up -------------------------------------------------
+        {
+            rep.step ("device fuzz");
+            StringArray bad;
+            int runs = 0;
+            Random rng (777);
+            const double sr = 48000.0;
+            const int block = 512;
+            for (auto& b : ClipImport::builtIns())
+            {
+                if (b.midiFx) continue;
+                auto p = edit->getPluginCache().createNewPlugin (b.type, {});
+                auto* pp = dynamic_cast<pulse::PulsePlugin*> (p.get());
+                if (pp == nullptr) continue;
+                rep.step (String ("  fuzzing ") + b.name);
+                bool ok = true;
+                String worst;
+                for (int round = 0; round < 24 && ok; ++round)
+                {
+                    // every parameter somewhere random; every third round pushes them all to an end of their range
+                    for (int i = 0; i < pp->numParams(); ++i)
+                    {
+                        auto* prm = pp->param (i);
+                        const float n = round % 3 == 2 ? (rng.nextBool() ? 1.0f : 0.0f) : rng.nextFloat();
+                        pp->set (i, prm->valueRange.snapToLegalValue (prm->valueRange.convertFrom0to1 (n)));
+                    }
+                    p->initialise ({ te::TimePosition(), sr, block });
+                    AudioBuffer<float> audio (2, block);
+                    const auto src = te::createUniqueMPESourceID();
+                    int pinned = 0, total = 0;
+                    float tailPeak = 0.0f;
+                    for (int k = 0; k < 130 && ok; ++k)
+                    {
+                        const bool quiet = k >= 30;   // then 100 blocks (about a second) of silence
+                        // effects get a loud sine sweep with clicks; instruments get a chord
+                        for (int i = 0; i < block; ++i)
+                        {
+                            const double t = (k * block + i) / sr;
+                            float v = p->isSynth() || quiet ? 0.0f : 0.9f * (float) std::sin (MathConstants<double>::twoPi * (60.0 + t * 9000.0) * t);
+                            if (! p->isSynth() && ! quiet && (k * block + i) % 4800 == 0) v = 1.0f;
+                            audio.setSample (0, i, v);
+                            audio.setSample (1, i, -v * 0.8f);
+                        }
+                        te::MidiMessageArray midi;
+                        if (p->isSynth() && k == 0) for (int note : { 36, 60, 96 }) midi.addMidiMessage (MidiMessage::noteOn (1, note, (uint8) 127), 0.0, src);
+                        if (p->isSynth() && k == 20) for (int note : { 36, 60, 96 }) midi.addMidiMessage (MidiMessage::noteOff (1, note), 0.0, src);
+                        te::PluginRenderContext fc (&audio, 0, block, &midi, 0.0, { te::TimePosition::fromSeconds (k * block / sr), te::TimePosition::fromSeconds ((k + 1) * block / sr) },
+                                                    true, false, true, false);
+                        p->applyToBuffer (fc);
+                        for (int ch = 0; ch < 2 && ok; ++ch)
+                            for (int i = 0; i < block; ++i)
+                            {
+                                const float v = audio.getSample (ch, i);
+                                if (! std::isfinite (v)) { ok = false; worst = "not a number"; break; }
+                                ++total;
+                                if (std::abs (v) >= 3.99f) ++pinned;
+                                if (k >= 125) tailPeak = jmax (tailPeak, std::abs (v));
+                            }
+                    }
+                    p->deinitialise();
+                    ++runs;
+                    // a second after the input stopped (notes released) it must not still be screaming: that is a runaway
+                    // (instruments are left out: a ten-second release at full level is loud for a long time and that is what was asked for)
+                    juce::ignoreUnused (pinned);
+                    if (ok && ! p->isSynth() && tailPeak >= 3.99f) { ok = false; worst = "runs away (still at the clamp a second after the input stopped)"; }
+                    if (! ok)
+                    {
+                        StringArray settings;
+                        for (int i = 0; i < jmin (pp->numParams(), 60); ++i) settings.add (pp->param (i)->paramID + "=" + String (pp->get (i), 3));
+                        rep.step ("  !! " + String (b.name) + " " + worst + " with " + settings.joinIntoString (" "));
+                    }
+                }
+                if (! ok) bad.add (String (b.name) + ": " + worst);
+            }
+            rep.check (bad.isEmpty(), "No setting makes a device blow up (random and extreme settings on every instrument and effect)",
+                       bad.isEmpty() ? String (runs) + " runs" : bad.joinIntoString ("; "));
+        }
+
+        // --- 1.0 RC: undo of a knob move ------------------------------------------------------------------------
+        {
+            rep.step ("knob undo");
+            auto t = ClipImport::createContentTrack (*edit, "KnobUndo", false);
+            auto p = edit->getPluginCache().createNewPlugin (pulse::Reverb::xmlTypeName, {});
+            t->pluginList.insertPlugin (p, 0, nullptr);
+            auto* rv = dynamic_cast<pulse::Reverb*> (p.get());
+            auto settle = [] { MessageManager::getInstance()->runDispatchLoopUntil (150); };
+            auto& um = edit->getUndoManager();
+            settle();
+            um.clearUndoHistory();
+            const float was = rv->get (pulse::Reverb::pDecay);
+            um.beginNewTransaction ("Change Decay");
+            rv->param (pulse::Reverb::pDecay)->setParameter (9.0f, sendNotificationSync);
+            settle();
+            um.beginNewTransaction ("after");
+            const float moved = rv->get (pulse::Reverb::pDecay);
+            const String stateMoved = p->state["decay"].toString();
+            const bool could = um.canUndo();
+            um.undo();
+            settle();
+            const float undone = rv->get (pulse::Reverb::pDecay);
+            const String stateUndone = p->state.hasProperty ("decay") ? p->state["decay"].toString() : String ("(default)");
+            um.redo();
+            settle();
+            const float redone = rv->get (pulse::Reverb::pDecay);
+            rep.check (std::abs (moved - 9.0f) < 0.01f && could && std::abs (undone - was) < 0.01f && std::abs (redone - 9.0f) < 0.01f,
+                       "Undo puts a knob back where it was, redo moves it again",
+                       "decay " + String (was, 2) + " -> " + String (moved, 2) + " (project " + stateMoved + "), undo -> " + String (undone, 2) + " (project " + stateUndone + "), redo -> " + String (redone, 2)
+                       + (could ? "" : ", nothing to undo"));
+            UndoSync undoSync (*edit);   // as the app has for its project
+            // the track's own volume fader (an engine device) through the same steps
+            String volInfo;
+            bool volOk = false;
+            if (auto vp = t->getVolumePlugin())
+            {
+                um.clearUndoHistory();
+                const float v0 = vp->volParam->getCurrentValue();
+                um.beginNewTransaction ("Change volume");
+                vp->volParam->setParameter (0.3f, sendNotificationSync);
+                settle();
+                um.beginNewTransaction ("after");
+                um.undo();
+                settle();
+                const float v1 = vp->volParam->getCurrentValue();
+                volOk = std::abs (v1 - v0) < 0.001f;
+                volInfo = String (v0, 3) + " -> 0.3, undo -> " + String (v1, 3);
+            }
+            rep.check (volOk, "Undo puts a track's volume fader back", volInfo);
+            edit->deleteTrack (t);
+        }
+
         // --- 1.0 RC: release pieces ---------------------------------------------------------------------------
         {
             rep.step ("release pieces");
@@ -4396,6 +4527,49 @@ namespace SelfTest
                 for (auto m : e.getMarkerManager().getMarkers()) out.add ("marker \"" + m->getName() + "\" " + String (m->getPosition().getStart().inSeconds(), 3));
                 return out;
             };
+            {
+                // undo takes a string of edits all the way back, redo brings them all forward again
+                auto& um = edit->getUndoManager();
+                um.clearUndoHistory();
+                const auto start = fingerprint (*edit);
+                auto tracks = te::getAudioTracks (*edit);
+                um.beginNewTransaction ("t1");
+                if (auto t = tracks.getFirst()) t->setName ("Undo Test Name");   // (mute and solo are not part of undo, as in the engine)
+                um.beginNewTransaction ("t2");
+                for (auto t : tracks)
+                    for (auto pl : t->pluginList)
+                        if (auto* pp = dynamic_cast<pulse::PulsePlugin*> (pl); pp != nullptr && pp->numParams() > 0)
+                        {
+                            auto* prm = pp->param (0);
+                            pp->set (0, prm->valueRange.snapToLegalValue (prm->valueRange.convertFrom0to1 (1.0f - prm->valueRange.convertTo0to1 (pp->get (0)))));
+                        }
+                um.beginNewTransaction ("t3");
+                for (auto t : tracks)
+                    for (auto c : t->getClips())
+                        if (auto mc = dynamic_cast<te::MidiClip*> (c)) { mc->getSequence().addNote (64, te::BeatPosition::fromBeats (0.5), te::BeatDuration::fromBeats (0.25), 90, 0, &um); break; }
+                um.beginNewTransaction ("t4");
+                if (tracks.size() > 1) if (auto c = tracks[1]->getClips().getFirst()) c->setName ("Renamed By Undo Test");
+                um.beginNewTransaction ("end");
+                MessageManager::getInstance()->runDispatchLoopUntil (120);
+                const auto changed = fingerprint (*edit);
+                int undos = 0, redos = 0;
+                auto settle = [] { MessageManager::getInstance()->runDispatchLoopUntil (120); };   // knobs follow the project a moment later
+                settle();
+                while (um.canUndo() && undos < 50) { um.undo(); ++undos; }
+                settle();
+                const auto undone = fingerprint (*edit);
+                while (um.canRedo() && redos < 50) { um.redo(); ++redos; }
+                settle();
+                const auto redone = fingerprint (*edit);
+                String firstDiff;
+                for (int i = 0; i < jmax (start.size(), undone.size()) && firstDiff.isEmpty(); ++i) if (start[i] != undone[i]) firstDiff = "after undo: was " + start[i] + " | now " + undone[i];
+                for (int i = 0; i < jmax (changed.size(), redone.size()) && firstDiff.isEmpty(); ++i) if (changed[i] != redone[i]) firstDiff = "after redo: was " + changed[i] + " | now " + redone[i];
+                rep.check (changed != start && firstDiff.isEmpty(), "Undo takes a string of edits all the way back and redo brings them all forward",
+                           firstDiff.isEmpty() ? String (undos) + " undos, " + String (redos) + " redos" : firstDiff);
+                while (um.canUndo()) um.undo();   // leave the project as it was
+                um.clearUndoHistory();
+                settle();
+            }
             te::EditFileOperations (*edit).save (true, true, false);
             const auto before = fingerprint (*edit);
             const auto file = te::EditFileOperations (*edit).getEditFile();

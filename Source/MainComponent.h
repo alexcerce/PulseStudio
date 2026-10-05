@@ -1,6 +1,7 @@
 #pragma once
 
 #include "About.h"
+#include "UndoSync.h"
 #include "Common.h"
 #include "EditViewState.h"
 #include "PluginMenu.h"
@@ -722,6 +723,7 @@ private:
             edit = te::createEmptyEdit (engine, file);
         StartupTimer::mark ("edit file read");
 
+        undoSync = std::make_unique<UndoSync> (*edit);
         edit->playInStopEnabled = true;
         DrumRack::migrateAll (*edit);   // racks from Pulse 0.17 and older
         Upgrade::run (*edit);            // editable returns, plain track names
@@ -857,6 +859,7 @@ private:
     void closeEdit()
     {
         if (edit == nullptr) return;
+        undoSync = nullptr;
         BackgroundRender::instance().cancelAndWait();
         selectionManager.removeChangeListener (this);
         selectionManager.deselectAll();
@@ -1384,6 +1387,7 @@ public:
     BackgroundPluginScan pluginScan { engine };
 private:
     std::unique_ptr<te::Edit> edit;
+    std::unique_ptr<UndoSync> undoSync;   // knobs and faders follow undo / redo
     File editFile;
     std::unique_ptr<EditViewState> evs;
     std::unique_ptr<MidiLearn> midiLearn;

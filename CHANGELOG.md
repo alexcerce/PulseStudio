@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.94.0 - 2026-10-05
+
+- Fixed: Undo and Redo after moving a knob or fader put the saved value back but left the knob (and the sound) where it was. They now move knobs, faders, pans and sends
+
 ## 0.93.0 - 2026-10-05
 
 - Device windows: presets grouped by kind of sound, previous / next buttons, and the name of the current preset

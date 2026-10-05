@@ -243,3 +243,9 @@ when you start, touch it after each step, and delete it when you stop.
 - 2026-10-05: v0.93.0 (RC work) preset browser in device windows (FactoryPresets::category / ordered / addToMenu,
   "pulsePreset" kept in the device state, < > buttons, name on the Presets button; cards use the grouped menu too);
   whole-project save / reopen comparison test (273 things); duplicate preset name removed. 232 checks.
+- 2026-10-05: v0.94.0 (RC work). BUG FOUND by new undo tests: Undo / Redo restored a parameter's value in the project
+  but not the parameter (knob, fader, sound). Fixed twice over: PulsePlugin::valueTreePropertyChanged (built-in devices)
+  and UndoSync.h (one per open project: any PLUGIN whose stored value changes during undo / redo, so volume, pan, sends
+  and plugins too). New tests: knob undo, fader undo, a string of edits undone and redone (project fingerprint), device
+  fuzz (456 runs of random and extreme settings: finite output, effects quiet a second after the input stops).
+  Mute / solo are not part of undo (engine design). 236 checks, 3 clean runs.

@@ -75,6 +75,22 @@ namespace pulse
         }
 
     protected:
+        /** Undo and redo put a value back in the project; the parameter itself (the knob, and what you hear)
+            has to follow. The engine leaves that to the device, because at other times the stored value also
+            moves with automation and must not become the knob's own position. */
+        void valueTreePropertyChanged (juce::ValueTree& v, const juce::Identifier& i) override
+        {
+            te::Plugin::valueTreePropertyChanged (v, i);
+            if (v == state && edit.getUndoManager().isPerformingUndoRedo())
+                for (auto& p : params)
+                    if (p.value->getPropertyID() == i)
+                    {
+                        p.value->forceUpdateOfCachedValue();
+                        p.param->updateFromAttachedValue();
+                        break;
+                    }
+        }
+
         int add (const String& id, const String& name, NormalisableRange<float> range, float def, std::function<String (float)> toText)
         {
             auto cv = std::make_unique<CachedValue<float>>();
