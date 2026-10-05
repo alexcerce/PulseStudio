@@ -1147,7 +1147,7 @@ private:
     void browseForAudio (float x)
     {
         auto beat = jmax (0.0, evs.snapFloor (evs.xToBeat (x)));
-        chooser = std::make_shared<FileChooser> ("Import audio", File(), evs.edit.engine.getAudioFileFormatManager().readFormatManager.getWildcardForAllFormats());
+        chooser = std::make_shared<FileChooser> ("Import audio", File(), evs.edit.engine.getAudioFileFormatManager().readFormatManager.getWildcardForAllFormats(), ! About::isCapturing());
         chooser->launchAsync (FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles | FileBrowserComponent::canSelectMultipleItems,
                               [this, beat, sp = SafePointer<TrackLane> (this)] (const FileChooser& fc)
                               {

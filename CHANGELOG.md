@@ -2,6 +2,11 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.2 - 2026-10-05
+
+- Fixed: a crash in the piano roll after undoing the creation of the clip it was showing (or deleting its track)
+- Fixed: splitting exactly at the start or end of a clip could close the app
+
 ## 0.99.1 - 2026-10-05
 
 - Automation inside a song section moves and duplicates with the section

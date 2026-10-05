@@ -483,7 +483,7 @@ namespace Workflow
 
         auto start = File::getSpecialLocation (File::userDocumentsDirectory).getChildFile ("Pulse Studio")
                                                                               .getChildFile (File::createLegalFileName (defaultName) + ".mid");
-        auto chooser = std::make_shared<FileChooser> ("Export MIDI file", start, "*.mid");
+        auto chooser = std::make_shared<FileChooser> ("Export MIDI file", start, "*.mid", ! About::isCapturing());
         auto* engine = &edit.engine;
         auto* editPtr = &edit;
         chooser->launchAsync (FileBrowserComponent::saveMode | FileBrowserComponent::canSelectFiles | FileBrowserComponent::warnAboutOverwriting,

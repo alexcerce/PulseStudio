@@ -276,3 +276,9 @@ when you start, touch it after each step, and delete it when you stop.
 - 2026-10-05: v0.99.1 (RC work) automation travels with a song section when it is duplicated or moved
   (Sections::copyContent copies the points in the range, held between the values at its ends, and keeps the
   neighbours' values at the edges). 242 checks.
+- 2026-10-05: v0.99.2 (RC work) `--monkey <file> [--seed n] [--events n]`: random clicks, drags, wheel turns and keys
+  on the real main window (file choosers are JUCE's own while capturing, so the run can close them). It found two bugs:
+  the piano roll crashed drawing a clip that undo / deleting its track had taken out of the project (PianoRoll::
+  dropClipIfGone), and Split at the playhead exactly on a clip's edge (or on a session-slot clip) made the app die
+  without a crash report, intermittently (EditingOps::canSplitAt). After the fixes: 4 seeds x 5000 events clean.
+  The earlier "exit 127 with no report" on Ctrl+E was not pinned to a root cause beyond that guard. 243 checks.

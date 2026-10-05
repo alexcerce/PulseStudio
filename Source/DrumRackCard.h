@@ -955,7 +955,7 @@ private:
     void browseSamples (int slot, bool asLayer)
     {
         chooser = std::make_shared<FileChooser> (asLayer ? "Add layers" : "Load sample", File::getSpecialLocation (File::userMusicDirectory),
-                                                 "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
+                                                 "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3", ! About::isCapturing());
         chooser->launchAsync (FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles | FileBrowserComponent::canSelectMultipleItems,
                               [this, slot, asLayer, sp = SafePointer<DrumRackCard> (this)] (const FileChooser& fc)
                               {

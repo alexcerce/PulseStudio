@@ -289,6 +289,117 @@ public:
             }
         }
 
+        // Pulse Studio.exe --monkey <file> [--seed n] [--events n] : random clicks, drags, wheel turns and key presses on the
+        // main window (demo project), each written to the file first so a crash names the last thing done
+        if (auto i = args.indexOf ("--monkey"); i >= 0 && i + 1 < args.size())
+        {
+            struct Runner : public Timer
+            {
+                Runner (DocumentWindow& w, File f, int64 seed, int numEvents) : window (w), out (f), rng (seed), total (numEvents)
+                {
+                    out.replaceWithText ("monkey run, seed " + String (seed) + ", " + String (numEvents) + " events\n");
+                    startTimer (5000);
+                }
+                juce::Point<float> anywhere()
+                {
+                    // below the top bar (its buttons open settings and file menus, which need a person)
+                    return { rng.nextFloat() * (float) window.getWidth(), 64.0f + rng.nextFloat() * (float) (window.getHeight() - 70) };
+                }
+                void mouse (juce::Point<float> p, ModifierKeys mods)
+                {
+                    if (auto* peer = window.getPeer())
+                        peer->handleMouseEvent (MouseInputSource::InputSourceType::mouse, p, mods, MouseInputSource::defaultPressure, MouseInputSource::defaultOrientation, Time::currentTimeMillis());
+                }
+                void tidy()
+                {
+                    // menus, dialogs, call-out boxes and device windows opened along the way are closed again
+                    PopupMenu::dismissAllActiveMenus();
+                    for (int guard = 0; guard < 8; ++guard)
+                        if (auto* m = Component::getCurrentlyModalComponent()) m->exitModalState (0); else break;
+                    DeviceEditors::closeAll();
+                    for (int w = TopLevelWindow::getNumTopLevelWindows(); --w >= 0;)
+                        if (auto* tw = TopLevelWindow::getTopLevelWindow (w); tw != nullptr && tw != &window)
+                        {
+                            if (auto* dw = dynamic_cast<DialogWindow*> (tw)) dw->closeButtonPressed();
+                            else if (auto* doc = dynamic_cast<DocumentWindow*> (tw)) doc->closeButtonPressed();
+                        }
+                }
+                void timerCallback() override
+                {
+                    startTimer (20);
+                    if (done >= total)
+                    {
+                        stopTimer();
+                        tidy();
+                        out.appendText ("DONE " + String (done) + " events\n");
+                        JUCEApplication::getInstance()->setApplicationReturnValue (0);
+                        JUCEApplication::quit();
+                        return;
+                    }
+                    if (done % 25 == 24) { out.appendText (String (done) + " tidy\n"); tidy(); ++done; return; }
+                    const int kind = rng.nextInt (100);
+                    const auto p = anywhere();
+                    const auto none = ModifierKeys();
+                    if (kind < 45)
+                    {
+                        const bool right = rng.nextInt (8) == 0, shift = rng.nextInt (10) == 0, ctrl = rng.nextInt (12) == 0;
+                        int flags = right ? ModifierKeys::rightButtonModifier : ModifierKeys::leftButtonModifier;
+                        if (shift) flags |= ModifierKeys::shiftModifier;
+                        if (ctrl) flags |= ModifierKeys::ctrlModifier;
+                        out.appendText (String (done) + (right ? " right-click " : " click ") + p.toString() + "\n");
+                        mouse (p, none); mouse (p, ModifierKeys (flags)); mouse (p, none);
+                        if (rng.nextInt (6) == 0) { mouse (p, ModifierKeys (flags)); mouse (p, none); }   // a double-click now and then
+                    }
+                    else if (kind < 75)
+                    {
+                        const auto q = rng.nextInt (3) == 0 ? anywhere() : p + juce::Point<float> (rng.nextFloat() * 240.0f - 120.0f, rng.nextFloat() * 160.0f - 80.0f);
+                        const ModifierKeys held (ModifierKeys::leftButtonModifier | (rng.nextInt (8) == 0 ? ModifierKeys::altModifier : 0));
+                        out.appendText (String (done) + " drag " + p.toString() + " -> " + q.toString() + "\n");
+                        mouse (p, none); mouse (p, held);
+                        for (int s = 1; s <= 4; ++s) mouse (p + (q - p) * (s / 4.0f), held);
+                        mouse (q, none);
+                    }
+                    else if (kind < 88)
+                    {
+                        MouseWheelDetails wd;
+                        wd.deltaX = rng.nextInt (5) == 0 ? rng.nextFloat() - 0.5f : 0.0f;
+                        wd.deltaY = rng.nextFloat() - 0.5f;
+                        wd.isReversed = false; wd.isSmooth = false; wd.isInertial = false;
+                        out.appendText (String (done) + " wheel " + p.toString() + "\n");
+                        mouse (p, none);
+                        if (auto* peer = window.getPeer()) peer->handleMouseWheel (MouseInputSource::InputSourceType::mouse, p, Time::currentTimeMillis(), wd);
+                    }
+                    else
+                    {
+                        const KeyPress keys[] = { KeyPress (KeyPress::spaceKey), KeyPress (KeyPress::deleteKey), KeyPress (KeyPress::escapeKey), KeyPress (KeyPress::tabKey),
+                                                  KeyPress (KeyPress::leftKey), KeyPress (KeyPress::rightKey), KeyPress (KeyPress::upKey), KeyPress (KeyPress::downKey),
+                                                  KeyPress ('z', ModifierKeys::ctrlModifier, 0), KeyPress ('y', ModifierKeys::ctrlModifier, 0), KeyPress ('d', ModifierKeys::ctrlModifier, 0),
+                                                  KeyPress ('a', ModifierKeys::ctrlModifier, 0), KeyPress ('c', ModifierKeys::ctrlModifier, 0), KeyPress ('v', ModifierKeys::ctrlModifier, 0),
+                                                  KeyPress ('e', ModifierKeys::ctrlModifier, 0), KeyPress ('b'), KeyPress ('q'), KeyPress ('l'), KeyPress ('m'), KeyPress (KeyPress::homeKey) };
+                        const auto k = keys[rng.nextInt ((int) std::size (keys))];
+                        out.appendText (String (done) + " key " + k.getTextDescription() + "\n");
+                        if (auto* peer = window.getPeer()) peer->handleKeyPress (k);
+                    }
+                    ++done;
+                }
+                DocumentWindow& window;
+                File out;
+                Random rng;
+                int done = 0, total = 2000;
+            };
+            if (auto* mc = dynamic_cast<MainComponent*> (mainWindow->getContentComponent()))
+            {
+                setApplicationReturnValue (1);   // stays 1 unless the run reaches its end
+                mainWindow->setBounds (40, 40, 1600, 940);
+                auto file = File::getCurrentWorkingDirectory().getChildFile (args[i + 1].unquoted());
+                file.getParentDirectory().createDirectory();
+                mc->startSnapshotDemo (file.getParentDirectory());
+                const auto seedAt = args.indexOf ("--seed"), eventsAt = args.indexOf ("--events");
+                idleRunner = std::make_unique<Runner> (*mainWindow, file, seedAt >= 0 ? args[seedAt + 1].getLargeIntValue() : 1,
+                                                       eventsAt >= 0 ? args[eventsAt + 1].getIntValue() : 2000);
+            }
+        }
+
         // Pulse Studio.exe --render out.wav : bounce the last project and exit
         if (auto i = args.indexOf ("--render"); i >= 0 && i + 1 < args.size())
         {

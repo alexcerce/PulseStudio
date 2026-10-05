@@ -679,7 +679,7 @@ private:
             m.addItem ("Insert MIDI clip", [this] { createMidiClip(); });
             m.addItem ("Import file...", [this]
             {
-                chooser = std::make_shared<FileChooser> ("Import into slot", File(), "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3;*.mid;*.midi");
+                chooser = std::make_shared<FileChooser> ("Import into slot", File(), "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3;*.mid;*.midi", ! About::isCapturing());
                 chooser->launchAsync (FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles,
                                       [this, sp = SafePointer<SlotComponent> (this)] (const FileChooser& fc)
                                       { if (sp != nullptr && fc.getResult().existsAsFile()) importFile (fc.getResult()); });

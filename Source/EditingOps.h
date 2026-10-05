@@ -86,19 +86,28 @@ namespace EditingOps
     }
 
     /** Splits the selected clips (or every clip on the selected track) at the playhead. */
+    /** True when a time is properly inside a clip: a cut at (or a hair from) either end would leave a clip
+        of no length behind. */
+    inline bool canSplitAt (te::Clip& c, te::TimePosition t)
+    {
+        const auto r = c.getEditTimeRange();
+        const auto margin = te::TimeDuration::fromSeconds (0.002);
+        return t > r.getStart() + margin && t < r.getEnd() - margin;
+    }
+
     inline void splitAtPlayhead (te::Edit& edit, te::SelectionManager& sm)
     {
         const auto t = edit.getTransport().getPosition();
         te::SelectableList toSplit;
 
         for (auto c : selectedClips (sm))
-            if (c->getEditTimeRange().contains (t))
+            if (c->getClipSlot() == nullptr && canSplitAt (*c, t))   // (clips in session slots have no place on the timeline)
                 toSplit.add (c);
 
         if (toSplit.isEmpty())
             if (auto track = EngineHelpers::getSelectedTrack (sm))
                 for (auto c : track->getClips())
-                    if (c->getEditTimeRange().contains (t))
+                    if (canSplitAt (*c, t))
                         toSplit.add (c);
 
         if (! toSplit.isEmpty())

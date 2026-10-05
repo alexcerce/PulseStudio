@@ -381,7 +381,7 @@ private:
         {
             if (edit == nullptr) return;
             auto def = Sharing::editFileOf (*edit).withFileExtension (".zip");
-            chooser = std::make_shared<FileChooser> ("Export project as .zip", def, "*.zip");
+            chooser = std::make_shared<FileChooser> ("Export project as .zip", def, "*.zip", ! About::isCapturing());
             chooser->launchAsync (FileBrowserComponent::saveMode | FileBrowserComponent::canSelectFiles | FileBrowserComponent::warnAboutOverwriting,
                                   [this] (const FileChooser& fc)
                                   {
@@ -396,7 +396,7 @@ private:
         };
         a.importZip      = [this]
         {
-            chooser = std::make_shared<FileChooser> ("Open project from .zip", File::getSpecialLocation (File::userHomeDirectory).getChildFile ("Downloads"), "*.zip");
+            chooser = std::make_shared<FileChooser> ("Open project from .zip", File::getSpecialLocation (File::userHomeDirectory).getChildFile ("Downloads"), "*.zip", ! About::isCapturing());
             chooser->launchAsync (FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles, [this] (const FileChooser& fc)
             {
                 if (! fc.getResult().existsAsFile()) return;
@@ -1299,7 +1299,7 @@ private:
 
     void createProject (File templateFile, bool demo)
     {
-        chooser = std::make_shared<FileChooser> ("New project", projectsFolder().getNonexistentChildFile ("Untitled", ".tracktionedit"), "*.tracktionedit");
+        chooser = std::make_shared<FileChooser> ("New project", projectsFolder().getNonexistentChildFile ("Untitled", ".tracktionedit"), "*.tracktionedit", ! About::isCapturing());
         chooser->launchAsync (FileBrowserComponent::saveMode | FileBrowserComponent::canSelectFiles | FileBrowserComponent::warnAboutOverwriting,
                               [this, templateFile, demo] (const FileChooser& fc)
                               {
@@ -1344,7 +1344,7 @@ private:
 
     void openProject()
     {
-        chooser = std::make_shared<FileChooser> ("Open project", projectsFolder(), "*.tracktionedit");
+        chooser = std::make_shared<FileChooser> ("Open project", projectsFolder(), "*.tracktionedit", ! About::isCapturing());
         chooser->launchAsync (FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles,
                               [this] (const FileChooser& fc)
                               {

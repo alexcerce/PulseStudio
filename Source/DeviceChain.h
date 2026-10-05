@@ -933,7 +933,7 @@ private:
 
     void browse()
     {
-        chooser = std::make_shared<FileChooser> ("Load sample", File(), "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
+        chooser = std::make_shared<FileChooser> ("Load sample", File(), "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3", ! About::isCapturing());
         chooser->launchAsync (FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles,
                               [this, sp = SafePointer<SamplerCard> (this)] (const FileChooser& fc)
                               { if (sp != nullptr && fc.getResult().existsAsFile()) load (fc.getResult()); });

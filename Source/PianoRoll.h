@@ -120,6 +120,14 @@ public:
 
     te::MidiClip* getClip() const { return clip.get(); }
 
+    /** The clip on show can be taken out of the project behind the piano roll's back (undo, deleting its
+        track, cutting the section it is in). Everything that draws or edits asks this first. */
+    void dropClipIfGone()
+    {
+        if (clip != nullptr && (clip->getTrack() == nullptr || ! clip->state.getParent().isValid()))
+            setClip (nullptr);
+    }
+
     /** Scrolls so the clip's notes (or middle C) sit in the middle of the view. */
     void centreOnNotes()
     {
@@ -162,6 +170,7 @@ public:
     //==============================================================================
     void paint (Graphics& g) override
     {
+        dropClipIfGone();
         g.fillAll (Theme::bg2);
         auto area = getLocalBounds().withTrimmedTop (toolbarH);
         const int gh = gridHeight();
@@ -344,6 +353,7 @@ public:
     //==============================================================================
     void mouseDown (const MouseEvent& e) override
     {
+        dropClipIfGone();
         grabKeyboardFocus();
         const auto x = (float) e.x, y = (float) e.y;
 
@@ -470,6 +480,7 @@ public:
 
     void mouseDrag (const MouseEvent& e) override
     {
+        dropClipIfGone();
         const auto x = (float) e.x, y = (float) e.y;
 
         if (mode == Mode::key)
@@ -599,6 +610,7 @@ public:
 
     void mouseUp (const MouseEvent&) override
     {
+        dropClipIfGone();
         if (mode == Mode::key)
             if (auto at = audioTrack()) at->turnOffGuideNotes();
 
@@ -610,6 +622,7 @@ public:
 
     void mouseMove (const MouseEvent& e) override
     {
+        dropClipIfGone();
         auto* n = (e.y > toolbarH && e.y < toolbarH + gridHeight()) ? hitNote ((float) e.x, (float) e.y) : nullptr;
         if (n != nullptr)
             setMouseCursor (edgeAt (*n, (float) e.x) != Mode::move ? MouseCursor::LeftRightResizeCursor : MouseCursor::DraggingHandCursor);
@@ -619,6 +632,7 @@ public:
 
     void mouseWheelMove (const MouseEvent& e, const MouseWheelDetails& w) override
     {
+        dropClipIfGone();
         if (e.mods.isCtrlDown())
         {
             auto b = xToBeat ((float) e.x);
@@ -638,6 +652,7 @@ public:
 
     bool keyPressed (const KeyPress& k) override
     {
+        dropClipIfGone();
         if (clip == nullptr) return false;
         auto& seq = clip->getSequence();
 
@@ -1114,6 +1129,7 @@ private:
 
     void timerCallback() override
     {
+        dropClipIfGone();
         if (clip != nullptr && evs.edit.getTransport().isPlaying())
             repaint();
     }

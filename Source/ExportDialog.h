@@ -173,7 +173,7 @@ private:
         }
         else
         {
-            chooser = std::make_shared<FileChooser> ("Export mixdown", base.withFileExtension (extension()), "*" + extension());
+            chooser = std::make_shared<FileChooser> ("Export mixdown", base.withFileExtension (extension()), "*" + extension(), ! About::isCapturing());
             chooser->launchAsync (FileBrowserComponent::saveMode | FileBrowserComponent::canSelectFiles | FileBrowserComponent::warnAboutOverwriting,
                                   [this, sp = SafePointer<ExportDialog> (this)] (const FileChooser& fc)
                                   {

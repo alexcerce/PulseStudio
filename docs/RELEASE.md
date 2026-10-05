@@ -22,6 +22,9 @@ What has to be true before a build goes to other people, and how to make one.
   The report lists every check; `report.progress.txt` shows how far it got if it stops.
 - `Pulse Studio.exe --dev-profile --command-fuzz <file> --seed <n>` ends with `DONE` (exit code 0) for a few
   different seeds: every unattended command, many times, in a random order, on the demo project.
+- `Pulse Studio.exe --dev-profile --monkey <file> --seed <n> --events 5000` ends with `DONE` for a few seeds:
+  random clicks, drags, wheel turns and key presses on the main window. If it stops early, the last line of
+  the file is the last thing it did, and a crash report is in the Crashes folder of the "Pulse Studio Dev" profile.
 - `Pulse Studio.exe --dev-profile --idle-cpu <file>`: processor use stopped and playing has not gone up.
 - `Pulse Studio.exe --dev-profile --snapshots <folder>` and `--device-shots <folder>`: look at the pictures.
 - Install the build on a machine (or user account) that has never had Pulse Studio: first run creates the

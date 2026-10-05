@@ -4417,6 +4417,38 @@ namespace SelfTest
                        "after duplicate: " + String (d4, 2) + " / " + String (d12, 2) + " / " + String (d20, 2) + "; after move: " + String (v (4.0), 2) + " / " + String (v (12.0), 2) + " / " + String (v (20.0), 2));
         }
 
+        // --- 1.0 RC: found by the random-input run ---------------------------------------------------------------
+        {
+            rep.step ("monkey regressions");
+            auto t = ClipImport::createContentTrack (*edit, "Monkey", true);
+            auto mc = te::insertMIDIClip (*t, "Edge", { te::TimePosition::fromSeconds (100.0), te::TimePosition::fromSeconds (104.0) });
+            mc->getSequence().addNote (60, te::BeatPosition(), te::BeatDuration::fromBeats (1.0), 100, 0, nullptr);
+            // a split exactly at a clip's start or end does nothing (it used to leave a clip of no length)
+            sm.selectOnly (mc.get());
+            edit->getTransport().setPosition (te::TimePosition::fromSeconds (100.0));
+            EditingOps::splitAtPlayhead (*edit, sm);
+            edit->getTransport().setPosition (te::TimePosition::fromSeconds (104.0));
+            EditingOps::splitAtPlayhead (*edit, sm);
+            const int afterEdges = t->getClips().size();
+            edit->getTransport().setPosition (te::TimePosition::fromSeconds (102.0));
+            EditingOps::splitAtPlayhead (*edit, sm);
+            const int afterMiddle = t->getClips().size();
+            bool noEmpty = true;
+            for (auto c : t->getClips()) noEmpty = noEmpty && c->getPosition().getLength().inSeconds() > 0.01;
+            // the piano roll lets go of a clip that has left the project (undo, deleted track) and still draws
+            EditViewState pevs (*edit, sm);
+            PianoRoll roll (pevs);
+            roll.setSize (900, 400);
+            auto shown = dynamic_cast<te::MidiClip*> (t->getClips().getFirst());
+            roll.setClip (shown);
+            roll.createComponentSnapshot (roll.getLocalBounds());
+            edit->deleteTrack (t);
+            roll.createComponentSnapshot (roll.getLocalBounds());   // this used to crash
+            rep.check (afterEdges == 1 && afterMiddle == 2 && noEmpty && roll.getClip() == nullptr,
+                       "Splitting at a clip's edge does nothing; the piano roll lets go of a clip that has left the project",
+                       String (afterEdges) + " clip after edge splits, " + String (afterMiddle) + " after a middle split");
+        }
+
         // --- 1.0 RC: release pieces ---------------------------------------------------------------------------
         {
             rep.step ("release pieces");

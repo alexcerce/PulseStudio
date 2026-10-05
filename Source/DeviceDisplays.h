@@ -859,7 +859,7 @@ namespace DeviceDisplays
 
         void browse()
         {
-            chooser = std::make_shared<FileChooser> ("Load sample", File::getSpecialLocation (File::userMusicDirectory), "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
+            chooser = std::make_shared<FileChooser> ("Load sample", File::getSpecialLocation (File::userMusicDirectory), "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3", ! About::isCapturing());
             chooser->launchAsync (FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles,
                                   [this, sp = SafePointer<SimplerDisplay> (this)] (const FileChooser& fc)
                                   {
@@ -869,7 +869,7 @@ namespace DeviceDisplays
 
         void browseMulti()
         {
-            chooser = std::make_shared<FileChooser> ("Load multisample", File::getSpecialLocation (File::userMusicDirectory), "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
+            chooser = std::make_shared<FileChooser> ("Load multisample", File::getSpecialLocation (File::userMusicDirectory), "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3", ! About::isCapturing());
             chooser->launchAsync (FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles | FileBrowserComponent::canSelectMultipleItems,
                                   [this, sp = SafePointer<SimplerDisplay> (this)] (const FileChooser& fc)
                                   {

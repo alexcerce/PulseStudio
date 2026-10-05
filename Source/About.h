@@ -75,7 +75,7 @@ namespace About
     inline bool isCapturing()
     {
         const auto cl = JUCEApplication::getCommandLineParameters();
-        return cl.contains ("--snapshots") || cl.contains ("--idle-cpu") || cl.contains ("--command-fuzz");
+        return cl.contains ("--snapshots") || cl.contains ("--idle-cpu") || cl.contains ("--command-fuzz") || cl.contains ("--monkey");
     }
 
     /** The user guide (the README installed next to the program). */
