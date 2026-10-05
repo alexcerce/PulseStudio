@@ -2833,7 +2833,7 @@ namespace SelfTest
         {
             rep.step ("factory content");
             int presets = 0, missing = 0, silent = 0;
-            StringArray problems;
+            StringArray problems, offLevel;
             for (auto& [type, list] : FactoryPresets::all())
                 for (auto& pr : list)
                 {
@@ -2864,8 +2864,14 @@ namespace SelfTest
                         }
                         p->deinitialise();
                         if (Decibels::gainToDecibels (peak) < -40.0f) { ++silent; problems.add (String (pr.name) + " silent"); }
+                        // a three-note chord at a firm velocity should sit between -30 and +1 dBFS (driven presets saturate at about 0)
+                        const float pdb = Decibels::gainToDecibels (peak);
+                        if (pdb > 1.0f || pdb < -30.0f) offLevel.add (String (pr.name) + " " + String (pdb, 1));
+                        rep.step ("  level " + String (pr.name) + ": " + String (pdb, 1) + " dB");
                     }
                 }
+            rep.check (offLevel.isEmpty(), "Instrument presets play at sensible levels (a chord peaks between -30 and +1 dBFS)",
+                       offLevel.isEmpty() ? String ("all in range") : offLevel.joinIntoString (", "));
             StringArray thin;
             for (auto& b : ClipImport::builtIns())
             {
@@ -3998,7 +4004,12 @@ namespace SelfTest
             tmp.replaceWithText ("<EDIT/>");
             const bool found = About::projectFromCommandLine ({ "--dev-profile", tmp.getFullPathName().quoted() }) == tmp;
             const bool ignored = ! About::projectFromCommandLine ({ "--selftest", "report.txt" }).existsAsFile();
+            tmp.replaceWithText ("this is not a project at all, just some text");
+            const bool rejectsJunk = ! About::isProjectFile (tmp);
+            tmp.replaceWithText ("<?xml version=\"1.0\"?><EDIT appVersion=\"x\"><TRACK/></EDIT>");
+            const bool acceptsEdit = About::isProjectFile (tmp);
             tmp.deleteFile();
+            rep.check (rejectsJunk && acceptsEdit, "A damaged file is recognised (it is left untouched instead of being opened and saved over)", {});
             rep.check (found && ignored && About::versionLine().contains (JUCEApplication::getInstance()->getApplicationVersion()) && About::licenceSummary().contains ("Tracktion"),
                        "A project named on the command line is opened; the About box has the version and the licences", About::versionLine());
             // the Saturator and Pitch Correction keep their work buffers (nothing allocated while playing)

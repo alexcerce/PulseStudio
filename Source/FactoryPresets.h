@@ -36,7 +36,7 @@ namespace FactoryPresets
                 { "Bell", { { "algorithm", 6 }, { "op0ratio", 1 }, { "op0d", 4000 }, { "op0s", 0 }, { "op0r", 3000 }, { "op1ratio", 2 }, { "op1level", 0.3f }, { "op1d", 3000 }, { "op1s", 0 },
                             { "op2ratio", 1 }, { "op2level", 0.7f }, { "op2d", 3500 }, { "op2s", 0 }, { "op3ratio", 3.5f }, { "op3level", 0.6f }, { "op3d", 2500 }, { "op3s", 0 }, { "volume", -10 } } },
                 { "FM Bass", { { "algorithm", 0 }, { "op0ratio", 1 }, { "op0s", 0.8f }, { "op0r", 80 }, { "op1ratio", 1 }, { "op1level", 0.6f }, { "op1d", 250 }, { "op1s", 0.2f },
-                               { "op2ratio", 0.5f }, { "op2level", 0.3f }, { "op3ratio", 2 }, { "op3level", 0.1f }, { "feedback", 0.2f }, { "cutoff", 3000 }, { "volume", -6 } } },
+                               { "op2ratio", 0.5f }, { "op2level", 0.3f }, { "op3ratio", 2 }, { "op3level", 0.1f }, { "feedback", 0.2f }, { "cutoff", 3000 }, { "volume", -10 } } },
                 { "Brass", { { "algorithm", 1 }, { "op0ratio", 1 }, { "op0a", 60 }, { "op0s", 0.8f }, { "op1ratio", 1 }, { "op1level", 0.55f }, { "op1a", 80 }, { "op1s", 0.7f },
                              { "op2ratio", 1 }, { "op2level", 0.2f }, { "op3ratio", 2 }, { "op3level", 0.15f }, { "fenv", 0.3f }, { "cutoff", 4000 }, { "fd", 300 }, { "volume", -8 } } },
                 { "Mallet", { { "algorithm", 4 }, { "op0ratio", 1 }, { "op0d", 500 }, { "op0s", 0 }, { "op1ratio", 4 }, { "op1level", 0.5f }, { "op1d", 80 }, { "op1s", 0 },

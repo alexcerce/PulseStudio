@@ -229,3 +229,7 @@ when you start, touch it after each step, and delete it when you stop.
   LoudnessAnalyser rewrite; the one-off "Prism EQ read -200 dBFS" did not recur (the audit now logs "!!" lines in the
   .progress.txt if a render comes back missing or silent). Version stage text lives in About::stage().
   Release blockers that need the owner: licence choice (GPL vs commercial JUCE / Tracktion / Link), code signing.
+- 2026-10-05: v0.91.0 (RC work) a damaged or foreign project file is never opened and saved over (About::isProjectFile,
+  a message, an empty "Untitled" project instead); instrument preset level check (chord peaks -30 .. +1 dBFS) and ten
+  hot presets turned down 4 dB. Known: the Wavetable's Level is before its effects, so driven presets sit near 0 dBFS
+  whatever Level says. 227 checks, 4 clean runs.

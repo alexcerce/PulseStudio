@@ -2,6 +2,11 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.91.0 - 2026-10-05
+
+- A damaged project file is left untouched (an empty project opens instead, with a pointer to the backups)
+- Instrument presets play at more even levels
+
 ## 0.90.0 - 1.0 release candidate 1
 
 - About box (File menu), third-party licences file, this changelog

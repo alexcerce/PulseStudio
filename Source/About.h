@@ -59,6 +59,14 @@ namespace About
         }), true);
     }
 
+    /** True if a file reads as a project (so a damaged or foreign file is never opened and then saved over). */
+    inline bool isProjectFile (const File& f)
+    {
+        if (! f.existsAsFile() || f.getSize() < 8) return false;
+        if (auto xml = parseXML (f)) return xml->hasTagName ("EDIT");
+        return false;
+    }
+
     /** A project file named on the command line (double-clicked in Explorer), if there is one. */
     inline File projectFromCommandLine (const StringArray& args)
     {

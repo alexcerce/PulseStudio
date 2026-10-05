@@ -679,6 +679,20 @@ private:
     {
         closeEdit();
         editFile = file;
+        if (file.existsAsFile() && ! About::isProjectFile (file))
+        {
+            // damaged, or not a project: leave it exactly as it is and start an empty project under a new name
+            editFile = projectsFolder().getNonexistentChildFile ("Untitled", ".tracktionedit", false);
+            const auto name = file.getFileName();
+            MessageManager::callAsync ([name]
+            {
+                AlertWindow::showMessageBoxAsync (MessageBoxIconType::WarningIcon, "Couldn't open the project",
+                                                  String ("\"") + name + "\" is damaged or isn't a Pulse Studio project, so it was left untouched and an empty project was opened instead.\n\n"
+                                                  "If it was one of your projects, look in the \"" + name.upToLastOccurrenceOf (".", false, false) + " Backups\" folder next to it for an earlier version.");
+            });
+            loadEdit (editFile, false);
+            return;
+        }
 
         StartupTimer::mark ("closed previous edit");
         if (file.existsAsFile())
