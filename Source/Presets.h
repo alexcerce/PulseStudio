@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Common.h"
+#include "ProjectRepair.h"
 #include "PluginMenu.h"
 #include "ClipImport.h"
 
@@ -80,6 +81,7 @@ namespace Presets
         auto list = p.getOwnerList();
         auto xml = parseXML (f);
         if (list == nullptr || xml == nullptr) return {};
+        xml = ProjectRepair::repaired (*xml);   // presets from versions that saved a Saturator / Auto Filter wrongly
 
         auto state = ValueTree::fromXml (*xml);
         te::EditItemID::remapIDs (state, nullptr, p.edit);
@@ -107,6 +109,7 @@ namespace Presets
     {
         auto xml = parseXML (f);
         if (xml == nullptr) return;
+        ProjectRepair::repairDeviceTypes (*xml);   // chains from versions that saved a Saturator / Auto Filter wrongly
 
         auto chain = ValueTree::fromXml (*xml);
         for (auto p : userChain (list, track))

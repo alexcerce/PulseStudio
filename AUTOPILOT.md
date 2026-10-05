@@ -249,3 +249,8 @@ when you start, touch it after each step, and delete it when you stop.
   and plugins too). New tests: knob undo, fader undo, a string of edits undone and redone (project fingerprint), device
   fuzz (456 runs of random and extreme settings: finite output, effects quiet a second after the input stops).
   Mute / solo are not part of undo (engine design). 236 checks, 3 clean runs.
+- 2026-10-05: v0.95.0 (RC work) presets and copies of every effect compared value by value; presets and chains from
+  older versions repaired on load (ProjectRepair.h, shared with Upgrade); project fingerprint widened (every device's
+  parameters, session slots, tempo / time signature counts, loop, scenes); every device window drawn at four sizes;
+  instrument windows fit the screen and cannot be shrunk below 1000 x 680; docs/RELEASE.md (decisions, checklist,
+  what the self-test does not cover, known limits). 238 checks.

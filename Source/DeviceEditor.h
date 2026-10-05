@@ -1908,8 +1908,13 @@ namespace DeviceEditors
                 setUsingNativeTitleBar (true);
                 setContentOwned (new Editor (e, pl), true);
                 setResizable (true, false);
-                setResizeLimits (560, 420, 3000, 2000);
-                centreWithSize (getWidth(), getHeight());
+                // the big instrument windows need room; every window has to fit the screen it opens on
+                const bool big = getWidth() > 1200;
+                auto screen = Rectangle<int> (1600, 900);
+                if (auto* d = Desktop::getInstance().getDisplays().getPrimaryDisplay()) screen = d->userArea;
+                const int maxW = jmax (560, screen.getWidth() - 40), maxH = jmax (420, screen.getHeight() - 60);
+                setResizeLimits (jmin (maxW, big ? 1000 : 560), jmin (maxH, big ? 680 : 420), 3000, 2000);
+                centreWithSize (jmin (getWidth(), maxW), jmin (getHeight(), maxH));
                 setVisible (true);
                 startTimerHz (4);
             }

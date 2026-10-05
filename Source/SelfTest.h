@@ -4213,6 +4213,102 @@ namespace SelfTest
             edit->deleteTrack (t);
         }
 
+        // --- 1.0 RC: presets and copies of every device keep every value ----------------------------------------
+        {
+            rep.step ("preset and duplicate round trip");
+            auto t = ClipImport::createContentTrack (*edit, "PresetTrip", false);
+            auto tmp = File::getSpecialLocation (File::tempDirectory).getChildFile ("PulseStudioSelfTest").getChildFile ("roundtrip.pulsepreset");
+            StringArray bad;
+            int devices = 0;
+            Random rng (4242);
+            auto same = [] (pulse::PulsePlugin& a, pulse::PulsePlugin& b)
+            {
+                if (a.numParams() != b.numParams()) return String ("different device");
+                for (int i = 0; i < a.numParams(); ++i)
+                    if (std::abs (a.get (i) - b.get (i)) > 1.0e-4f * jmax (1.0f, std::abs (a.get (i)))) return a.param (i)->paramID + " " + String (a.get (i)) + " -> " + String (b.get (i));
+                return String();
+            };
+            for (auto& b : ClipImport::builtIns())
+            {
+                if (b.synth || b.midiFx) continue;   // one device at a time on a plain track (instruments and MIDI effects are covered by the state test)
+                auto p = edit->getPluginCache().createNewPlugin (b.type, {});
+                auto* pp = dynamic_cast<pulse::PulsePlugin*> (p.get());
+                if (pp == nullptr) continue;
+                t->pluginList.insertPlugin (p, 0, nullptr);
+                ++devices;
+                for (int i = 0; i < pp->numParams(); ++i)
+                    pp->set (i, pp->param (i)->valueRange.snapToLegalValue (pp->param (i)->valueRange.convertFrom0to1 (rng.nextFloat())));
+                // a copy (Ctrl-drag, duplicate track)
+                auto copy = DragDrop::duplicate (*p);
+                if (auto* cp = dynamic_cast<pulse::PulsePlugin*> (copy.get())) { if (auto d = same (*pp, *cp); d.isNotEmpty()) bad.add (String (b.name) + " copy: " + d); }
+                else bad.add (String (b.name) + " copy: not made");
+                // a preset saved and loaded onto a fresh device
+                if (auto xml = Presets::snapshot (*p).createXml()) xml->writeTo (tmp);
+                auto fresh = edit->getPluginCache().createNewPlugin (b.type, {});
+                t->pluginList.insertPlugin (fresh, 0, nullptr);
+                auto loaded = Presets::loadDevice (*fresh, tmp);
+                if (auto* lp = dynamic_cast<pulse::PulsePlugin*> (loaded.get())) { if (auto d = same (*pp, *lp); d.isNotEmpty()) bad.add (String (b.name) + " preset: " + d); }
+                else bad.add (String (b.name) + " preset: not loaded");
+                if (loaded != nullptr) loaded->deleteFromParent();
+                p->deleteFromParent();
+            }
+            // a preset from an older version: a Saturator saved with its Type changed
+            tmp.replaceWithText ("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<PLUGIN type=\"5.0\" id=\"77\" enabled=\"1\" drive=\"20.0\" bias=\"-0.3\"/>");
+            auto host = edit->getPluginCache().createNewPlugin (pulse::Saturator::xmlTypeName, {});
+            t->pluginList.insertPlugin (host, 0, nullptr);
+            auto old = Presets::loadDevice (*host, tmp);
+            auto* os = dynamic_cast<pulse::Saturator*> (old.get());
+            const bool oldOk = os != nullptr && os->getInt (pulse::Saturator::pType) == 5 && std::abs (os->get (pulse::Saturator::pDrive) - 20.0f) < 0.01f;
+            tmp.deleteFile();
+            edit->deleteTrack (t);
+            rep.check (bad.isEmpty() && devices >= 14 && oldOk, "Device presets and copies keep every value (and presets from older versions load)",
+                       bad.isEmpty() ? String (devices) + " effects, old Saturator preset " + (oldOk ? "repaired" : "NOT loaded") : bad.joinIntoString ("; "));
+        }
+
+        // --- 1.0 RC: every device window draws at any size -------------------------------------------------------
+        {
+            rep.step ("device windows at any size");
+            EditViewState wevs (*edit, sm);
+            int drawn = 0;
+            StringArray blank;
+            for (auto& b : ClipImport::builtIns())
+            {
+                auto p = edit->getPluginCache().createNewPlugin (b.type, {});
+                auto* pp = dynamic_cast<pulse::PulsePlugin*> (p.get());
+                if (pp == nullptr) continue;
+                rep.step (String ("  window ") + b.name);
+                DeviceEditors::Editor ed (wevs, *pp);
+                // the smallest the window allows, an awkward tall one, the default, and a very large one
+                for (auto [w, h] : { std::pair<int, int> { 560, 420 }, { 600, 1400 }, { 1100, 760 }, { 2600, 1500 } })
+                {
+                    ed.setSize (w, h);
+                    MessageManager::getInstance()->runDispatchLoopUntil (15);
+                    auto img = ed.createComponentSnapshot (ed.getLocalBounds(), true, 0.5f);
+                    ++drawn;
+                    // something other than the background must be there
+                    const auto corner = img.getPixelAt (2, img.getHeight() - 3);
+                    int different = 0;
+                    for (int y = 30; y < img.getHeight(); y += 9)
+                        for (int x = 4; x < img.getWidth(); x += 9)
+                            if (img.getPixelAt (x, y) != corner) ++different;
+                    if (different < 40) blank.add (String (b.name) + " at " + String (w) + "x" + String (h));
+                }
+                if (auto* w = dynamic_cast<pulse::WavetableSynth*> (pp))   // each tab of the Wavetable, small
+                    for (int tab = 0; tab < 4; ++tab)
+                    {
+                        DeviceEditors::WavetablePanel panel (wevs, *w);
+                        panel.showTab (tab);
+                        panel.setSize (540, 380);
+                        panel.createComponentSnapshot (panel.getLocalBounds(), true, 0.5f);
+                        panel.setSize (1900, 1200);
+                        panel.createComponentSnapshot (panel.getLocalBounds(), true, 0.5f);
+                        drawn += 2;
+                    }
+            }
+            rep.check (drawn > 80 && blank.isEmpty(), "Every device window draws at its smallest, its default and a very large size",
+                       blank.isEmpty() ? String (drawn) + " drawings" : "blank: " + blank.joinIntoString (", "));
+        }
+
         // --- 1.0 RC: release pieces ---------------------------------------------------------------------------
         {
             rep.step ("release pieces");
@@ -4491,12 +4587,12 @@ namespace SelfTest
                     for (auto pl : list)
                     {
                         String line = where + " device " + pl->getPluginType() + (pl->isEnabled() ? "" : " (off)");
-                        if (auto* pp = dynamic_cast<pulse::PulsePlugin*> (pl))
-                        {
-                            double sum = 0;
-                            for (int i = 0; i < pp->numParams(); ++i) sum += pp->param (i)->valueRange.convertTo0to1 (pp->get (i)) * (i + 1);
-                            line << " params " << String (sum, 3);
-                        }
+                        // every setting of every device (the built-in ones, the engine's own such as sends, and plugins)
+                        double sum = 0;
+                        int index = 0;
+                        for (auto* prm : pl->getAutomatableParameters())
+                            sum += prm->valueRange.convertTo0to1 (prm->getCurrentBaseValue()) * (++index);
+                        line << " params " << String (sum, 3);
                         out.add (line);
                     }
                 };
@@ -4520,10 +4616,22 @@ namespace SelfTest
                         if (auto ac = dynamic_cast<te::WaveAudioClip*> (c)) line << " file " << ac->getOriginalFile().getFileName() << " gain " << String (ac->getGainDB(), 2);
                         out.add (line);
                     }
+                    // session view: what sits in each slot
+                    int slotIndex = 0;
+                    for (auto* slot : t->getClipSlotList().getClipSlots())
+                    {
+                        if (auto* c = slot->getClip())
+                            out.add (where + " slot " + String (slotIndex) + " \"" + c->getName() + "\" " + String (c->getPosition().getLength().inSeconds(), 4)
+                                     + (dynamic_cast<te::MidiClip*> (c) != nullptr ? " notes " + String (dynamic_cast<te::MidiClip*> (c)->getSequence().getNumNotes()) : String()));
+                        ++slotIndex;
+                    }
                     for (auto ap : t->getAllAutomatableParams())
                         if (ap->getCurve().getNumPoints() > 0) out.add (where + " automation " + ap->paramID + " points " + String (ap->getCurve().getNumPoints()));
                 }
                 plugins ("master", e.getMasterPluginList());
+                out.add ("tempos " + String (e.tempoSequence.getNumTempos()) + " time signatures " + String (e.tempoSequence.getNumTimeSigs())
+                         + " loop " + String (e.getTransport().getLoopRange().getStart().inSeconds(), 3) + "-" + String (e.getTransport().getLoopRange().getEnd().inSeconds(), 3));
+                out.add ("scenes " + String (e.getSceneList().getNumScenes()));
                 for (auto m : e.getMarkerManager().getMarkers()) out.add ("marker \"" + m->getName() + "\" " + String (m->getPosition().getStart().inSeconds(), 3));
                 return out;
             };
