@@ -1845,9 +1845,15 @@ namespace DeviceEditors
 
     //==============================================================================
     class Editor : public Component,
-                   public DragAndDropContainer   // modulation sources are dragged onto knobs
+                   public DragAndDropContainer,   // modulation sources are dragged onto knobs
+                   private Timer
     {
     public:
+        /** (for the self-test) */
+        void clickCopyAB()                  { copyBtn.onClick(); }
+        bool hasMeters() const              { return matchBtn.isVisible(); }
+        void clickUndo()                    { undoBtn.onClick(); }
+        bool undoEnabled() const            { return undoBtn.isEnabled(); }
         int getNumGraphs() const { return (int) graphs.size(); }
         int getNumGroups() const { return groups.size(); }
         bool hasPluginWindowButton() const { return windowBtn.isVisible(); }
@@ -1921,7 +1927,28 @@ namespace DeviceEditors
             title.setText (p.getName(), dontSendNotification);
             title.setFont (FontOptions (16.0f, Font::bold));
             addAndMakeVisible (title);
-            for (auto* b : { &randomBtn, &resetBtn, &abBtn }) addAndMakeVisible (b);
+            for (auto* b : { &randomBtn, &resetBtn, &abBtn, &copyBtn }) addAndMakeVisible (b);
+            copyBtn.setTooltip ("Make the other version the same as this one (then change one of them, and compare)");
+            copyBtn.onClick = [this]
+            {
+                (abIsB ? slotA : slotB) = DeviceTools::capture (*plugin);
+                (abIsB ? slotB : slotA) = DeviceTools::capture (*plugin);
+            };
+            // undo and redo, here in the window (the same history as everywhere else)
+            for (auto* b : { &undoBtn, &redoBtn }) addAndMakeVisible (b);
+            undoBtn.onClick = [this] { plugin->edit.getUndoManager().undo(); };
+            redoBtn.onClick = [this] { plugin->edit.getUndoManager().redo(); };
+            // effects: how loud the sound goes in and comes out, and listening at matched loudness
+            if (auto* fx = dynamic_cast<pulse::PulseEffect*> (plugin))
+            {
+                matchBtn.setClickingTogglesState (true);
+                matchBtn.setColour (TextButton::buttonOnColourId, Theme::accentDim);
+                matchBtn.setTooltip ("Gain match: the output is turned up or down to be as loud as the input, so the device is judged by what it does and not by being louder");
+                matchBtn.onClick = [this, fx] { plugin->edit.getUndoManager().beginNewTransaction ("Gain match"); fx->setGainMatched (matchBtn.getToggleState()); };
+                addAndMakeVisible (matchBtn);
+            }
+            startTimerHz (15);
+            timerCallback();
             abBtn.setTooltip ("Compare two versions of the settings (click to switch between A and B)");
             abBtn.onClick = [this]
             {
@@ -1932,6 +1959,7 @@ namespace DeviceEditors
                 if (! other.empty()) DeviceTools::apply (*plugin, other);
                 abIsB = ! abIsB;
                 abBtn.setButtonText (abIsB ? "B" : "A");
+                copyBtn.setButtonText (abIsB ? "B > A" : "A > B");
             };
             if (auto sb = dynamic_cast<pulse::SandboxedPlugin*> (plugin))
             {
@@ -1991,6 +2019,23 @@ namespace DeviceEditors
             g.setColour (plugin->isSynth() ? Theme::orange : Theme::accent);
             g.fillRect (0, 42, getWidth(), 2);
             if (! displayArea.isEmpty()) Graphs::proDisplay (g, displayArea.toFloat());
+            // in and out: two thin meters with what the gain match is doing between them
+            if (! meterArea.isEmpty())
+            {
+                auto m = meterArea.toFloat();
+                auto bar = [&] (Rectangle<float> r, const char* name, float db)
+                {
+                    Graphs::label (g, name, r.removeFromLeft (22.0f), Justification::centredLeft, 0.6f);
+                    r = r.withSizeKeepingCentre (r.getWidth(), 5.0f);
+                    g.setColour (Pro::shade (0.5f));
+                    g.fillRoundedRectangle (r, 2.5f);
+                    const float lvl = jlimit (0.0f, 1.0f, 1.0f + db / 60.0f);
+                    g.setColour (db > -0.1f ? Theme::red : db > -6.0f ? Theme::orange : Theme::green);
+                    g.fillRoundedRectangle (r.withWidth (r.getWidth() * lvl), 2.5f);
+                };
+                bar (m.removeFromTop (m.getHeight() * 0.5f), "IN", shownIn);
+                bar (m, "OUT", shownOut);
+            }
         }
 
         void resized() override
@@ -2001,8 +2046,23 @@ namespace DeviceEditors
             if (nextPreset.isVisible()) { nextPreset.setBounds (top.removeFromRight (26)); top.removeFromRight (2); }
             presetBtn.setBounds (top.removeFromRight (jlimit (110, 230, top.getWidth() / 3))); top.removeFromRight (nextPreset.isVisible() ? 2 : 6);
             if (prevPreset.isVisible()) { prevPreset.setBounds (top.removeFromRight (26)); top.removeFromRight (6); }
-            abBtn.setBounds (top.removeFromRight (44)); top.removeFromRight (6);
+            copyBtn.setBounds (top.removeFromRight (56)); top.removeFromRight (2);
+            abBtn.setBounds (top.removeFromRight (36)); top.removeFromRight (6);
             if (windowBtn.isVisible()) { windowBtn.setBounds (top.removeFromRight (130)); top.removeFromRight (6); }
+            redoBtn.setBounds (top.removeFromRight (26)); top.removeFromRight (2);
+            undoBtn.setBounds (top.removeFromRight (26)); top.removeFromRight (8);
+            meterArea = {};
+            if (matchBtn.isVisible() || dynamic_cast<pulse::PulseEffect*> (plugin) != nullptr)
+            {
+                const bool room = top.getWidth() > 330;   // (a narrow window keeps its title)
+                matchBtn.setVisible (room);
+                if (room)
+                {
+                    matchBtn.setBounds (top.removeFromRight (58)); top.removeFromRight (6);
+                    meterArea = top.removeFromRight (120);
+                    top.removeFromRight (8);
+                }
+            }
             title.setBounds (top);
             displayArea = {};
 
@@ -2130,8 +2190,29 @@ namespace DeviceEditors
         Label title;
         TextButton prevPreset { "<" }, nextPreset { ">" };
         TextButton presetBtn { "Presets" }, randomBtn { "Randomise" }, resetBtn { "Reset" }, abBtn { "A" }, windowBtn { "Plugin window" };
+        TextButton copyBtn { "A > B" }, matchBtn { "Match" };
+        IconButton undoBtn { Icons::Type::undo }, redoBtn { Icons::Type::redo };
+        Rectangle<int> meterArea;
+        float shownIn = -100.0f, shownOut = -100.0f;
         DeviceTools::Values slotA, slotB;
         bool abIsB = false;
+
+        void timerCallback() override
+        {
+            auto& um = plugin->edit.getUndoManager();
+            undoBtn.setEnabled (um.canUndo());
+            redoBtn.setEnabled (um.canRedo());
+            undoBtn.setTooltip (um.canUndo() ? "Undo " + um.getUndoDescription() : String ("Nothing to undo"));
+            redoBtn.setTooltip (um.canRedo() ? "Redo " + um.getRedoDescription() : String ("Nothing to redo"));
+            if (auto* fx = dynamic_cast<pulse::PulseEffect*> (plugin))
+            {
+                matchBtn.setToggleState (fx->isGainMatched(), dontSendNotification);
+                const float db = fx->matchDb.load();
+                matchBtn.setButtonText (fx->isGainMatched() && std::abs (db) >= 0.05f ? (db > 0 ? "+" : "") + String (db, 1) : String ("Match"));
+                const float in = fx->meterIn.load(), out = fx->meterOut.load();
+                if (std::abs (in - shownIn) > 0.3f || std::abs (out - shownOut) > 0.3f) { shownIn = in; shownOut = out; repaint (meterArea); }
+            }
+        }
     };
 
     //==============================================================================

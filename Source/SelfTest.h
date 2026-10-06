@@ -6338,6 +6338,65 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
                 mq = nullptr;
             }
 
+            // every effect: meters of what goes in and comes out, and listening at matched loudness
+            {
+                auto up = edit->getPluginCache().createNewPlugin (pulse::Utility::xmlTypeName, {});
+                t->pluginList.insertPlugin (up, 0, nullptr);
+                auto* util = dynamic_cast<pulse::Utility*> (up.get());
+                util->set (pulse::Utility::pGain, 12.0f);
+                const float a = Decibels::decibelsToGain (-20.0f);
+                const float loud = runFx (*util, sine (1000, a), 3.0);
+                const float inShown = util->meterIn.load(), outShown = util->meterOut.load();
+                const bool meters = std::abs (loud + 8.0f) < 0.2f && std::abs (inShown + 20.0f) < 1.5f && std::abs (outShown + 8.0f) < 1.5f && ! util->isGainMatched();
+                edit->getUndoManager().beginNewTransaction ("match");
+                util->setGainMatched (true);
+                const float matched = runFx (*util, sine (1000, a), 3.0);
+                const float turned = util->matchDb.load();
+                const bool matches = std::abs (matched + 20.0f) < 0.3f && std::abs (turned + 12.0f) < 0.3f && std::abs (util->meterOut.load() + 20.0f) < 1.5f;
+                // it is kept with the device and follows undo; silence asks for no gain
+                const bool kept = (bool) util->state.getProperty ("pulseGainMatch", false);
+                edit->getUndoManager().undo();
+                const bool undone = ! util->isGainMatched();
+                const bool sums = pulse::PulseEffect::matchGainDb (1.0, 0.25) > 6.0f && pulse::PulseEffect::matchGainDb (1.0, 0.25) < 6.05f && pulse::PulseEffect::matchGainDb (0.0, 1.0) == 0.0f
+                                  && pulse::PulseEffect::matchGainDb (1.0, 0.0) == 0.0f && pulse::PulseEffect::matchGainDb (1.0, 1.0e-9) == 24.0f;
+                // the window: undo and redo, copy A to B, and the meters
+                bool windowOk = false;
+                {
+                    PulseLookAndFeel laf;
+                    LookAndFeel::setDefaultLookAndFeel (&laf);
+                    EditViewState evs (*edit, sm);
+                    DeviceEditors::Editor ed (evs, *util);
+                    ed.setSize (1100, 760);
+                    const bool hasThem = ed.hasMeters();
+                    util->set (pulse::Utility::pGain, 3.0f);
+                    ed.clickCopyAB();                     // B is now the same as A (gain 3)
+                    ed.clickAB();                         // to B
+                    const bool same = std::abs (util->get (pulse::Utility::pGain) - 3.0f) < 0.01f;
+                    util->set (pulse::Utility::pGain, -9.0f);
+                    ed.clickAB();                         // back to A
+                    const bool aKept = std::abs (util->get (pulse::Utility::pGain) - 3.0f) < 0.01f;
+                    ed.clickAB();
+                    const bool bKept = std::abs (util->get (pulse::Utility::pGain) + 9.0f) < 0.01f;
+                    edit->getUndoManager().beginNewTransaction ("turn");
+                    util->set (pulse::Utility::pGain, 1.0f);
+                    edit->getUndoManager().beginNewTransaction ("after");
+                    ed.setSize (1100, 760);
+                    const bool canUndo = edit->getUndoManager().canUndo();
+                    ed.clickUndo();
+                    const bool undid = std::abs (util->get (pulse::Utility::pGain) - 1.0f) > 0.01f;
+                    auto img = ed.createComponentSnapshot (ed.getLocalBounds().removeFromTop (60));
+                    auto f = dir.getChildFile ("device_window_header.png");
+                    f.deleteFile();
+                    if (auto os = f.createOutputStream()) { PNGImageFormat png; png.writeImageToStream (img, *os); }
+                    windowOk = hasThem && same && aKept && bKept && canUndo && undid;
+                    LookAndFeel::setDefaultLookAndFeel (nullptr);
+                }
+                rep.check (meters && matches && kept && undone && sums && windowOk, "Device windows: in / out meters, gain match (a +12 dB device heard at the level that went in), copy A to B, undo in the window",
+                           "+12 dB device: in " + String (inShown, 1) + " dB, out " + String (outShown, 1) + "; matched: out " + String (matched, 1) + " dBFS, turned " + String (turned, 1) + " dB"
+                             + (kept && undone ? "" : "; not kept / undo wrong") + (sums ? "" : "; sums wrong") + (windowOk ? "" : "; window wrong"));
+                up->deleteFromParent();
+            }
+
             // displays build
             {
                 PulseLookAndFeel laf;

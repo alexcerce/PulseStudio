@@ -148,8 +148,8 @@ well EVERYWHERE." So, besides the list:
   clipped at the smallest and largest window size, light themes too), and behaviour (undo for every edit, double
   click resets, wheel and fine-drag on every control, typed values, tooltips, right-click menus, keyboard access).
 - **Quality-of-life list** (add to it whenever something is noticed; do one or two with every version):
-  [x] typed value entry on every knob and readout  [ ] A/B compare and copy A>B in every device window
-  [ ] undo/redo inside device windows shown in the window  [ ] per-device input/output meters and gain match
+  [x] typed value entry on every knob and readout  [x] A/B compare and copy A>B in every device window
+  [x] undo/redo inside device windows shown in the window  [x] per-device input/output meters and gain match
   [ ] "what does this do" hover help everywhere, with a status-bar line  [ ] search in every menu that has more
   than 20 entries  [ ] drag any device, clip, preset or sample anywhere it could sensibly go
   [ ] consistent modifier keys (fine, snap off, copy-drag) across arrangement, piano roll, automation and devices
@@ -658,3 +658,11 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   A/B exists in the device window but without copy A>B; no per-device meters; no status-bar help line; no
   search inside menus; no finder for missing files; no default presets; the welcome screen exists, a tour
   does not. 323 checks, quick tier.
+- 2026-10-06: v0.99.41. Device windows (three items of the quality-of-life list). PulseEffect (PulseDevices.h)
+  now measures every effect's input and output (peak for the meters, power averaged over half a second) around
+  process(), and with gain match on turns the output by matchGainDb (in power / out power), at most 24 dB, moved
+  smoothly over each block; the choice is the device's state property "pulseGainMatch". DeviceEditors::Editor:
+  undo / redo buttons, "A > B", the two meters and the Match button (hidden in a window too narrow for them).
+  Measured: a +12 dB Utility comes out at the -20 dBFS that went in, matchDb -12.0. Instruments and outside
+  (VST) plugins have no meters or match. The cost is two more passes over each block for every effect; the
+  audio of every device test is unchanged. 324 checks, quick tier.

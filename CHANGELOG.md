@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.41 - 2026-10-06
+
+- Device windows: undo / redo, copy A to B, input and output meters, gain match for every effect
+
 ## 0.99.40 - 2026-10-06
 
 - Type a value: click the value under a knob (or a mixer level) and type it, with units

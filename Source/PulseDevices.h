@@ -121,7 +121,33 @@ namespace pulse
             sampleRate = info.sampleRate;
             blockSize = info.blockSizeSamples;
             quietSamples = 0;
+            powerIn = powerOut = 0.0;
+            matchGain = 1.0f;
+            matchOn = (bool) state.getProperty (gainMatchID, false);
             prepare();
+        }
+
+        //==============================================================================
+        /** How loud the sound is going in and coming out (peak, dB), for the meters of the device's window. */
+        std::atomic<float> meterIn { -100.0f }, meterOut { -100.0f };
+        /** What the output is being turned by to match the input, in dB (0 when matching is off). */
+        std::atomic<float> matchDb { 0.0f };
+
+        /** Gain match: the output is turned up or down until it is as loud as the input, so that the device can be
+            judged by what it does to the sound and not by making it louder. Kept with the device. */
+        bool isGainMatched() const { return matchOn.load(); }
+        void setGainMatched (bool on)
+        {
+            state.setProperty (gainMatchID, on, getUndoManager());
+            matchOn = on;
+        }
+
+        /** The gain (dB) that brings an output of this power to the loudness of this input: 0 when either is
+            silence, and never more than 24 dB either way. */
+        static float matchGainDb (double inPower, double outPower)
+        {
+            if (inPower < 1.0e-10 || outPower < 1.0e-10) return 0.0f;
+            return (float) jlimit (-24.0, 24.0, 10.0 * std::log10 (inPower / outPower));
         }
 
         void applyToBuffer (const te::PluginRenderContext& fc) override
@@ -158,8 +184,38 @@ namespace pulse
             }
             asleep.store (false, std::memory_order_relaxed);
 
-            process (b.getWritePointer (0, fc.bufferStartSample), b.getWritePointer (1, fc.bufferStartSample), fc.bufferNumSamples, fc);
+            // what goes in: its peak for the meter, its power for the gain match
+            const int num = fc.bufferNumSamples;
+            auto* l = b.getWritePointer (0, fc.bufferStartSample);
+            auto* r = b.getWritePointer (1, fc.bufferStartSample);
+            const float peakIn = jmax (b.getMagnitude (0, fc.bufferStartSample, num), b.getMagnitude (1, fc.bufferStartSample, num));
+            double sumIn = 0.0;
+            for (int i = 0; i < num; ++i) sumIn += (double) l[i] * l[i] + (double) r[i] * r[i];
+
+            process (l, r, num, fc);
             te::sanitiseValues (b, fc.bufferStartSample, fc.bufferNumSamples, 4.0f);
+
+            double sumOut = 0.0;
+            for (int i = 0; i < num; ++i) sumOut += (double) l[i] * l[i] + (double) r[i] * r[i];
+            // averaged over about half a second, so that the match follows the sound and not each note
+            const double keep = std::exp (-(double) num / (sampleRate * 0.5));
+            powerIn = powerIn * keep + sumIn / (2.0 * num) * (1.0 - keep);
+            powerOut = powerOut * keep + sumOut / (2.0 * num) * (1.0 - keep);
+            if (matchOn.load (std::memory_order_relaxed))
+            {
+                const float db = matchGainDb (powerIn, powerOut);
+                const float want = Decibels::decibelsToGain (db), step = (want - matchGain) / (float) num;
+                for (int i = 0; i < num; ++i) { matchGain += step; l[i] *= matchGain; r[i] *= matchGain; }
+                matchDb.store (db, std::memory_order_relaxed);
+            }
+            else
+            {
+                matchGain = 1.0f;
+                matchDb.store (0.0f, std::memory_order_relaxed);
+            }
+            const float peakOut = jmax (b.getMagnitude (0, fc.bufferStartSample, num), b.getMagnitude (1, fc.bufferStartSample, num));
+            meterIn.store (jmax (Decibels::gainToDecibels (peakIn, -100.0f), meterIn.load (std::memory_order_relaxed) - 1.2f), std::memory_order_relaxed);
+            meterOut.store (jmax (Decibels::gainToDecibels (peakOut, -100.0f), meterOut.load (std::memory_order_relaxed) - 1.2f), std::memory_order_relaxed);
 
             const bool outputQuiet = b.getMagnitude (0, fc.bufferStartSample, fc.bufferNumSamples) < quiet
                                      && b.getMagnitude (1, fc.bufferStartSample, fc.bufferNumSamples) < quiet;
@@ -183,6 +239,19 @@ namespace pulse
         }
 
     protected:
+        static inline const Identifier gainMatchID { "pulseGainMatch" };
+
+        /** Undo and redo of the gain match reach the audio as well. */
+        void valueTreePropertyChanged (juce::ValueTree& v, const juce::Identifier& i) override
+        {
+            PulsePlugin::valueTreePropertyChanged (v, i);
+            if (v == state && i == gainMatchID) matchOn = (bool) state.getProperty (gainMatchID, false);
+        }
+
+        std::atomic<bool> matchOn { false };
+        double powerIn = 0.0, powerOut = 0.0;
+        float matchGain = 1.0f;
+
         /** The sidechain signal for this block (nullptr when none is routed in). */
         const AudioBuffer<float>* sidechain = nullptr;
         AudioBuffer<float> scBuffer;
