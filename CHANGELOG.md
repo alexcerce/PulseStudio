@@ -2,6 +2,11 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.16 - 2026-10-06
+
+- New instruments: Tonewheel Organ (drawbars, percussion, vibrato and chorus, rotary speaker) and Electric Piano (tine and reed)
+- Fixed: Pulse Spectral could get louder without end with Freeze and Feedback together
+
 ## 0.99.15 - 2026-10-06
 
 - Wavetable: a third oscillator (the B / C tabs on the second oscillator's card show it; it is silent until its Level is turned up, so existing sounds are unchanged)

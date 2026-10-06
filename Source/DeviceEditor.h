@@ -1678,6 +1678,10 @@ namespace DeviceEditors
             add ("FM Synth", std::make_unique<FMPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::DrumSynth*> (&p))
             add ("Drum Synth", std::make_unique<DrumSynthPanel> (evs, *s));
+        else if (auto s = dynamic_cast<pulse::Organ*> (&p))
+            add ("Organ", std::make_unique<KeysUI::OrganPanel> (evs, *s));
+        else if (auto s = dynamic_cast<pulse::EPiano*> (&p))
+            add ("Electric Piano", std::make_unique<KeysUI::EPianoPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::GlueCompressor*> (&p))
         {
             add ("Transfer curve", DeviceDisplays::create (evs, p));
@@ -1773,6 +1777,7 @@ namespace DeviceEditors
             || dynamic_cast<pulse::FMSynth*> (&p) != nullptr
             || dynamic_cast<pulse::Simpler*> (&p) != nullptr
             || dynamic_cast<pulse::DrumSynth*> (&p) != nullptr
+            || dynamic_cast<pulse::Organ*> (&p) != nullptr || dynamic_cast<pulse::EPiano*> (&p) != nullptr
             || dynamic_cast<pulse::Reverb*> (&p) != nullptr || dynamic_cast<pulse::Delay*> (&p) != nullptr || dynamic_cast<pulse::Saturator*> (&p) != nullptr
             || dynamic_cast<pulse::MultibandDynamics*> (&p) != nullptr || dynamic_cast<pulse::Limiter*> (&p) != nullptr
             || dynamic_cast<pulse::ConvolutionReverb*> (&p) != nullptr || dynamic_cast<pulse::ModEffect*> (&p) != nullptr

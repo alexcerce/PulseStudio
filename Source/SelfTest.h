@@ -206,6 +206,8 @@ namespace SelfTest
         shoot (pulse::BeatRepeat::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::BeatRepeat::pDecay, 0.4f); p.set (pulse::BeatRepeat::pGate, 3); p.set (pulse::BeatRepeat::pPitch, -7); p.set (pulse::BeatRepeat::pPitchDecay, 1.0f); }, "shot_beatrepeat.png");
         shoot (pulse::Looper::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Looper::pState, 1); p.set (pulse::Looper::pLength, 1); }, "shot_looper.png");
         shoot (pulse::Spectral::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Spectral::pDelay, 900); p.set (pulse::Spectral::pTilt, 0.7f); p.set (pulse::Spectral::pShift, 7); }, "shot_spectral.png");
+        shoot (pulse::Organ::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Organ::pBar4, 6); p.set (pulse::Organ::pBar6, 3); p.set (pulse::Organ::pBar9, 5); p.set (pulse::Organ::pRotary, 2); }, "shot_organ.png");
+        shoot (pulse::EPiano::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::EPiano::pBark, 0.7f); }, "shot_epiano.png");
         shoot (pulse::Gate::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Gate::pThreshold, -22); p.set (pulse::Gate::pRange, 40); p.set (pulse::Gate::pHysteresis, 6); }, "shot_gate.png");
         shoot (pulse::TransientShaper::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::TransientShaper::pAttack, 0.6f); p.set (pulse::TransientShaper::pSustain, -0.4f); }, "shot_transient.png");
         shoot (pulse::DeEsser::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::DeEsser::pThreshold, -36); p.set (pulse::DeEsser::pRange, 10); }, "shot_deesser.png");
@@ -5571,6 +5573,142 @@ namespace SelfTest
             const bool allThere = missW.isEmpty() && missF.isEmpty() && missS.isEmpty();
             rep.check (allThere, "Wavetable, FM, Simpler and Drum Synth windows have a control for every parameter",
                        allThere ? String ("nothing missing") : "missing: " + missW.joinIntoString (" ") + " | " + missF.joinIntoString (" ") + " | " + missS.joinIntoString (" "));
+        }
+
+        // --- v0.99.16: Tonewheel Organ and Electric Piano ---------------------------------------------------
+        {
+            rep.step ("keys");
+            auto op = edit->getPluginCache().createNewPlugin (pulse::Organ::xmlTypeName, {});
+            auto ep2 = edit->getPluginCache().createNewPlugin (pulse::EPiano::xmlTypeName, {});
+            auto* organ = dynamic_cast<pulse::Organ*> (op.get());
+            auto* epiano = dynamic_cast<pulse::EPiano*> (ep2.get());
+            using OG = pulse::Organ;
+            using EP = pulse::EPiano;
+            const double ksr = 48000.0;
+            auto partIn = [&] (const AudioBuffer<float>& b, double hz, double from, double len)
+            {
+                const int a = jmin (b.getNumSamples() - 2, (int) (from * ksr)), n = jmin (b.getNumSamples() - a, (int) (len * ksr));
+                double re = 0, im = 0;
+                for (int i = 0; i < n; ++i)
+                {
+                    const double ph = MathConstants<double>::twoPi * hz * (a + i) / ksr;
+                    re += b.getSample (0, a + i) * std::cos (ph); im += b.getSample (0, a + i) * std::sin (ph);
+                }
+                return Decibels::gainToDecibels ((float) (2.0 * std::sqrt (re * re + im * im) / jmax (1, n)), -140.0f);
+            };
+            auto rmsIn = [&] (const AudioBuffer<float>& b, int chan, double from, double len)
+            {
+                const int a = jmin (b.getNumSamples() - 2, (int) (from * ksr)), n = jmin (b.getNumSamples() - a, (int) (len * ksr));
+                return Decibels::gainToDecibels (b.getRMSLevel (chan, a, jmax (1, n)), -140.0f);
+            };
+            auto bars = [&] (std::initializer_list<int> v) { int i = 0; for (int x : v) organ->set (OG::pBar1 + i++, (float) x); };
+
+            // organ, as plain as it gets: only the 8' drawbar is the note itself and nothing else
+            organ->set (OG::pRotary, 0); organ->set (OG::pRotaryMix, 0.0f); organ->set (OG::pDrive, 0.0f); organ->set (OG::pClick, 0.0f); organ->set (OG::pVibrato, 0); organ->set (OG::pPerc, 0);
+            bars ({ 0, 0, 8, 0, 0, 0, 0, 0, 0 });
+            auto a3 = FactorySounds::renderNote (*organ, 57, 0.5);
+            const float fund = partIn (a3, 220.0, 0.1, 0.3), second = partIn (a3, 440.0, 0.1, 0.3);
+            bars ({ 0, 0, 8, 8, 0, 0, 0, 0, 0 });   // add the 4': an octave above appears, as loud
+            a3 = FactorySounds::renderNote (*organ, 57, 0.5);
+            const float withFour = partIn (a3, 440.0, 0.1, 0.3) - partIn (a3, 220.0, 0.1, 0.3);
+            bars ({ 0, 0, 8, 4, 0, 0, 0, 0, 0 });   // four steps in: 12 dB quieter
+            a3 = FactorySounds::renderNote (*organ, 57, 0.5);
+            const float fourAtFour = partIn (a3, 440.0, 0.1, 0.3) - partIn (a3, 220.0, 0.1, 0.3);
+            bars ({ 0, 0, 0, 0, 0, 0, 0, 0, 8 });   // the 1' on a high note folds back an octave (7040 Hz would be above the top tonewheel)
+            auto high = FactorySounds::renderNote (*organ, 93, 0.4);
+            const float folded = partIn (high, 3520.0, 0.1, 0.2), unfolded = partIn (high, 7040.0, 0.1, 0.2);
+            // percussion: a third-harmonic ping at the start of the note that is gone half a second later
+            bars ({ 0, 0, 8, 0, 0, 0, 0, 0, 0 }); organ->set (OG::pPerc, 2); organ->set (OG::pPercDecay, 0); organ->set (OG::pPercLevel, 1.0f);
+            a3 = FactorySounds::renderNote (*organ, 57, 1.0);
+            const float pingEarly = partIn (a3, 660.0, 0.0, 0.05), pingLate = partIn (a3, 660.0, 0.6, 0.2);
+            organ->set (OG::pPerc, 0);
+            // the note stops when the key is let go (an organ does not ring on)
+            const float afterKey = rmsIn (a3, 0, 1.15, 0.1);
+            // the rotary speaker: the two sides differ, and move
+            organ->set (OG::pRotary, 2); organ->set (OG::pRotaryMix, 1.0f); bars ({ 8, 8, 8, 8, 8, 8, 8, 8, 8 });
+            auto spun = FactorySounds::renderNote (*organ, 69, 2.0);
+            float sideDiff = 0;
+            for (int i = (int) ksr; i < jmin (spun.getNumSamples(), (int) (1.9 * ksr)); ++i) sideDiff = jmax (sideDiff, std::abs (spun.getSample (0, i) - spun.getSample (1, i)));
+            const float spunPeak = Decibels::gainToDecibels (spun.getMagnitude (0, spun.getNumSamples()), -100.0f);
+            const bool organOk = fund > -30.0f && second < fund - 50.0f && std::abs (withFour) < 1.0f && std::abs (fourAtFour + 12.0f) < 1.0f && folded > unfolded + 30.0f
+                                 && pingEarly > pingLate + 25.0f && afterKey < -70.0f && sideDiff > 0.01f && spunPeak < 6.0f && std::abs (OG::barGain (8.0f) - 1.0f) < 1.0e-6f && OG::barGain (0.0f) == 0.0f;
+            rep.check (organOk, "Tonewheel Organ (drawbars add their own pitch at 3 dB a step, top notes fold back, percussion, key off, rotary speaker)",
+                       "8' alone: note " + String (fund, 1) + " dB, octave " + String (second, 0) + "; + 4': " + String (withFour, 2) + " dB, at 4: " + String (fourAtFour, 1) + "; 1' on A6 at 3.5 kHz " + String (folded, 0)
+                       + " / 7 kHz " + String (unfolded, 0) + "; percussion " + String (pingEarly, 0) + " -> " + String (pingLate, 0) + "; after key up " + String (afterKey, 0) + "; sides differ by " + String (sideDiff, 3));
+
+            // electric piano: it dies away while held, stops when let go, is brighter when hit harder, and ends up as the note itself
+            epiano->set (EP::pTremolo, 0.0f); epiano->set (EP::pDrive, 0.0f); epiano->set (EP::pDecay, 2.0f); epiano->set (EP::pTone, 16000.0f);
+            auto held = FactorySounds::renderNote (*epiano, 60, 3.0);
+            const float epEarly = rmsIn (held, 0, 0.1, 0.2), epLate = rmsIn (held, 0, 1.6, 0.2), epNote = partIn (held, 261.63, 1.0, 0.5), epOff = partIn (held, 300.0, 1.0, 0.5);
+            auto shortNote = FactorySounds::renderNote (*epiano, 60, 0.3);
+            const float epAfter = rmsIn (shortNote, 0, 0.9, 0.1);
+            auto brightOf = [&] (const AudioBuffer<float>& b)
+            {
+                double diff = 0, level = 1.0e-9;
+                for (int i = 481; i < jmin (b.getNumSamples(), 4800); ++i) { diff += std::abs (b.getSample (0, i) - b.getSample (0, i - 1)); level += std::abs (b.getSample (0, i)); }
+                return (float) (diff / level);
+            };
+            // (the wave itself at soft and hard velocity: the instrument's own description of the sound)
+            auto waveBright = [&] (float vel)
+            {
+                double diff = 0, level = 1.0e-9;
+                for (int i = 1; i < 512; ++i) { const float a = epiano->wave (i / 512.0, 0.01f, vel, 261.6f), b = epiano->wave ((i - 1) / 512.0, 0.01f, vel, 261.6f); diff += std::abs (a - b); level += std::abs (a); }
+                return (float) (diff / level);
+            };
+            const float softB = waveBright (0.2f), hardB = waveBright (1.0f);
+            epiano->set (EP::pModel, 1);
+            auto reed = FactorySounds::renderNote (*epiano, 60, 0.5);
+            const float reedB = brightOf (reed), tineB = brightOf (held);
+            epiano->set (EP::pModel, 0); epiano->set (EP::pTremolo, 1.0f); epiano->set (EP::pTremStereo, 1.0f); epiano->set (EP::pTremRate, 6.0f);
+            auto tremd = FactorySounds::renderNote (*epiano, 60, 1.0);
+            float tremSides = 0;
+            for (int i = 4800; i < jmin (tremd.getNumSamples(), 40000); ++i) tremSides = jmax (tremSides, std::abs (tremd.getSample (0, i) - tremd.getSample (1, i)));
+            epiano->set (EP::pTremolo, 0.25f);
+            const bool epOk = epEarly > -40.0f && epLate < epEarly - 20.0f && epNote > epOff + 20.0f && epAfter < -70.0f && hardB > softB * 1.3f && reedB != tineB && tremSides > 0.01f;
+            rep.check (epOk, "Electric Piano (dies away, stops on key up, brighter when hit harder, tine and reed, stereo tremolo)",
+                       "held: " + String (epEarly, 1) + " -> " + String (epLate, 1) + " dB; middle C " + String (epNote, 1) + " dB against " + String (epOff, 0) + " beside it; after key up " + String (epAfter, 0)
+                       + "; brightness soft " + String (softB, 3) + ", hard " + String (hardB, 3) + "; tine " + String (tineB, 3) + ", reed " + String (reedB, 3) + "; tremolo sides differ by " + String (tremSides, 3));
+
+            // their windows
+            {
+                PulseLookAndFeel laf;
+                LookAndFeel::setDefaultLookAndFeel (&laf);
+                EditViewState kevs (*edit, sm);
+                KeysUI::OrganView ov (*organ);
+                KeysUI::EPianoView ev (*epiano);
+                Image img (Image::ARGB, 1000, 520, true);
+                for (Component* c : { (Component*) &ov, (Component*) &ev }) { c->setSize (1000, 520); Graphics g (img); c->paint (g); }
+                bars ({ 8, 8, 8, 0, 0, 0, 0, 0, 0 });
+                ov.dragHandle (3, 0.0f, 200.0f);    // pull the 4' out
+                ov.dragHandle (0, 0.0f, -150.0f);   // push the 16' in
+                const float bark0 = epiano->get (EP::pBark), dec0 = epiano->get (EP::pDecay);
+                ev.dragHandle (0, 40.0f, -60.0f);
+                ev.dragHandle (1, 80.0f, 0.0f);
+                const bool handlesOk = organ->get (OG::pBar4) >= 3.0f && organ->get (OG::pBar1) <= 6.0f && ov.getNumHandles() == 9 && epiano->get (EP::pBark) > bark0 + 0.05f && epiano->get (EP::pDecay) > dec0 + 0.2f;
+                StringArray missing;
+                for (auto* pp : std::initializer_list<pulse::PulsePlugin*> { organ, epiano })
+                {
+                    DeviceEditors::Editor ed (kevs, *pp);
+                    ed.setSize (1100, 760);
+                    std::set<te::AutomatableParameter*> seen;
+                    std::function<void (Component&)> walk = [&] (Component& c)
+                    {
+                        if (auto* k = dynamic_cast<ParamKnob*> (&c)) seen.insert (&k->getParameter());
+                        if (auto* k = dynamic_cast<ParamChoice*> (&c)) seen.insert (&k->getParameter());
+                        if (auto* k = dynamic_cast<ParamCombo*> (&c)) seen.insert (&k->getParameter());
+                        for (auto* chd : c.getChildren()) walk (*chd);
+                    };
+                    walk (ed);
+                    for (int i = 0; i < pp->numParams(); ++i)
+                        if (! seen.count (&*pp->param (i)) && ! pp->param (i)->paramID.startsWith ("bar"))   // (the drawbars are the nine bars in the picture, checked above)
+                            missing.add (pp->getName() + ": " + pp->param (i)->paramID);
+                    if (! DeviceEditors::hasFullEditor (*pp)) missing.add (pp->getName() + ": no full window");
+                }
+                rep.check (handlesOk && missing.isEmpty(), "Organ and Electric Piano windows: drawbars and the sound are dragged on the picture, and every parameter has a control",
+                           missing.isEmpty() ? "4' pulled out to " + String (roundToInt (organ->get (OG::pBar4))) + ", 16' pushed in to " + String (roundToInt (organ->get (OG::pBar1))) + ", bark " + String (bark0, 2) + " -> "
+                                               + String (epiano->get (EP::pBark), 2) : missing.joinIntoString ("; "));
+                LookAndFeel::setDefaultLookAndFeel (nullptr);
+            }
         }
 
         // --- v0.55: Wavetable overhaul (tables, noise, sub, macros, effects, tabbed window) ------------------

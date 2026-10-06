@@ -118,6 +118,8 @@ namespace PluginMenu
         addBuiltIn<pulse::WavetableSynth> (instruments, edit, cb);
         addBuiltIn<pulse::FMSynth> (instruments, edit, cb);
         addBuiltIn<pulse::Simpler> (instruments, edit, cb);
+        addBuiltIn<pulse::EPiano> (instruments, edit, cb);
+        addBuiltIn<pulse::Organ> (instruments, edit, cb);
         addBuiltIn<te::FourOscPlugin> (instruments, edit, cb);
         addBuiltIn<te::SamplerPlugin> (instruments, edit, cb);
 

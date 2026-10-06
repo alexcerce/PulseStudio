@@ -165,7 +165,7 @@ well EVERYWHERE." So, besides the list:
    [x] grain delay  [x] looper  [x] resonators
 2. Instruments: [x] Wavetable third oscillator + wavetable import from audio  [ ] sampler (slices, per-slice stretch,
    zones)  [ ] analogue-style subtractive synth  [ ] physical-modelling instrument (string / mallet)
-   [ ] electric piano  [ ] tonewheel organ
+   [x] electric piano  [x] tonewheel organ
 3. MIDI: [ ] note length  [ ] pitch  [ ] random  [ ] velocity  [ ] drawable arpeggiator / note-echo patterns
    [ ] chord track + chord progressions (piano roll and MIDI effects follow it)  [ ] step sequencer view for drum clips
 4. Audio editing: [ ] warp by dragging transients on the waveform, follow-tempo per clip  [ ] per-note pitch and time
@@ -449,3 +449,9 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   to a fraction of a sample), stored in the project as base64 ("importWave"), so the audio file is not needed
   again. WavetableBank::build() now makes any per-instance table. 3 new presets. 287 checks, quick tier.
   README: the Wavetable row starts with the two additions; the rest of that row is older text.
+- 2026-10-06: v0.99.16. Tonewheel Organ and Electric Piano: Source/Keys.h, KeysDisplay.h. The organ's drawbars
+  are handles in its picture (no knobs for them in the strip: it did not fit, and they are whole numbers 0 to 8).
+  EPiano::wave() is the one description of the sound, used by the voices and the display. 8 presets each. The
+  device fuzz found Pulse Spectral growing without end with Freeze + Feedback (the ring now keeps no frequency
+  louder than a full-level tone). 290 checks, quick tier. Note: FactorySounds::renderNote trims the quiet end of
+  what it returns, so tests must not read far into a decayed tail.

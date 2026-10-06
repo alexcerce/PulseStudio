@@ -78,6 +78,8 @@ namespace ClipImport
             { "Wavetable",    pulse::WavetableSynth::xmlTypeName,  true },
             { "FM Synth",     pulse::FMSynth::xmlTypeName,         true },
             { "Simpler",      pulse::Simpler::xmlTypeName,         true },
+            { "Electric Piano", pulse::EPiano::xmlTypeName,        true },
+            { "Tonewheel Organ", pulse::Organ::xmlTypeName,        true },
             { "4OSC Synth",   te::FourOscPlugin::xmlTypeName,      true },
             { "Sampler",      te::SamplerPlugin::xmlTypeName,      true },
             { "EQ Six",       pulse::PulseEQ::xmlTypeName,         false },

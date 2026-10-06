@@ -332,6 +332,31 @@ namespace FactoryPresetsMore
                 { "Send (100% wet hall)", { { "space", 6 }, { "predelay", 20 }, { "lowcut", 150 }, { "mix", 1.0f } } } } },
 
             //----------------------------------------------------------------------------------
+            // Tonewheel Organ: bar1..bar9 = 16', 5 1/3', 8', 4', 2 2/3', 2', 1 3/5', 1 1/3', 1' (0 in .. 8 out); perc 0 off, 1 2nd, 2 3rd;
+            // vibrato 0 off, 1-3 V1-V3, 4-6 C1-C3; rotary 0 stop, 1 slow, 2 fast
+            { "pulseOrgan", {
+                { "Jazz Trio (888 + 3rd perc)", { { "bar1", 8 }, { "bar2", 8 }, { "bar3", 8 }, { "perc", 2 }, { "percdecay", 0 }, { "vibrato", 6 }, { "drive", 0.25f }, { "rotary", 1 } } },
+                { "Gospel Full", { { "bar1", 8 }, { "bar2", 8 }, { "bar3", 8 }, { "bar4", 8 }, { "bar5", 8 }, { "bar6", 8 }, { "bar7", 8 }, { "bar8", 8 }, { "bar9", 8 }, { "drive", 0.4f }, { "rotary", 2 }, { "level", -10 } } },
+                { "Rock Scream", { { "bar1", 8 }, { "bar2", 8 }, { "bar3", 8 }, { "bar4", 8 }, { "bar5", 0 }, { "bar6", 0 }, { "bar7", 0 }, { "bar8", 0 }, { "bar9", 8 }, { "drive", 0.8f }, { "click", 0.5f }, { "rotary", 2 }, { "level", -9 } } },
+                { "Ballad Pad", { { "bar1", 0 }, { "bar2", 0 }, { "bar3", 8 }, { "bar4", 4 }, { "bar5", 0 }, { "bar6", 2 }, { "vibrato", 5 }, { "drive", 0.05f }, { "click", 0.05f }, { "rotary", 1 } } },
+                { "Reggae Bubble", { { "bar1", 0 }, { "bar2", 0 }, { "bar3", 8 }, { "bar4", 8 }, { "bar5", 0 }, { "bar6", 0 }, { "bar7", 0 }, { "bar8", 0 }, { "bar9", 6 }, { "click", 0.6f }, { "rotary", 0 }, { "rotarymix", 0.5f } } },
+                { "Whistle (flutes)", { { "bar1", 0 }, { "bar2", 0 }, { "bar3", 8 }, { "bar4", 0 }, { "bar5", 0 }, { "bar6", 4 }, { "bar9", 3 }, { "perc", 1 }, { "percdecay", 1 }, { "vibrato", 3 }, { "drive", 0 }, { "rotary", 1 } } },
+                { "Bass Pedals", { { "bar1", 8 }, { "bar2", 0 }, { "bar3", 6 }, { "click", 0.1f }, { "drive", 0.15f }, { "rotary", 0 }, { "rotarymix", 0 } } },
+                { "Cathedral-ish", { { "bar1", 8 }, { "bar2", 4 }, { "bar3", 8 }, { "bar4", 6 }, { "bar5", 4 }, { "bar6", 6 }, { "bar7", 2 }, { "bar8", 3 }, { "bar9", 4 }, { "click", 0 }, { "drive", 0 }, { "rotary", 0 }, { "rotarymix", 0 }, { "level", -10 } } } } },
+
+            //----------------------------------------------------------------------------------
+            // Electric Piano: model 0 tine, 1 reed
+            { "pulseEPiano", {
+                { "Classic Tine", { { "model", 0 }, { "bell", 0.5f }, { "bark", 0.45f }, { "tremolo", 0.25f }, { "tremrate", 4.5f } } },
+                { "Mellow Ballad", { { "model", 0 }, { "bell", 0.25f }, { "bark", 0.25f }, { "hardness", 0.5f }, { "tone", 3500 }, { "decay", 5 }, { "tremolo", 0.4f }, { "tremrate", 3.2f } } },
+                { "Bright Bell Keys", { { "model", 0 }, { "bell", 0.95f }, { "bark", 0.3f }, { "tone", 12000 }, { "tremolo", 0.15f }, { "tremrate", 5.5f } } },
+                { "Barking Funk", { { "model", 0 }, { "bell", 0.4f }, { "bark", 0.9f }, { "hardness", 1.0f }, { "drive", 0.35f }, { "decay", 2.5f }, { "tremolo", 0 } } },
+                { "Dyno (hard and glassy)", { { "model", 0 }, { "bell", 0.8f }, { "bark", 0.6f }, { "tone", 14000 }, { "drive", 0.15f }, { "tremolo", 0.2f }, { "tremstereo", 1.0f } } },
+                { "Reed Classic", { { "model", 1 }, { "bell", 0.3f }, { "bark", 0.5f }, { "decay", 2.2f }, { "tone", 5000 }, { "tremolo", 0.45f }, { "tremrate", 5.8f }, { "tremstereo", 0 } } },
+                { "Reed Overdriven", { { "model", 1 }, { "bell", 0.4f }, { "bark", 0.85f }, { "drive", 0.6f }, { "decay", 1.8f }, { "tone", 4500 }, { "tremolo", 0.2f }, { "tremstereo", 0 }, { "level", -9 } } },
+                { "Soft Reed Lullaby", { { "model", 1 }, { "bell", 0.1f }, { "bark", 0.2f }, { "hardness", 0.4f }, { "tone", 3000 }, { "decay", 3 }, { "tremolo", 0.3f }, { "tremrate", 4 }, { "tremstereo", 0 } } } } },
+
+            //----------------------------------------------------------------------------------
             { "pulseSpectral", {
                 { "Hold That Sound", { { "freeze", 1 }, { "mix", 1.0f } } },
                 { "Frozen Pad Under It", { { "freeze", 1 }, { "blur", 0.5f }, { "mix", 0.5f } } },

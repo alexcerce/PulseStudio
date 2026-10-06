@@ -15,6 +15,7 @@
 #include "TimeFxDisplay.h"
 #include "LoopFxDisplay.h"
 #include "SpectralFxDisplay.h"
+#include "KeysDisplay.h"
 
 /** Visual panels shown at the left of Pulse device cards. */
 namespace DeviceDisplays

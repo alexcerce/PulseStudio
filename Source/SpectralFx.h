@@ -16,6 +16,7 @@ namespace pulse
         static constexpr int order = 11, size = 1 << order, hop = size / 4, bins = size / 2 + 1;
         static constexpr float maxDelayMs = 2000.0f;
         static constexpr int shownPoints = 96;
+        static constexpr float loudest = (float) size * 0.3f;   // about what one bin holds for a tone at full level
 
         explicit Spectral (te::PluginCreationInfo info) : PulseEffect (info)
         {
@@ -209,8 +210,11 @@ namespace pulse
                     const float* then = s.ring.data() + (size_t) ((s.ringPos - back + ringFrames) % ringFrames) * (size_t) bins * 2;
                     const float inRe = work[(size_t) (2 * k)], inIm = work[(size_t) (2 * k + 1)];
                     const float outRe = back == 0 ? inRe : then[2 * k], outIm = back == 0 ? inIm : then[2 * k + 1];
-                    now[2 * k] = inRe + (back == 0 ? 0.0f : outRe * feedback);
-                    now[2 * k + 1] = inIm + (back == 0 ? 0.0f : outIm * feedback);
+                    float keepRe = inRe + (back == 0 ? 0.0f : outRe * feedback), keepIm = inIm + (back == 0 ? 0.0f : outIm * feedback);
+                    // A held sound fed back on itself would grow without end: no frequency is kept louder than a full-level tone.
+                    if (const float m2 = keepRe * keepRe + keepIm * keepIm; m2 > loudest * loudest) { const float sc = loudest / std::sqrt (m2); keepRe *= sc; keepIm *= sc; }
+                    now[2 * k] = keepRe;
+                    now[2 * k + 1] = keepIm;
                     work[(size_t) (2 * k)] = outRe;
                     work[(size_t) (2 * k + 1)] = outIm;
                 }
