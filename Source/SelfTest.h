@@ -2739,6 +2739,67 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
             edit->getUndoManager().clearUndoHistory();
         }
 
+        // --- v0.99.46: the piano roll's zoom ------------------------------------------------------------------
+        {
+            rep.step ("piano roll zoom");
+            auto zt = ClipImport::createContentTrack (*edit, "ZoomTest", true);
+            auto ca = zt->insertMIDIClip ("first", { te::TimePosition(), te::TimePosition::fromSeconds (8.0) }, nullptr);
+            auto cb = zt->insertMIDIClip ("second", { te::TimePosition::fromSeconds (8.0), te::TimePosition::fromSeconds (16.0) }, nullptr);
+            ca->getSequence().addNote (48, te::BeatPosition::fromBeats (2.0), te::BeatDuration::fromBeats (1.0), 100, 0, nullptr);
+            ca->getSequence().addNote (72, te::BeatPosition::fromBeats (6.0), te::BeatDuration::fromBeats (2.0), 100, 0, nullptr);
+            cb->getSequence().addNote (60, te::BeatPosition::fromBeats (1.0), te::BeatDuration::fromBeats (1.0), 100, 0, nullptr);
+            bool ok = false;
+            String note;
+            {
+                PulseLookAndFeel laf;
+                LookAndFeel::setDefaultLookAndFeel (&laf);
+                EditViewState evs (*edit, sm);
+                PianoRoll roll (evs);
+                roll.setSize (1000, 500);
+                roll.setClip (ca.get());
+                const auto start = roll.currentView();
+                // fit everything: both notes are inside the view, left to right and top to bottom
+                roll.zoomToFit (true);
+                const auto low = roll.positionOf (2.0, 48), high = roll.positionOf (8.0, 72), origin = roll.positionOf (0.0, 60);
+                const bool fits = low.x > 64.0f && high.x < 1000.0f && origin.x >= 64.0f && high.y > 32.0f && low.y < 500.0f - 64.0f && low.y > high.y;
+                const auto fitted = roll.currentView();
+                // Alt + wheel is what zoomRows does: taller rows, the pitch under the mouse stays put
+                const float yBefore = roll.positionOf (2.0, 60).y;
+                roll.zoomRows (1.5f, yBefore);
+                const bool taller = roll.currentView().rowH > fitted.rowH * 1.3f && std::abs (roll.positionOf (2.0, 60).y - yBefore) < roll.currentView().rowH;
+                roll.zoomRows (100.0f, 200.0f); const bool capped = roll.currentView().rowH <= 30.0f;
+                roll.zoomRows (0.0001f, 200.0f); const bool floored = roll.currentView().rowH >= 7.0f;
+                // each clip is found again as it was left
+                roll.zoomToFit (true);
+                const auto leftA = roll.currentView();
+                roll.setClip (cb.get());
+                roll.zoomRows (1.4f, 200.0f);
+                const auto leftB = roll.currentView();
+                roll.setClip (ca.get());
+                const auto backA = roll.currentView();
+                roll.setClip (cb.get());
+                const auto backB = roll.currentView();
+                const bool remembered = std::abs (backA.ppb - leftA.ppb) < 1.0e-6 && std::abs (backA.scrollY - leftA.scrollY) < 0.01f && std::abs (backB.rowH - leftB.rowH) < 0.01f
+                                        && std::abs (backA.rowH - backB.rowH) > 0.5f && roll.numRememberedViews() == 2;
+                // and after the project has been closed and opened: through the view state
+                ValueTree state ("VIEW");
+                roll.saveViews (state);
+                PianoRoll again (evs);
+                again.setSize (1000, 500);
+                again.loadViews (state);
+                again.setClip (ca.get());
+                const bool saved = state.getChildWithName ("ROLLVIEWS").getNumChildren() == 2 && std::abs (again.currentView().ppb - leftA.ppb) < 1.0e-6 && std::abs (again.currentView().rowH - leftA.rowH) < 0.01f;
+                again.setClip (nullptr);
+                roll.setClip (nullptr);
+                ok = fits && taller && capped && floored && remembered && saved && std::abs (start.rowH - 13.0f) < 0.01f;
+                note = String (fits ? "" : "fit leaves notes outside; ") + (taller ? "" : "row zoom wrong; ") + (capped && floored ? "" : "row height not held in its range; ") + (remembered ? "" : "a clip's view is not remembered; ") + (saved ? "" : "views not kept in the project; ");
+                LookAndFeel::setDefaultLookAndFeel (nullptr);
+            }
+            rep.check (ok, "Piano roll zoom (fit all the notes, taller and flatter rows around the mouse, each clip's view remembered and kept with the project)", note + "ok");
+            edit->deleteTrack (zt);
+            edit->getUndoManager().clearUndoHistory();
+        }
+
         // --- sharing: collect all, templates -----------------------------------------------------------
         {
             auto outside = File::getSpecialLocation (File::tempDirectory).getChildFile ("PulseStudioSelfTestOutside");

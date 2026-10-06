@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.46 - 2026-10-06
+
+- Piano roll: fit the selection or the whole clip (Z / Shift+Z), taller and flatter rows (Alt + wheel), each clip's view remembered
+
 ## 0.99.45 - 2026-10-06
 
 - Defaults: a device's settings as the default for new devices of its kind; a chain's effects on every new track

@@ -108,7 +108,10 @@ public:
     void setClip (te::MidiClip* mc)
     {
         if (clip != nullptr)
+        {
+            rememberView();   // each clip is found again as it was left
             clip->state.removeListener (this);
+        }
 
         clip = mc;
         steps.setClip (mc);
@@ -120,7 +123,12 @@ public:
             clip->state.addListener (this);
             title.setText (clip->getTrack()->getName() + "  >  " + clip->getName(), dontSendNotification);
 
-            centreOnNotes();
+            if (auto it = views.find (clip->itemID); it != views.end())
+            {
+                ppb = it->second.ppb; scrollX = it->second.scrollX; scrollY = it->second.scrollY; rowH = it->second.rowH;
+            }
+            else
+                centreOnNotes();
         }
         else
         {
@@ -148,6 +156,80 @@ public:
     {
         if (clip != nullptr && (clip->getTrack() == nullptr || ! clip->state.getParent().isValid()))
             setClip (nullptr);
+    }
+
+    //==============================================================================
+    // The view: how far in it is zoomed and where it is scrolled to, remembered for each clip.
+    struct View { double ppb = 80.0, scrollX = 0.0; float scrollY = 0.0f, rowH = 13.0f; };
+
+    View currentView() const { return { ppb, scrollX, scrollY, rowH }; }
+    void rememberView() { if (clip != nullptr) views[clip->itemID] = currentView(); }
+    int numRememberedViews() const { return (int) views.size(); }
+
+    /** Fits the notes into the view: the selected ones, or (with nothing selected, or `everything`) all of them;
+        a clip with no notes shows its whole length. */
+    void zoomToFit (bool everything)
+    {
+        if (clip == nullptr) return;
+        double from = 0.0, to = jmax (1.0, clip->getLengthInBeats().inBeats());
+        int lo = 127, hi = 0;
+        const bool useSelection = ! everything && ! selected.isEmpty();
+        bool any = false;
+        for (auto n : clip->getSequence().getNotes())
+        {
+            if (useSelection && ! selected.contains (n)) continue;
+            const double a = n->getStartBeat().inBeats(), b = a + n->getLengthBeats().inBeats();
+            if (! any) { from = a; to = b; } else { from = jmin (from, a); to = jmax (to, b); }
+            lo = jmin (lo, n->getNoteNumber()); hi = jmax (hi, n->getNoteNumber());
+            any = true;
+        }
+        if (! useSelection) { from = jmin (from, 0.0); to = jmax (to, clip->getLengthInBeats().inBeats()); }   // the whole clip, and any notes past its end
+        const double span = jmax (0.25, to - from), room = jmax (60.0, (double) (getWidth() - keyW));
+        ppb = jlimit (10.0, 600.0, room / (span * 1.08));
+        scrollX = jmax (0.0, from - span * 0.04);
+        if (any)
+        {
+            // as tall as shows all their pitches, but no taller than is comfortable
+            updateRows();
+            const int rowsNeeded = jmax (1, std::abs (rowIndexOf (lo) - rowIndexOf (hi)) + 3);
+            rowH = jlimit (minRowH, 22.0f, (float) gridHeight() / (float) rowsNeeded);
+            scrollY = jmax (0.0f, (float) jmin (rowIndexOf (lo), rowIndexOf (hi)) * rowH - rowH);
+        }
+        repaint();
+    }
+
+    /** Taller or flatter rows, keeping the pitch at `y` where it is. */
+    void zoomRows (float factor, float y)
+    {
+        const float before = (y - (float) toolbarH + scrollY) / rowH;
+        rowH = jlimit (minRowH, maxRowH, rowH * factor);
+        scrollY = jmax (0.0f, before * rowH - (y - (float) toolbarH));
+        repaint();
+    }
+
+    /** The remembered views into the project's view state, and back (only clips that are still there are kept). */
+    void saveViews (ValueTree parent)
+    {
+        rememberView();
+        auto list = parent.getOrCreateChildWithName ("ROLLVIEWS", nullptr);
+        list.removeAllChildren (nullptr);
+        int written = 0;
+        for (auto& [id, v] : views)
+        {
+            if (te::findClipForID (evs.edit, id) == nullptr || ++written > 400) continue;
+            ValueTree e ("V");
+            e.setProperty ("clip", id.toString(), nullptr);
+            e.setProperty ("ppb", v.ppb, nullptr); e.setProperty ("x", v.scrollX, nullptr); e.setProperty ("y", v.scrollY, nullptr); e.setProperty ("row", v.rowH, nullptr);
+            list.appendChild (e, nullptr);
+        }
+    }
+
+    void loadViews (const ValueTree& parent)
+    {
+        views.clear();
+        for (auto e : parent.getChildWithName ("ROLLVIEWS"))
+            views[te::EditItemID::fromString (e["clip"].toString())] = { jlimit (10.0, 600.0, (double) e.getProperty ("ppb", 80.0)), jmax (0.0, (double) e.getProperty ("x", 0.0)),
+                                                                         jmax (0.0f, (float) e.getProperty ("y", 0.0)), jlimit (minRowH, maxRowH, (float) e.getProperty ("row", 13.0)) };
     }
 
     /** Scrolls so the clip's notes (or middle C) sit in the middle of the view. */
@@ -658,6 +740,11 @@ public:
     void mouseWheelMove (const MouseEvent& e, const MouseWheelDetails& w) override
     {
         dropClipIfGone();
+        if (e.mods.isAltDown())
+        {
+            zoomRows (std::exp (w.deltaY * 1.2f), (float) e.y);   // Alt + wheel: taller or flatter rows
+            return;
+        }
         if (e.mods.isCtrlDown())
         {
             auto b = xToBeat ((float) e.x);
@@ -1175,7 +1262,9 @@ private:
     }
 
     static constexpr int keyW = 64, velH = 64, toolbarH = 32;
-    static constexpr float rowH = 13.0f;
+    static constexpr float minRowH = 7.0f, maxRowH = 30.0f;
+    float rowH = 13.0f;
+    std::map<te::EditItemID, View> views;
 
     EditViewState& evs;
     te::MidiClip::Ptr clip;

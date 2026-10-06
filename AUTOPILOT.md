@@ -154,7 +154,7 @@ well EVERYWHERE." So, besides the list:
   than 20 entries  [ ] drag any device, clip, preset or sample anywhere it could sensibly go
   [ ] consistent modifier keys (fine, snap off, copy-drag) across arrangement, piano roll, automation and devices
   [x] collect-all-and-save, missing-file finder  [x] undo history list  [x] default track / device presets
-  [ ] zoom to selection / fit, and remembered zoom per view  [ ] crash-safe autosave restore prompt reviewed
+  [x] zoom to selection / fit, and remembered zoom per view  [ ] crash-safe autosave restore prompt reviewed
   [ ] every list sortable and keyboard-navigable  [ ] nothing blocks the UI for more than 100 ms (progress
   shown instead)  [ ] first-run experience: audio set-up check, demo project, short tour
 - Nothing that already works is taken away, and a rough edge found on the way is fixed then, or written here.
@@ -708,3 +708,10 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   Left on the list: drag anything anywhere, consistent modifier keys, remembered zoom per view, the autosave
   restore prompt, lists sortable and keyboard-navigable, nothing blocking for over 100 ms, first-run tour.
   Left in the Programme: per-note pitch and time editing of audio.
+- 2026-10-06: v0.99.46. Piano roll zoom. PianoRoll.h: rowH is a member now (7 to 30, it was a constant 13),
+  zoomRows (Alt + wheel), zoomToFit (selection or everything, across and in height), a View per clip kept in a
+  map by the clip's id (so looking at a clip does not mark the project as changed) and written into the
+  project's view state when it is saved ("ROLLVIEWS", only for clips that still exist). MainComponent: Z and
+  Shift+Z go to the piano roll when it is in front, has a clip and has the keyboard; commands view.rollFit and
+  view.rollFitSelection. The arrangement's zoom and the mixer's narrow strips were remembered already; the
+  session view has no zoom. 330 checks, quick tier.

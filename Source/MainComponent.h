@@ -302,8 +302,12 @@ public:
         c.add ("view.pianoRoll", "Show piano roll", "View", key ('3'), [this] { showTab (Tab::pianoRoll); });
         c.add ("view.session", "Arrangement / Session", "View", key (KeyPress::tabKey), [this] { toggleSession(); });
         c.add ("view.browser", "Show / hide browser", "View", key ('B'), [this] { toggleBrowser(); });
-        c.add ("view.zoomSelection", "Zoom to selection", "View", key ('Z'), [this] { if (arrangement) arrangement->zoomToFit (false); });
-        c.add ("view.zoomSong", "Zoom to whole song", "View", key ('Z', shiftM), [this] { if (arrangement) arrangement->zoomToFit (true); });
+        // the piano roll answers the same two keys when it is the one in front and has a clip
+        auto rollInFront = [this] { return pianoRoll != nullptr && currentTab == Tab::pianoRoll && pianoRoll->getClip() != nullptr && pianoRoll->hasKeyboardFocus (true); };
+        c.add ("view.zoomSelection", "Zoom to selection", "View", key ('Z'), [this, rollInFront] { if (rollInFront()) pianoRoll->zoomToFit (false); else if (arrangement) arrangement->zoomToFit (false); });
+        c.add ("view.zoomSong", "Zoom to whole song (in the piano roll: the whole clip)", "View", key ('Z', shiftM), [this, rollInFront] { if (rollInFront()) pianoRoll->zoomToFit (true); else if (arrangement) arrangement->zoomToFit (true); });
+        c.add ("view.rollFit", "Piano roll: fit the whole clip", "View", {}, [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->zoomToFit (true); } });
+        c.add ("view.rollFitSelection", "Piano roll: fit the selected notes", "View", {}, [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->zoomToFit (false); } });
         c.add ("view.zoomIn", "Zoom in", "View", key ('='), [this] { evs->zoom (1.4, 0); });
         c.add ("view.zoomOut", "Zoom out", "View", key ('-'), [this] { evs->zoom (1.0 / 1.4, 0); });
         c.add ("view.palette", "Command palette", "View", key ('P', ctrl), [this] { openPalette(); });
@@ -1490,6 +1494,7 @@ private:
         v.setProperty ("showSession", showSession, nullptr);
         v.setProperty ("tab", (int) currentTab, nullptr);
         v.setProperty ("bottomHeight", bottomHeight, nullptr);
+        if (pianoRoll != nullptr) pianoRoll->saveViews (v);   // each clip's zoom and place in the piano roll
         if (auto t = EngineHelpers::getSelectedTrack (selectionManager))
             v.setProperty ("selectedTrack", t->itemID.toString(), nullptr);
         StringArray collapsed;
@@ -1507,6 +1512,7 @@ private:
         showBrowser = (bool) v.getProperty ("showBrowser", showBrowser);
         showSession = (bool) v.getProperty ("showSession", false);
         bottomHeight = jlimit (120, 900, (int) v.getProperty ("bottomHeight", bottomHeight));
+        if (pianoRoll != nullptr) pianoRoll->loadViews (v);
         for (auto& id : StringArray::fromTokens (v["collapsed"].toString(), ",", {}))
             if (id.isNotEmpty()) evs->collapsed.insert (te::EditItemID::fromString (id));
         if (auto id = v["selectedTrack"].toString(); id.isNotEmpty())
