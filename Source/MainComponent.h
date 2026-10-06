@@ -857,6 +857,15 @@ public:
             PluginMenu::insertPlugin (track, track->pluginList, edit->getPluginCache().createNewPlugin (synths[t % (int) std::size (synths)], {}), nullptr);
             for (int k = 0; k < 2 + t % 3; ++k)
                 PluginMenu::insertPlugin (track, track->pluginList, edit->getPluginCache().createNewPlugin (fx[(t * 3 + k) % numFx], {}), nullptr);
+            if (t % 7 == 3)   // some tracks carry an Effect Rack: a dry chain beside one with two effects
+                if (auto rackPlugin = FxRack::create (*edit))
+                {
+                    PluginMenu::insertPlugin (track, track->pluginList, rackPlugin, nullptr);
+                    auto* rack = FxRack::rackOf (rackPlugin.get());
+                    const int wet = FxRack::addChain (*rack, "Wet");
+                    FxRack::addEffect (*rack, wet, edit->getPluginCache().createNewPlugin (fx[(t * 5 + 1) % numFx], {}));
+                    FxRack::addEffect (*rack, wet, edit->getPluginCache().createNewPlugin (fx[(t * 5 + 2) % numFx], {}));
+                }
             for (int bar = (t % 4) * 4; bar < 120; bar += 8 + (t % 3) * 4)
             {
                 const auto start = EngineHelpers::beatToTime (*edit, bar * 4.0), end = EngineHelpers::beatToTime (*edit, (bar + 4 + t % 5) * 4.0);

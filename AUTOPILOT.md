@@ -623,3 +623,9 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   with an Edit button, not full cards; no rack inside a rack; no instruments in chains; listen-alone is not
   saved; no macros of its own (the track's macros reach the devices inside). 321 checks, quick tier.
   Left in group 6: video track. Left in group 4: per-note pitch and time editing of audio.
+- 2026-10-06: slow tier for group 6 so far (v0.99.32 to v0.99.38), all clean: Debug build, Debug self-test
+  321 / 321, random input 4000 events on the demo project (seed 321) and twice on the 30-track project (seeds
+  322, 323), command fuzz 708 commands (seed 324), installer PulseStudio-0.99.38-Setup.exe. The 30-track test
+  project now carries Effect Racks (every seventh track: a dry chain beside one with two effects), so the
+  random-input runs click through the rack's card. Still open in the Programme: video track (group 6) and
+  per-note pitch and time editing of audio (group 4); then the quality-of-life list.
