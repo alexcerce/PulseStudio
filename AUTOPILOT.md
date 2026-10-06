@@ -643,3 +643,7 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   the video in the arrangement, its sound in the mixer, export of picture with music. 322 checks, quick tier.
   The Programme's group 6 is complete. Left: per-note pitch and time editing of audio (group 4), then the
   quality-of-life list.
+- 2026-10-06: slow tier for v0.99.39 (video), clean: Debug build, Debug self-test 322 / 322, random input 4000
+  events (seed 331), command fuzz 720 commands (seed 332), installer PulseStudio-0.99.39-Setup.exe. Groups 1,
+  2, 3, 5 and 6 of the Programme are complete. Open: group 4's per-note pitch and time editing of audio; the
+  quality-of-life list; the one-hour --soak; nothing has been judged by ear.
