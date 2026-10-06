@@ -332,6 +332,40 @@ namespace FactoryPresetsMore
                 { "Send (100% wet hall)", { { "space", 6 }, { "predelay", 20 }, { "lowcut", 150 }, { "mix", 1.0f } } } } },
 
             //----------------------------------------------------------------------------------
+            // Pulse Analog: wave 0 saw, 1 pulse, 2 triangle, 3 sine; mode 0 poly, 1 mono
+            { "pulseAnalog", {
+                { "Fat Brass", { { "wave1", 0 }, { "wave2", 0 }, { "fine2", 9 }, { "cutoff", 900 }, { "reso", 0.15f }, { "envamt", 0.55f }, { "fa", 40 }, { "fd", 500 }, { "fs", 0.5f }, { "a", 15 }, { "s", 0.9f }, { "r", 250 }, { "unison", 0.3f } } },
+                { "Round Mono Bass", { { "wave1", 0 }, { "oct1", -1 }, { "wave2", 1 }, { "oct2", -1 }, { "fine2", 5 }, { "sub", 0.5f }, { "cutoff", 350 }, { "reso", 0.3f }, { "envamt", 0.45f }, { "fd", 220 }, { "fs", 0.1f },
+                                       { "s", 0.9f }, { "r", 120 }, { "mode", 1 }, { "glide", 40 }, { "fdrive", 0.5f }, { "level", -6 } } },
+                { "Acid Squelch", { { "wave1", 0 }, { "mix", 0 }, { "cutoff", 300 }, { "reso", 0.85f }, { "envamt", 0.6f }, { "fd", 180 }, { "fs", 0 }, { "s", 1 }, { "r", 80 }, { "mode", 1 }, { "glide", 60 },
+                                    { "fdrive", 0.7f }, { "keytrack", 0.5f }, { "level", -10 } } },
+                { "PWM Strings", { { "wave1", 1 }, { "wave2", 1 }, { "fine2", 11 }, { "pw", 0.5f }, { "lfopw", 0.7f }, { "lforate", 0.7f }, { "cutoff", 3500 }, { "reso", 0.1f }, { "envamt", 0.1f }, { "a", 350 }, { "s", 1 },
+                                   { "r", 900 }, { "unison", 0.5f } } },
+                { "Sync Lead", { { "wave1", 0 }, { "wave2", 0 }, { "semi2", 7 }, { "sync", 1 }, { "mix", 0.9f }, { "cutoff", 4500 }, { "reso", 0.3f }, { "envamt", 0.3f }, { "lfopitch", 0.12f }, { "lforate", 5.5f },
+                                 { "mode", 1 }, { "glide", 50 }, { "s", 0.85f } } },
+                { "Soft Pad", { { "wave1", 2 }, { "wave2", 0 }, { "oct2", 1 }, { "mix", 0.3f }, { "cutoff", 1400 }, { "envamt", 0.25f }, { "fa", 900 }, { "fd", 1500 }, { "fs", 0.6f }, { "a", 600 }, { "s", 0.9f }, { "r", 1400 },
+                                { "unison", 0.4f }, { "drift", 0.5f } } },
+                { "Pluck", { { "wave1", 1 }, { "pw", 0.3f }, { "wave2", 0 }, { "cutoff", 600 }, { "reso", 0.35f }, { "envamt", 0.6f }, { "fd", 180 }, { "fs", 0 }, { "d", 350 }, { "s", 0 }, { "r", 300 } } },
+                { "Self-Singing Filter", { { "wave1", 3 }, { "mix", 0 }, { "noise", 0.05f }, { "cutoff", 800 }, { "reso", 1.0f }, { "keytrack", 1.0f }, { "envamt", 0.15f }, { "fd", 400 }, { "s", 0.8f }, { "level", -14 } } },
+                { "Fifth Stab", { { "wave1", 0 }, { "wave2", 0 }, { "semi2", 7 }, { "cutoff", 1800 }, { "reso", 0.2f }, { "envamt", 0.4f }, { "fd", 300 }, { "fs", 0.2f }, { "d", 400 }, { "s", 0.3f }, { "r", 350 }, { "unison", 0.25f } } },
+                { "Wobble Bass (LFO > cutoff)", { { "wave1", 0 }, { "oct1", -1 }, { "wave2", 1 }, { "oct2", -1 }, { "cutoff", 500 }, { "reso", 0.5f }, { "envamt", 0 }, { "lfocutoff", 0.7f }, { "lforate", 3.0f }, { "mode", 1 },
+                                                  { "sub", 0.4f }, { "s", 1 }, { "level", -8 } } } } },
+
+            //----------------------------------------------------------------------------------
+            // Pulse String: exciter 0 pluck, 1 pick, 2 hammer, 3 mallet
+            { "pulseString", {
+                { "Nylon Guitar", { { "exciter", 0 }, { "position", 0.22f }, { "brightness", 0.5f }, { "decay", 3.5f }, { "damping", 0.4f }, { "body", 0.5f }, { "detune", 0 } } },
+                { "Steel String (picked)", { { "exciter", 1 }, { "position", 0.12f }, { "brightness", 0.85f }, { "decay", 6 }, { "damping", 0.2f }, { "body", 0.4f }, { "detune", 0 } } },
+                { "Twelve String", { { "exciter", 1 }, { "position", 0.15f }, { "brightness", 0.8f }, { "decay", 5 }, { "damping", 0.25f }, { "detune", 9 }, { "body", 0.35f } } },
+                { "Harp", { { "exciter", 0 }, { "position", 0.4f }, { "brightness", 0.55f }, { "decay", 7 }, { "damping", 0.3f }, { "body", 0.2f }, { "release", 1500 } } },
+                { "Muted Bass", { { "exciter", 0 }, { "position", 0.3f }, { "brightness", 0.3f }, { "decay", 1.2f }, { "damping", 0.7f }, { "body", 0.3f }, { "detune", 0 }, { "release", 80 } } },
+                { "Piano-ish (hammer)", { { "exciter", 2 }, { "position", 0.12f }, { "brightness", 0.6f }, { "decay", 8 }, { "damping", 0.25f }, { "stiffness", 0.15f }, { "detune", 3 }, { "body", 0.3f } } },
+                { "Marimba (mallet)", { { "exciter", 3 }, { "position", 0.5f }, { "brightness", 0.5f }, { "decay", 1.2f }, { "damping", 0.8f }, { "detune", 0 }, { "body", 0.6f } } },
+                { "Glass Bars", { { "exciter", 3 }, { "position", 0.2f }, { "brightness", 0.9f }, { "decay", 5 }, { "damping", 0.15f }, { "stiffness", 0.8f }, { "detune", 6 }, { "body", 0.1f } } },
+                { "Koto", { { "exciter", 1 }, { "position", 0.06f }, { "brightness", 0.9f }, { "decay", 4 }, { "damping", 0.35f }, { "stiffness", 0.05f }, { "body", 0.45f }, { "detune", 0 } } },
+                { "Dulcimer", { { "exciter", 2 }, { "position", 0.1f }, { "brightness", 0.85f }, { "decay", 6 }, { "damping", 0.2f }, { "detune", 7 }, { "body", 0.3f }, { "release", 2500 } } } } },
+
+            //----------------------------------------------------------------------------------
             // Tonewheel Organ: bar1..bar9 = 16', 5 1/3', 8', 4', 2 2/3', 2', 1 3/5', 1 1/3', 1' (0 in .. 8 out); perc 0 off, 1 2nd, 2 3rd;
             // vibrato 0 off, 1-3 V1-V3, 4-6 C1-C3; rotary 0 stop, 1 slow, 2 fast
             { "pulseOrgan", {

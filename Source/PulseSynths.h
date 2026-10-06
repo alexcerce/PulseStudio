@@ -2070,6 +2070,7 @@ namespace pulse
 #include "LoopFx.h"
 #include "SpectralFx.h"
 #include "Keys.h"
+#include "Synths2.h"
 
 namespace pulse
 {
@@ -2107,6 +2108,8 @@ namespace pulse
         pm.createBuiltInType<Spectral>();
         pm.createBuiltInType<Organ>();
         pm.createBuiltInType<EPiano>();
+        pm.createBuiltInType<Analog>();
+        pm.createBuiltInType<StringModel>();
         pm.createBuiltInType<Arpeggiator>();
         pm.createBuiltInType<ChordFx>();
         pm.createBuiltInType<ScaleFx>();

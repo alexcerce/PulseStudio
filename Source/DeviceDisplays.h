@@ -16,6 +16,7 @@
 #include "LoopFxDisplay.h"
 #include "SpectralFxDisplay.h"
 #include "KeysDisplay.h"
+#include "Synths2Display.h"
 
 /** Visual panels shown at the left of Pulse device cards. */
 namespace DeviceDisplays

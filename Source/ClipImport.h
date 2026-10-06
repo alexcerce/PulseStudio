@@ -77,6 +77,8 @@ namespace ClipImport
             { "Drum Synth",   pulse::DrumSynth::xmlTypeName,       true },
             { "Wavetable",    pulse::WavetableSynth::xmlTypeName,  true },
             { "FM Synth",     pulse::FMSynth::xmlTypeName,         true },
+            { "Pulse Analog", pulse::Analog::xmlTypeName,          true },
+            { "Pulse String", pulse::StringModel::xmlTypeName,     true },
             { "Simpler",      pulse::Simpler::xmlTypeName,         true },
             { "Electric Piano", pulse::EPiano::xmlTypeName,        true },
             { "Tonewheel Organ", pulse::Organ::xmlTypeName,        true },

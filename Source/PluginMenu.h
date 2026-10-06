@@ -117,6 +117,8 @@ namespace PluginMenu
         addBuiltIn<pulse::DrumSynth> (instruments, edit, cb);
         addBuiltIn<pulse::WavetableSynth> (instruments, edit, cb);
         addBuiltIn<pulse::FMSynth> (instruments, edit, cb);
+        addBuiltIn<pulse::Analog> (instruments, edit, cb);
+        addBuiltIn<pulse::StringModel> (instruments, edit, cb);
         addBuiltIn<pulse::Simpler> (instruments, edit, cb);
         addBuiltIn<pulse::EPiano> (instruments, edit, cb);
         addBuiltIn<pulse::Organ> (instruments, edit, cb);

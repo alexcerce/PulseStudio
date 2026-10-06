@@ -164,7 +164,7 @@ well EVERYWHERE." So, besides the list:
    [x] tremolo / auto-pan  [x] frequency shifter  [x] bit reduction  [x] amp + cabinet  [x] exciter  [x] beat repeat
    [x] grain delay  [x] looper  [x] resonators
 2. Instruments: [x] Wavetable third oscillator + wavetable import from audio  [ ] sampler (slices, per-slice stretch,
-   zones)  [ ] analogue-style subtractive synth  [ ] physical-modelling instrument (string / mallet)
+   zones)  [x] analogue-style subtractive synth  [x] physical-modelling instrument (string / mallet)
    [x] electric piano  [x] tonewheel organ
 3. MIDI: [ ] note length  [ ] pitch  [ ] random  [ ] velocity  [ ] drawable arpeggiator / note-echo patterns
    [ ] chord track + chord progressions (piano roll and MIDI effects follow it)  [ ] step sequencer view for drum clips
@@ -455,3 +455,10 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   device fuzz found Pulse Spectral growing without end with Freeze + Feedback (the ring now keeps no frequency
   louder than a full-level tone). 290 checks, quick tier. Note: FactorySounds::renderNote trims the quiet end of
   what it returns, so tests must not read far into a decayed tail.
+- 2026-10-06: v0.99.17. Pulse Analog and Pulse String: Source/Synths2.h, Synths2Display.h. Analog: polyBLEP saw
+  and pulse, a zero-delay-feedback four-pole ladder with a tanh at its input (self-oscillation stays at -20 dBFS),
+  its panel has two rows of strips (AnalogPanel is its own Component, not DynamicsUI::Panel). String: an extended
+  Karplus-Strong loop whose length allows for the delay of its own damping and stiffness filters (tuning within
+  a cent); voices get their memory in initialise(), nothing is allocated while playing. Known limit: hard sync
+  is not band-limited (it can fold back on high notes). 10 presets each. 293 checks, quick tier.
+  Left in group 2: the sampler (slices, per-slice stretch, zones) - that one extends the existing Simpler.

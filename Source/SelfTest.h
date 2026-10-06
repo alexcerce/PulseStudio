@@ -208,6 +208,8 @@ namespace SelfTest
         shoot (pulse::Spectral::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Spectral::pDelay, 900); p.set (pulse::Spectral::pTilt, 0.7f); p.set (pulse::Spectral::pShift, 7); }, "shot_spectral.png");
         shoot (pulse::Organ::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Organ::pBar4, 6); p.set (pulse::Organ::pBar6, 3); p.set (pulse::Organ::pBar9, 5); p.set (pulse::Organ::pRotary, 2); }, "shot_organ.png");
         shoot (pulse::EPiano::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::EPiano::pBark, 0.7f); }, "shot_epiano.png");
+        shoot (pulse::Analog::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Analog::pWave2, 1); p.set (pulse::Analog::pReso, 0.6f); p.set (pulse::Analog::pCutoff, 1200); }, "shot_analog.png");
+        shoot (pulse::StringModel::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::StringModel::pPosition, 0.15f); p.set (pulse::StringModel::pBrightness, 0.8f); }, "shot_string.png");
         shoot (pulse::Gate::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Gate::pThreshold, -22); p.set (pulse::Gate::pRange, 40); p.set (pulse::Gate::pHysteresis, 6); }, "shot_gate.png");
         shoot (pulse::TransientShaper::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::TransientShaper::pAttack, 0.6f); p.set (pulse::TransientShaper::pSustain, -0.4f); }, "shot_transient.png");
         shoot (pulse::DeEsser::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::DeEsser::pThreshold, -36); p.set (pulse::DeEsser::pRange, 10); }, "shot_deesser.png");
@@ -5573,6 +5575,144 @@ namespace SelfTest
             const bool allThere = missW.isEmpty() && missF.isEmpty() && missS.isEmpty();
             rep.check (allThere, "Wavetable, FM, Simpler and Drum Synth windows have a control for every parameter",
                        allThere ? String ("nothing missing") : "missing: " + missW.joinIntoString (" ") + " | " + missF.joinIntoString (" ") + " | " + missS.joinIntoString (" "));
+        }
+
+        // --- v0.99.17: Pulse Analog and Pulse String ---------------------------------------------------------
+        {
+            rep.step ("analog and string");
+            auto ap4 = edit->getPluginCache().createNewPlugin (pulse::Analog::xmlTypeName, {});
+            auto sp4 = edit->getPluginCache().createNewPlugin (pulse::StringModel::xmlTypeName, {});
+            auto* analog = dynamic_cast<pulse::Analog*> (ap4.get());
+            auto* strng = dynamic_cast<pulse::StringModel*> (sp4.get());
+            using AN = pulse::Analog;
+            using ST = pulse::StringModel;
+            const double ksr = 48000.0;
+            auto partIn = [&] (const AudioBuffer<float>& b, double hz, double from, double len)
+            {
+                const int a = jmin (b.getNumSamples() - 2, (int) (from * ksr)), n = jmin (b.getNumSamples() - a, (int) (len * ksr));
+                double re = 0, im = 0;
+                for (int i = 0; i < n; ++i)
+                {
+                    const double ph = MathConstants<double>::twoPi * hz * (a + i) / ksr;
+                    re += b.getSample (0, a + i) * std::cos (ph); im += b.getSample (0, a + i) * std::sin (ph);
+                }
+                return Decibels::gainToDecibels ((float) (2.0 * std::sqrt (re * re + im * im) / jmax (1, n)), -140.0f);
+            };
+            // the pitch that is really there near `hz`: the loudest frequency within a semitone of it, in cents away from it
+            auto centsOff = [&] (const AudioBuffer<float>& b, double hz, double from, double len)
+            {
+                double best = -1.0e9, at = 0.0;
+                for (double c = -100.0; c <= 100.0; c += 1.0) if (const double v = partIn (b, hz * std::pow (2.0, c / 1200.0), from, len); v > best) { best = v; at = c; }
+                return (float) at;
+            };
+            auto plain = [&] { for (auto* prm : analog->getAutomatableParameters()) if (auto d = prm->getDefaultValue()) prm->setParameter (*d, sendNotificationSync);
+                               analog->set (AN::pMix, 0.0f); analog->set (AN::pDrift, 0.0f); analog->set (AN::pCutoff, 18000.0f); analog->set (AN::pReso, 0.0f); analog->set (AN::pEnvAmt, 0.0f);
+                               analog->set (AN::pKeyTrack, 0.0f); analog->set (AN::pFilterDrive, 0.0f); analog->set (AN::pS, 1.0f); };
+
+            // a saw: every harmonic there, each one a step quieter (the 4th 12 dB under the 1st); a square: only the odd ones
+            plain();
+            auto saw = FactorySounds::renderNote (*analog, 45, 0.6);
+            const float h1 = partIn (saw, 110.0, 0.2, 0.3), h4 = partIn (saw, 440.0, 0.2, 0.3);
+            analog->set (AN::pWave1, 1); analog->set (AN::pPw, 0.5f);
+            auto sq = FactorySounds::renderNote (*analog, 45, 0.6);
+            const float sq2 = partIn (sq, 220.0, 0.2, 0.3) - partIn (sq, 110.0, 0.2, 0.3), sq3 = partIn (sq, 330.0, 0.2, 0.3) - partIn (sq, 110.0, 0.2, 0.3);
+            // a high saw note stays clean: nothing loud folds back under the note itself (2 kHz saw: no 500 Hz)
+            analog->set (AN::pWave1, 0);
+            auto highSaw = FactorySounds::renderNote (*analog, 96, 0.4);
+            const float foldSaw = partIn (highSaw, 1000.0, 0.1, 0.25) - partIn (highSaw, 2093.0, 0.1, 0.25);
+            // the filter: closed to 300 Hz it takes the 4th harmonic down by about four poles' worth; resonance lifts what sits on the cutoff
+            analog->set (AN::pCutoff, 300.0f);
+            auto closed = FactorySounds::renderNote (*analog, 45, 0.6);
+            const float h4closed = partIn (closed, 440.0, 0.2, 0.3) - partIn (closed, 110.0, 0.2, 0.3) - (h4 - h1);
+            analog->set (AN::pCutoff, 440.0f); analog->set (AN::pReso, 0.8f);
+            auto peaky = FactorySounds::renderNote (*analog, 45, 0.6);
+            const float h4reso = partIn (peaky, 440.0, 0.2, 0.3) - partIn (peaky, 110.0, 0.2, 0.3) - (h4 - h1);
+            // full resonance, key tracking and no oscillator: the filter sings by itself, in tune enough to play, and does not run away
+            plain(); analog->set (AN::pNoise, 0.02f); analog->set (AN::pWave1, 3); analog->set (AN::pReso, 1.0f); analog->set (AN::pCutoff, 440.0f);
+            auto singing = FactorySounds::renderNote (*analog, 69, 0.8);
+            const float singPeak = Decibels::gainToDecibels (singing.getMagnitude (0, singing.getNumSamples()), -100.0f);
+            // osc 2 a fifth up; unison spreads the sides; mono glide slides
+            plain(); analog->set (AN::pMix, 1.0f); analog->set (AN::pSemi2, 7.0f); analog->set (AN::pFine2, 0.0f); analog->set (AN::pWave2, 3);
+            auto fifth = FactorySounds::renderNote (*analog, 57, 0.5);
+            const float fifthCents = centsOff (fifth, 220.0 * std::pow (2.0, 7.0 / 12.0), 0.15, 0.3);
+            plain(); analog->set (AN::pUnison, 1.0f);
+            auto wide = FactorySounds::renderNote (*analog, 57, 0.5);
+            float sides = 0;
+            for (int i = 4800; i < jmin (wide.getNumSamples(), 20000); ++i) sides = jmax (sides, std::abs (wide.getSample (0, i) - wide.getSample (1, i)));
+            const bool analogOk = std::abs ((h4 - h1) + 12.0f) < 1.0f && sq2 < -35.0f && std::abs (sq3 + 9.5f) < 1.0f && foldSaw < -45.0f && h4closed < -15.0f && h4reso > 6.0f
+                                  && singPeak < 3.0f && singPeak > -40.0f && std::abs (fifthCents) <= 3.0f && sides > 0.02f;
+            rep.check (analogOk, "Pulse Analog (saw and square harmonics, clean high notes, four-pole filter, resonance, singing filter in hand, tuning, unison)",
+                       "saw 4th harmonic " + String (h4 - h1, 1) + " dB; square 2nd " + String (sq2, 0) + ", 3rd " + String (sq3, 1) + "; fold-back under a 2 kHz saw " + String (foldSaw, 0) + " dB; 300 Hz cutoff takes the 4th down "
+                       + String (h4closed, 1) + " dB more; resonance lifts it " + String (h4reso, 1) + "; singing filter peaks at " + String (singPeak, 1) + " dBFS; a fifth is " + String (fifthCents, 0) + " cents out; unison sides differ by " + String (sides, 3));
+
+            // the string: in tune from low to high, rings for about as long as Decay says, loses its highs first, and is damped by the key coming up
+            strng->set (ST::pDetune, 0.0f); strng->set (ST::pBody, 0.0f); strng->set (ST::pStiffness, 0.0f); strng->set (ST::pDamping, 0.3f); strng->set (ST::pDecay, 2.0f); strng->set (ST::pBrightness, 0.8f);
+            String tuning;
+            float worstCents = 0;
+            for (int n : { 33, 45, 57, 69, 81, 93 })
+            {
+                auto b = FactorySounds::renderNote (*strng, n, 0.8);
+                const float c = centsOff (b, MidiMessage::getMidiNoteInHertz (n), 0.1, 0.4);
+                tuning << MidiMessage::getMidiNoteName (n, true, true, 3) << " " << String (roundToInt (c)) << "  ";
+                worstCents = jmax (worstCents, std::abs (c));
+            }
+            auto ringing = FactorySounds::renderNote (*strng, 57, 2.0);
+            const float f0early = partIn (ringing, 220.0, 0.1, 0.3), f0late = partIn (ringing, 220.0, 1.1, 0.3), f5early = partIn (ringing, 1100.0, 0.1, 0.3), f5late = partIn (ringing, 1100.0, 1.1, 0.3);
+            // plucked in the middle, the even harmonics are (nearly) not there
+            strng->set (ST::pPosition, 0.5f);
+            auto middle = FactorySounds::renderNote (*strng, 57, 0.6);
+            const float evenGone = partIn (middle, 440.0, 0.1, 0.3) - partIn (middle, 220.0, 0.1, 0.3);
+            strng->set (ST::pPosition, 0.2f); strng->set (ST::pRelease, 60.0f); strng->set (ST::pDecay, 8.0f);
+            auto cut = FactorySounds::renderNote (*strng, 57, 0.3);
+            const float heldLevel = partIn (cut, 220.0, 0.1, 0.15), afterUp = cut.getNumSamples() > (int) (0.75 * ksr) ? partIn (cut, 220.0, 0.6, 0.1) : -140.0f;
+            strng->set (ST::pStiffness, 1.0f); strng->set (ST::pDecay, 3.0f); strng->set (ST::pRelease, 250.0f);
+            auto stiff = FactorySounds::renderNote (*strng, 45, 0.6);
+            const float stiffPeak = Decibels::gainToDecibels (stiff.getMagnitude (0, stiff.getNumSamples()), -100.0f);
+            strng->set (ST::pStiffness, 0.0f);
+            const bool stringOk = worstCents <= 6.0f && std::abs ((f0early - f0late) - 30.0f) < 9.0f && (f5early - f5late) > (f0early - f0late) + 2.5f && evenGone < -20.0f
+                                  && afterUp < heldLevel - 40.0f && stiffPeak < 6.0f && strng->harmonicStart (2) > 0.0f && strng->harmonicDecay (5, 220.0f) < strng->harmonicDecay (1, 220.0f);
+            rep.check (stringOk, "Pulse String (in tune from A1 to A6, rings as long as Decay says, highs die first, pluck position, damped on key up)",
+                       "cents out: " + tuning.trim() + "; the note falls " + String (f0early - f0late, 1) + " dB in a second at 2 s decay, its 5th harmonic " + String (f5early - f5late, 1)
+                       + "; plucked in the middle the octave is " + String (evenGone, 0) + " dB down; after key up " + String (afterUp - heldLevel, 0) + " dB");
+
+            // their windows
+            {
+                PulseLookAndFeel laf;
+                LookAndFeel::setDefaultLookAndFeel (&laf);
+                EditViewState kevs (*edit, sm);
+                plain();
+                Synths2UI::AnalogView av (*analog);
+                Synths2UI::StringView sv (*strng);
+                Image img (Image::ARGB, 900, 420, true);
+                for (Component* c : { (Component*) &av, (Component*) &sv }) { c->setSize (900, 420); Graphics g (img); c->paint (g); }
+                analog->set (AN::pCutoff, 2000.0f);
+                const float pos0 = strng->get (ST::pPosition), dec0 = strng->get (ST::pDecay);
+                av.dragHandle (1, -80.0f, -40.0f);
+                sv.dragHandle (0, 60.0f, 0.0f);
+                sv.dragHandle (1, 0.0f, -40.0f);
+                const bool handlesOk = analog->get (AN::pCutoff) < 1500.0f && analog->get (AN::pReso) > 0.1f && strng->get (ST::pPosition) > pos0 + 0.03f && strng->get (ST::pDecay) > dec0 * 1.2f;
+                StringArray missing;
+                for (auto* pp : std::initializer_list<pulse::PulsePlugin*> { analog, strng })
+                {
+                    DeviceEditors::Editor ed (kevs, *pp);
+                    ed.setSize (1200, 800);
+                    std::set<te::AutomatableParameter*> seen;
+                    std::function<void (Component&)> walk = [&] (Component& c)
+                    {
+                        if (auto* k = dynamic_cast<ParamKnob*> (&c)) seen.insert (&k->getParameter());
+                        if (auto* k = dynamic_cast<ParamChoice*> (&c)) seen.insert (&k->getParameter());
+                        if (auto* k = dynamic_cast<ParamCombo*> (&c)) seen.insert (&k->getParameter());
+                        if (auto* k = dynamic_cast<ParamToggle*> (&c)) seen.insert (&k->getParameter());
+                        for (auto* chd : c.getChildren()) walk (*chd);
+                    };
+                    walk (ed);
+                    for (int i = 0; i < pp->numParams(); ++i) if (! seen.count (&*pp->param (i))) missing.add (pp->getName() + ": " + pp->param (i)->paramID);
+                    if (! DeviceEditors::hasFullEditor (*pp)) missing.add (pp->getName() + ": no full window");
+                }
+                rep.check (handlesOk && missing.isEmpty(), "Pulse Analog and Pulse String windows: the filter and the string are dragged on the picture, and every parameter has a control",
+                           missing.isEmpty() ? "cutoff 2000 -> " + String (roundToInt (analog->get (AN::pCutoff))) + " Hz, pluck position " + String (pos0, 2) + " -> " + String (strng->get (ST::pPosition), 2) : missing.joinIntoString ("; "));
+                LookAndFeel::setDefaultLookAndFeel (nullptr);
+            }
         }
 
         // --- v0.99.16: Tonewheel Organ and Electric Piano ---------------------------------------------------

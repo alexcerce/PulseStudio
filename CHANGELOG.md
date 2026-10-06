@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.17 - 2026-10-06
+
+- New instruments: Pulse Analog (two oscillators, a four-pole ladder filter) and Pulse String (a plucked, picked, struck or malleted string)
+
 ## 0.99.16 - 2026-10-06
 
 - New instruments: Tonewheel Organ (drawbars, percussion, vibrato and chorus, rotary speaker) and Electric Piano (tine and reed)
