@@ -1496,6 +1496,14 @@ namespace DeviceEditors
             for (auto [pi, l] : L { { S::pStart, "Start" }, { S::pEnd, "End" }, { S::pLoopStart, "Loop start" }, { S::pXfade, "Crossfade" } }) knobsRegion.add (knob (*cSample, pi, l, smp));
             loop = new ParamToggle (*sm.param (S::pLoop), "Loop", smp); owned.add (loop); cSample->addAndMakeVisible (loop);
             for (auto [pi, l] : L { { S::pRoot, "Root note" }, { S::pTranspose, "Transpose" }, { S::pFine, "Detune" } }) knobsPitch.add (knob (*cSample, pi, l, smp));
+            // slices: a menu that cuts the sample, how long each slice is made to last, and whether it plays to its end
+            sliceBtn.setButtonText ("Slice...");
+            sliceBtn.setTooltip ("Cut the sample into pieces: in Slice mode each key from the Root note upwards plays one of them");
+            sliceBtn.onClick = [this] { showSliceMenu(); };
+            cSample->addAndMakeVisible (sliceBtn);
+            stretch = new ParamCombo (*sm.param (S::pStretch), false); owned.add (stretch); cSample->addAndMakeVisible (stretch);
+            sliceGate = new ParamToggle (*sm.param (S::pSliceGate), "While held", smp); owned.add (sliceGate); cSample->addAndMakeVisible (sliceGate);
+            sliceGate->setTooltip ("On: a slice stops when the key is let go. Off: it plays to its end");
 
             cFilter = card ("FILTER", filt);
             filterGraph = std::make_unique<Graphs::FilterGraph> (sm.param (S::pCutoff), sm.param (S::pReso), sm.param (S::pFilterType),
@@ -1529,7 +1537,13 @@ namespace DeviceEditors
             cSample->setBounds (a.removeFromTop (a.getHeight() * 44 / 100)); a.removeFromTop (gap);
             {
                 auto head = cSample->header();
-                mode->setBounds (head.removeFromRight (jmin (340, head.getWidth())));
+                mode->setBounds (head.removeFromRight (jmin (410, head.getWidth())));
+                head.removeFromRight (10);
+                sliceGate->setBounds (head.removeFromRight (jmin (92, head.getWidth())));
+                head.removeFromRight (4);
+                stretch->setBounds (head.removeFromRight (jmin (170, head.getWidth())));
+                head.removeFromRight (4);
+                sliceBtn.setBounds (head.removeFromRight (jmin (72, head.getWidth())));
                 auto c = cSample->content();
                 auto row = c.removeFromBottom (jmin (100, c.getHeight() * 40 / 100));
                 c.removeFromBottom (6);
@@ -1589,6 +1603,27 @@ namespace DeviceEditors
         std::unique_ptr<Graphs::FilterGraph> filterGraph;
         std::unique_ptr<Graphs::EnvelopeGraph> ampGraph, fenvGraph;
         ParamChoice* mode = nullptr;
+        TextButton sliceBtn;
+        ParamCombo* stretch = nullptr;
+        ParamToggle* sliceGate = nullptr;
+
+        void showSliceMenu()
+        {
+            PopupMenu m;
+            auto doIt = [this] (const String& name, std::function<void()> f)
+            {
+                return [this, name, f] { simpler.edit.getUndoManager().beginNewTransaction (name); f(); simpler.set (S::pMode, (float) S::sliceMode); };
+            };
+            m.addSectionHeader ("At the hits");
+            m.addItem ("Only the big hits", doIt ("Slice at hits", [this] { simpler.sliceAtHits (0.15f); }));
+            m.addItem ("Every clear hit", doIt ("Slice at hits", [this] { simpler.sliceAtHits (0.5f); }));
+            m.addItem ("The small ones too", doIt ("Slice at hits", [this] { simpler.sliceAtHits (0.9f); }));
+            m.addSectionHeader ("Into equal pieces");
+            for (int n : { 4, 8, 16, 32 }) m.addItem (String (n) + " pieces", doIt ("Slice evenly", [this, n] { simpler.sliceEvenly (n); }));
+            m.addSeparator();
+            m.addItem ("Remove all slices", ! simpler.getSlices().empty(), false, [this] { simpler.edit.getUndoManager().beginNewTransaction ("Remove slices"); simpler.setSlices ({}); });
+            m.showMenuAsync (PopupMenu::Options().withTargetComponent (&sliceBtn));
+        }
         ParamCombo* filterType = nullptr;
         ParamToggle* loop = nullptr;
         Array<ParamKnob*> knobsRegion, knobsPitch, knobsFilter, knobsAmp, knobsFEnv, knobsGrain, knobsOut;

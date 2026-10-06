@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.18 - 2026-10-06
+
+- Simpler: Slice mode (cut a sample at its hits or into equal pieces, one key per slice), with slices made longer or shorter to fit a note length without changing their pitch
+
 ## 0.99.17 - 2026-10-06
 
 - New instruments: Pulse Analog (two oscillators, a four-pole ladder filter) and Pulse String (a plucked, picked, struck or malleted string)

@@ -5577,6 +5577,97 @@ namespace SelfTest
                        allThere ? String ("nothing missing") : "missing: " + missW.joinIntoString (" ") + " | " + missF.joinIntoString (" ") + " | " + missS.joinIntoString (" "));
         }
 
+        // --- v0.99.18: slices in the Simpler ------------------------------------------------------------------
+        {
+            rep.step ("slices");
+            using SI = pulse::Simpler;
+            auto sp6 = edit->getPluginCache().createNewPlugin (SI::xmlTypeName, {});
+            auto* simp = dynamic_cast<SI*> (sp6.get());
+            const double ksr = 48000.0;
+            // a one-second recording of four hits a quarter of a second apart, each a different pitch (200, 400, 800, 1600 Hz)
+            auto wavFile = dir.getChildFile ("slices_test.wav");
+            wavFile.deleteFile();
+            {
+                AudioBuffer<float> rec (2, 48000);
+                rec.clear();
+                for (int h = 0; h < 4; ++h)
+                    for (int i = 0; i < 4800; ++i)
+                    {
+                        const float v = 0.6f * std::exp (-i / 1500.0f) * (float) std::sin (MathConstants<double>::twoPi * 200.0 * std::pow (2.0, h) * i / ksr);
+                        rec.setSample (0, h * 12000 + i, v); rec.setSample (1, h * 12000 + i, v);
+                    }
+                WavAudioFormat wav;
+                if (auto os = wavFile.createOutputStream())
+                    if (std::unique_ptr<AudioFormatWriter> w { wav.createWriterFor (os.release(), ksr, 2, 24, {}, 0) }) w->writeFromAudioSampleBuffer (rec, 0, 48000);
+            }
+            simp->setSampleFile (wavFile);
+            auto partIn = [&] (const AudioBuffer<float>& b, double hz, double from, double len)
+            {
+                const int a = jmin (jmax (0, b.getNumSamples() - 2), (int) (from * ksr)), n = jmin (b.getNumSamples() - a, (int) (len * ksr));
+                double re = 0, im = 0;
+                for (int i = 0; i < n; ++i)
+                {
+                    const double ph = MathConstants<double>::twoPi * hz * (a + i) / ksr;
+                    re += b.getSample (0, a + i) * std::cos (ph); im += b.getSample (0, a + i) * std::sin (ph);
+                }
+                return Decibels::gainToDecibels ((float) (2.0 * std::sqrt (re * re + im * im) / jmax (1, n)), -140.0f);
+            };
+            // the hits are found where they are
+            simp->sliceAtHits (0.5f);
+            auto found = simp->getSlices();
+            String where;
+            float worstPlace = found.size() == 4 ? 0.0f : 1.0f;
+            for (size_t i = 0; i < found.size(); ++i) { where << String (found[i], 3) << " "; if (found.size() == 4) worstPlace = jmax (worstPlace, std::abs (found[i] - (float) i * 0.25f)); }
+            // each key from the Root note plays its own slice, at its own pitch; a key past the last slice plays nothing
+            simp->set (SI::pMode, (float) SI::sliceMode); simp->set (SI::pRoot, 60.0f); simp->set (SI::pVelSens, 0.0f);
+            auto second = FactorySounds::renderNote (*simp, 61, 0.5);
+            const float is400 = partIn (second, 400.0, 0.0, 0.08), not200 = partIn (second, 200.0, 0.0, 0.08), not800 = partIn (second, 800.0, 0.0, 0.08);
+            auto fourth = FactorySounds::renderNote (*simp, 63, 0.5);
+            const float is1600 = partIn (fourth, 1600.0, 0.0, 0.08);
+            auto past = FactorySounds::renderNote (*simp, 64, 0.3);
+            const float nothing = Decibels::gainToDecibels (past.getMagnitude (0, past.getNumSamples()), -140.0f);
+            // a slice plays to its end even when the key is let go at once, unless it is set to play only while held
+            auto tapped = FactorySounds::renderNote (*simp, 60, 0.02);
+            const float tappedLate = Decibels::gainToDecibels (tapped.getNumSamples() > 3600 ? tapped.getRMSLevel (0, 2400, 1200) : 0.0f, -140.0f);
+            simp->set (SI::pSliceGate, 1.0f); simp->set (SI::pR, 5.0f);
+            auto gated = FactorySounds::renderNote (*simp, 60, 0.02);
+            const float gatedLate = Decibels::gainToDecibels (gated.getNumSamples() > 3600 ? gated.getRMSLevel (0, 2400, 1200) : 0.0f, -140.0f);
+            simp->set (SI::pSliceGate, 0.0f);
+            // Slice Length: at half a note (one second at 120) the quarter-second slice lasts four times as long, at the same pitch
+            auto normal = FactorySounds::renderNote (*simp, 61, 1.5);
+            simp->set (SI::pStretch, 5.0f);
+            auto longer = FactorySounds::renderNote (*simp, 61, 1.5);
+            auto soundsFor = [&] (const AudioBuffer<float>& b)   // how long it stays above a hundredth of its loudest
+            {
+                const float top = b.getMagnitude (0, b.getNumSamples());
+                int last = 0;
+                for (int i = 0; i < b.getNumSamples(); ++i) if (std::abs (b.getSample (0, i)) > top * 0.01f) last = i;
+                return (float) (last / ksr);
+            };
+            const float normalFor = soundsFor (normal), longerFor = soundsFor (longer);
+            const float pitchKept = partIn (longer, 400.0, 0.02, 0.12), notLower = partIn (longer, 100.0, 0.02, 0.12);
+            const float edgeKept = Decibels::gainToDecibels (longer.getMagnitude (0, jmin (longer.getNumSamples(), 480)), -100.0f) - Decibels::gainToDecibels (normal.getMagnitude (0, jmin (normal.getNumSamples(), 480)), -100.0f);
+            simp->set (SI::pStretch, 0.0f);
+            // cut by hand, cut evenly, and all of it survives being saved in the project
+            simp->sliceEvenly (8);
+            const bool even = simp->getSlices().size() == 8 && std::abs (simp->getSlices()[3] - 0.375f) < 1.0e-4f;
+            DeviceDisplays::SimplerDisplay disp (*simp);
+            disp.setSize (800, 300);
+            { Image img (Image::ARGB, 800, 300, true); Graphics g (img); disp.paint (g); }
+            disp.toggleSliceAt (0.3f);
+            const bool added = simp->getSlices().size() == 9;
+            disp.toggleSliceAt (0.3f);
+            const bool takenAway = simp->getSlices().size() == 8;
+            const bool kept = simp->state[SI::slicesID].toString().isNotEmpty();
+            const bool slicesOk = found.size() == 4 && worstPlace < 0.01f && is400 > not200 + 20.0f && is400 > not800 + 20.0f && is1600 > -30.0f && nothing < -100.0f
+                                  && tappedLate > -40.0f && gatedLate < tappedLate - 30.0f && longerFor > normalFor * 2.5f && pitchKept > notLower + 20.0f && std::abs (edgeKept) < 3.0f
+                                  && even && added && takenAway && kept;
+            rep.check (slicesOk, "Simpler slices (hits found, a key per slice, to the end or while held, made longer without changing pitch, cut by hand)",
+                       "hits at " + where.trim() + "; key 2 plays 400 Hz at " + String (is400, 1) + " dB (200 Hz " + String (not200, 0) + ", 800 Hz " + String (not800, 0) + "); past the last slice " + String (nothing, 0)
+                       + " dB; let go at once: " + String (tappedLate, 0) + " dB still sounding, " + String (gatedLate, 0) + " if only while held; a slice sounds for " + String (normalFor, 2) + " s, stretched "
+                       + String (longerFor, 2) + " s, its first edge " + String (edgeKept, 1) + " dB different");
+        }
+
         // --- v0.99.17: Pulse Analog and Pulse String ---------------------------------------------------------
         {
             rep.step ("analog and string");

@@ -769,10 +769,49 @@ namespace DeviceDisplays
             if (pp().getInt (S::pLoop) > 0)
                 marker (s + (e - s) * pp().get (S::pLoopStart), Theme::orange, "L");
 
+            // the slices: where the sample is cut, numbered by the key that plays each (the Root note is 1)
+            {
+                const auto slices = simpler.getSlices();
+                const bool sliceMode = pp().getInt (S::pMode) == S::sliceMode;
+                g.setFont (FontOptions (9.5f, Font::bold));
+                for (size_t i = 0; i < slices.size(); ++i)
+                {
+                    const float x = xFor (slices[i]);
+                    g.setColour (Theme::yellow.withAlpha (sliceMode ? 0.9f : 0.35f));
+                    g.fillRect (x - 0.5f, wave.getY(), 1.5f, wave.getHeight());
+                    if (sliceMode && (slices.size() <= 40 || i % 4 == 0)) g.drawText (String ((int) i + 1), Rectangle<float> (x + 3.0f, wave.getBottom() - 13.0f, 24.0f, 11.0f), Justification::centredLeft);
+                }
+                if (sliceMode && slices.empty())
+                {
+                    g.setColour (Theme::muted);
+                    g.setFont (FontOptions (12.0f));
+                    g.drawText ("No slices yet: use the Slice menu above, or double-click the wave to cut it there", wave.reduced (8.0f).removeFromTop (16.0f), Justification::centredRight);
+                }
+            }
+
             g.setColour (Colours::white);
             for (auto& ph : simpler.playheads)
                 if (auto v = ph.load(); v >= 0.0f)
                     g.drawVerticalLine ((int) xFor (v), wave.getY(), wave.getBottom());
+        }
+
+        /** Double-click: cut the sample there, or take away the cut that is there. */
+        void mouseDoubleClick (const MouseEvent& e) override
+        {
+            if (simpler.getSample() == nullptr || ! wave.contains (e.position)) return;
+            toggleSliceAt ((e.position.x - wave.getX()) / jmax (1.0f, wave.getWidth()));
+        }
+
+        void toggleSliceAt (float where)
+        {
+            auto slices = simpler.getSlices();
+            const float near = 6.0f / jmax (1.0f, wave.getWidth());
+            bool removed = false;
+            for (size_t i = 0; i < slices.size(); ++i)
+                if (std::abs (slices[i] - where) < near) { slices.erase (slices.begin() + (int) i); removed = true; break; }
+            if (! removed) slices.push_back (jlimit (0.0f, 1.0f, where));
+            simpler.edit.getUndoManager().beginNewTransaction (removed ? "Remove slice" : "Add slice");
+            simpler.setSlices (slices);
         }
 
         void mouseDown (const MouseEvent& e) override

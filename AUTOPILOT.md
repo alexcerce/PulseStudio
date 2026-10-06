@@ -163,7 +163,7 @@ well EVERYWHERE." So, besides the list:
    [x] shimmer reverb  [x] spectral (freeze / blur / shift / spectral delay)  [x] chorus / flanger / phaser
    [x] tremolo / auto-pan  [x] frequency shifter  [x] bit reduction  [x] amp + cabinet  [x] exciter  [x] beat repeat
    [x] grain delay  [x] looper  [x] resonators
-2. Instruments: [x] Wavetable third oscillator + wavetable import from audio  [ ] sampler (slices, per-slice stretch,
+2. Instruments: [x] Wavetable third oscillator + wavetable import from audio  [x] sampler (slices, per-slice stretch,
    zones)  [x] analogue-style subtractive synth  [x] physical-modelling instrument (string / mallet)
    [x] electric piano  [x] tonewheel organ
 3. MIDI: [ ] note length  [ ] pitch  [ ] random  [ ] velocity  [ ] drawable arpeggiator / note-echo patterns
@@ -466,3 +466,8 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   Debug self-test 293 pass; monkey seeds 1701 / 1702 on the 30-track project, which now also holds the four new
   instruments; command fuzz 1701: all clean, no crash report. Nothing owed. Group 2 has one item left: the
   sampler (slices, per-slice stretch; key and velocity zones already exist in Simpler since v0.18).
+- 2026-10-06: v0.99.18. Simpler slices: mode 4 "Slice", slices as the state property "slices", sliceAtHits /
+  sliceEvenly / hitsIn, parameters pStretch and pSliceGate appended. Stretch is two overlapping 45 ms pieces whose
+  start follows a slow reading point (the first piece begins at full level so the hit keeps its edge). 294 checks,
+  quick tier. Programme group 2 (instruments) is complete; its slow tier is owed only for this last commit.
+  Next: group 3 (MIDI: note length, pitch, random, velocity effects; arp / echo patterns; chord track; step sequencer).

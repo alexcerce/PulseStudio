@@ -1580,11 +1580,15 @@ namespace pulse
     public:
         enum { pStart, pEnd, pLoop, pLoopStart, pXfade, pRoot, pTranspose, pFine, pMode,
                pA, pD, pS, pR, pFilterType, pCutoff, pReso, pVelSens, pGain, pPan,
-               pGrainSize, pDensity, pSpray, pGrainPos, pFEnv, pFA, pFD, pFS, pFR };
+               pGrainSize, pDensity, pSpray, pGrainPos, pFEnv, pFA, pFD, pFS, pFR,
+               pStretch, pSliceGate };   // v0.99.18: slices
         static inline const char* xmlTypeName = "pulseSimpler";
         static const char* getPluginName() { return "Simpler"; }
         static inline const Identifier sampleFileID { "sampleFile" };
-        static inline const StringArray modeNames { "Classic", "One-shot", "Mono", "Granular" };
+        static inline const StringArray modeNames { "Classic", "One-shot", "Mono", "Granular", "Slice" };
+        static constexpr int sliceMode = 4;
+        static inline const StringArray stretchNames { "Slice length: as it is", "Slice length: 1/32", "Slice length: 1/16", "Slice length: 1/8", "Slice length: 1/4", "Slice length: 1/2", "Slice length: 1 bar" };
+        static constexpr double stretchBeats[] = { 0.0, 0.125, 0.25, 0.5, 1.0, 2.0, 4.0 };
         static inline const StringArray filterNames { "Off", "Low pass", "Band pass", "High pass" };
 
         explicit Simpler (te::PluginCreationInfo info) : PulseSynth (info)
@@ -1617,6 +1621,8 @@ namespace pulse
             add ("fd", "Filter Decay", skewed (1.0f, 10000.0f, 400.0f), 400.0f, fmt::ms);
             add ("fs", "Filter Sustain", { 0.0f, 1.0f }, 0.3f, fmt::pct);
             add ("fr", "Filter Release", skewed (1.0f, 10000.0f, 400.0f), 300.0f, fmt::ms);
+            add ("stretch", "Slice Length", steps (stretchNames.size()), 0.0f, fmt::choice (stretchNames));
+            add ("slicegate", "Slice Plays", steps (2), 0.0f, fmt::choice ({ "To its end", "While held" }));
 
             for (int i = 0; i < 16; ++i)
                 synth.addVoice (new Voice (*this));
@@ -1628,6 +1634,7 @@ namespace pulse
             state.addListener (&stateWatcher);
             reloadFromState();
             reloadZones();
+            reloadSlices();
         }
 
         ~Simpler() override { state.removeListener (&stateWatcher); }
@@ -1641,7 +1648,76 @@ namespace pulse
             return { { "Region", { pStart, pEnd, pLoop, pLoopStart, pXfade } }, { "Pitch", { pRoot, pTranspose, pFine, pMode } },
                      { "Amp env", { pA, pD, pS, pR } }, { "Filter", { pFilterType, pCutoff, pReso, pFEnv } },
                      { "Filter env", { pFA, pFD, pFS, pFR } },
-                     { "Output", { pVelSens, pGain, pPan } }, { "Granular", { pGrainSize, pDensity, pSpray, pGrainPos } } };
+                     { "Output", { pVelSens, pGain, pPan } }, { "Granular", { pGrainSize, pDensity, pSpray, pGrainPos } },
+                     { "Slices", { pStretch, pSliceGate } } };
+        }
+
+        //==============================================================================
+        // Slices (the "Slice" mode): the sample is cut at these places, and each key from the Root note upwards plays one piece.
+        // Stored in the project as positions from 0 to 1 along the sample.
+        static inline const Identifier slicesID { "slices" };
+
+        std::vector<float> getSlices() const
+        {
+            std::vector<float> v;
+            for (auto& t : StringArray::fromTokens (state[slicesID].toString(), ",", {}))
+                if (t.isNotEmpty()) v.push_back (jlimit (0.0f, 1.0f, t.getFloatValue()));
+            std::sort (v.begin(), v.end());
+            return v;
+        }
+
+        void setSlices (std::vector<float> v)
+        {
+            std::sort (v.begin(), v.end());
+            StringArray s;
+            float last = -1.0f;
+            for (auto x : v) if (x - last > 0.0005f) { s.add (String (jlimit (0.0f, 1.0f, x), 5)); last = x; }   // (no two in the same place)
+            state.setProperty (slicesID, s.joinIntoString (","), getUndoManager());
+        }
+
+        /** Cuts the sample into `count` pieces of the same length. */
+        void sliceEvenly (int count)
+        {
+            std::vector<float> v;
+            for (int i = 0; i < count; ++i) v.push_back ((float) i / (float) jmax (1, count));
+            setSlices (v);
+        }
+
+        /** Cuts the sample at its hits: where the level jumps up. sensitivity 0 = only the big ones, 1 = the small ones too. */
+        void sliceAtHits (float sensitivity)
+        {
+            auto d = getSample();
+            if (d == nullptr || d->buffer.getNumSamples() < 64) return;
+            setSlices (hitsIn (d->buffer, d->sampleRate, sensitivity));
+        }
+
+        /** Where the hits in a recording are (0..1 along it; the start is always one). */
+        static std::vector<float> hitsIn (const AudioBuffer<float>& b, double sr, float sensitivity)
+        {
+            const int len = b.getNumSamples(), hop = jmax (16, (int) (sr * 0.003));
+            std::vector<float> at { 0.0f };
+            float slow = 0.0f, fast = 0.0f;
+            int lastHit = 0;
+            float loudest = 1.0e-6f;
+            for (int ch = 0; ch < b.getNumChannels(); ++ch) loudest = jmax (loudest, b.getMagnitude (ch, 0, len));
+            // a hit: the level a few milliseconds from now is well above what it has been lately, and well above silence
+            const float jump = 4.0f - 2.6f * jlimit (0.0f, 1.0f, sensitivity), floorLevel = loudest * (0.12f - 0.1f * jlimit (0.0f, 1.0f, sensitivity));
+            for (int i = 0; i + hop < len; i += hop)
+            {
+                float pk = 0.0f;
+                for (int ch = 0; ch < b.getNumChannels(); ++ch) pk = jmax (pk, b.getMagnitude (ch, i, hop));
+                fast = pk;
+                if (fast > slow * jump && fast > floorLevel && i - lastHit > (int) (sr * 0.05) && i > hop)
+                {
+                    // back up to where the hit really begins
+                    int from = i;
+                    while (from > lastHit + hop && std::abs (b.getSample (0, from)) > pk * 0.1f && i - from < hop * 2) --from;
+                    at.push_back ((float) from / (float) len);
+                    lastHit = i;
+                }
+                slow = jmax (pk, slow * 0.9f + pk * 0.1f) * 0.92f;
+            }
+            return at;
         }
 
         /** Loads a sample (undoable; stored in the project as the file path). */
@@ -1772,6 +1848,8 @@ namespace pulse
             {
                 if (v == owner->state && id == sampleFileID)
                     owner->reloadFromState();
+                else if (v == owner->state && id == slicesID)
+                    owner->reloadSlices();
                 else if (v.hasType (zoneType) && v.getParent() == owner->state)
                     owner->reloadZones();
             }
@@ -1799,6 +1877,13 @@ namespace pulse
             ++sampleVersion;
         }
 
+        void reloadSlices()
+        {
+            auto v = std::make_shared<std::vector<float>> (getSlices());
+            const SpinLock::ScopedLockType sl (sampleLock);
+            slices = v;
+        }
+
         void reloadFromState()
         {
             const auto path = state[sampleFileID].toString();
@@ -1819,7 +1904,9 @@ namespace pulse
             {
                 audioSample = sample;
                 audioZones = zones;
+                audioSlices = slices;
             }
+            bpm.store (edit.tempoSequence.getInternalSequence().getBeatsPerSecondAt (te::TimePosition()).v * 60.0);
             for (auto& p : playheads) p.store (-1.0f);
         }
 
@@ -1855,6 +1942,32 @@ namespace pulse
                 pitchWheelMoved (pitchWheel);
                 const int len = data->buffer.getNumSamples();
                 pos = jlimit (0.0, (double) len - 2, (double) jmin (o.get (pStart), o.get (pEnd)) * len);
+                slicing = o.getInt (pMode) == sliceMode;
+                if (slicing)
+                {
+                    // each key from the Root note upwards is one slice; keys with no slice play nothing
+                    const auto& sl = o.audioSlices;
+                    const int count = sl != nullptr && ! sl->empty() ? (int) sl->size() : 1, index = note - roundToInt (o.get (pRoot));
+                    if (index < 0 || index >= count) { clearCurrentNote(); data.reset(); return; }
+                    const double regionEnd = jlimit (1.0, (double) len - 1, (double) jmax (o.get (pStart), o.get (pEnd)) * len);
+                    sliceStart = sl != nullptr && ! sl->empty() ? (double) (*sl)[(size_t) index] * len : pos;
+                    sliceEnd = index + 1 < count ? (double) (*sl)[(size_t) index + 1] * len : regionEnd;
+                    sliceEnd = jlimit (sliceStart + 2.0, (double) len - 1, sliceEnd);
+                    pos = scan = sliceStart;
+                    // Slice Length: the slice is made to last that long at the song's tempo, without changing its pitch
+                    const int stretch = o.getInt (pStretch);
+                    stretching = stretch > 0;
+                    if (stretching)
+                    {
+                        const double wanted = stretchBeats[jlimit (1, 6, stretch)] * 60.0 / jmax (20.0, o.bpm.load()) * getSampleRate();
+                        scanRate = (sliceEnd - sliceStart) / jmax (64.0, wanted);
+                        grainLen = jmax (256.0, 0.045 * getSampleRate());
+                        // the first piece starts at full level so that the hit at the start of the slice keeps its edge;
+                        // the second fades in under it
+                        piece[0] = { sliceStart, grainLen * 0.5, true };
+                        piece[1] = { sliceStart, 0.0, false };
+                    }
+                }
                 filter.reset();
                 amp.setSampleRate (getSampleRate());
                 amp.reset();
@@ -1869,6 +1982,7 @@ namespace pulse
             {
                 if (! allowTailOff) { clearCurrentNote(); amp.reset(); data.reset(); return; }
                 if (o.getInt (pMode) == 1) return;   // one-shot plays to the end
+                if (slicing && o.getInt (pSliceGate) == 0) return;   // so does a slice, unless it is set to play only while held
                 amp.noteOff();
                 fenv.noteOff();
                 releasing = true;
@@ -1883,6 +1997,7 @@ namespace pulse
                     return;
 
                 if (o.getInt (pMode) == 3) { renderGranular (out, start, num); return; }
+                if (slicing) { renderSlice (out, start, num); return; }
 
                 const int len = data->buffer.getNumSamples();
                 const float* L = data->buffer.getReadPointer (0);
@@ -1956,6 +2071,73 @@ namespace pulse
 
                 const int slot = getCurrentlyPlayingNote() % (int) o.playheads.size();
                 o.playheads[(size_t) slot].store ((float) (pos / len));
+            }
+
+            /** Slice mode: one piece of the sample, at its own pitch (Transpose and Detune still apply), either as it is or
+                made longer or shorter in time to fit a note length. */
+            void renderSlice (AudioBuffer<float>& out, int start, int num)
+            {
+                const int len = data->buffer.getNumSamples();
+                const float* L = data->buffer.getReadPointer (0);
+                const float* R = data->buffer.getReadPointer (1);
+                const double inc = std::pow (2.0, (o.get (pTranspose) + o.get (pFine) / 100.0 + bend) / 12.0) * data->sampleRate / getSampleRate();
+                amp.setParameters (adsrFrom (o.get (pA), o.get (pD), o.getInt (pSliceGate) == 0 ? 1.0f : o.get (pS), o.get (pR)));
+                fenv.setParameters (adsrFrom (o.get (pFA), o.get (pFD), o.get (pFS), o.get (pFR)));
+                const int ftype = o.getInt (pFilterType);
+                const float cutoff = o.get (pCutoff), reso = o.get (pReso), fenvAmt = o.get (pFEnv);
+                if (ftype > 0) filter.set (cutoff, reso, getSampleRate());
+                const float gain = Decibels::decibelsToGain (o.get (pGain)) * (1.0f - o.get (pVelSens) * (1.0f - velocity));
+                const float pan = o.get (pPan);
+                const float gl = std::sqrt (0.5f * (1.0f - pan)) * 1.4142f, gr = std::sqrt (0.5f * (1.0f + pan)) * 1.4142f;
+                const double fadeLen = 0.003 * data->sampleRate;   // the end of a slice is faded, so that it does not click
+
+                for (int i = 0; i < num; ++i)
+                {
+                    const float fe = fenv.getNextSample();
+                    if (ftype > 0 && std::abs (fenvAmt) > 0.001f && (i & 15) == 0)
+                        filter.set (jlimit (20.0f, 20000.0f, cutoff * std::pow (2.0f, fenvAmt * fe * 6.0f)), reso, getSampleRate());
+                    float l = 0.0f, r = 0.0f;
+                    if (stretching)
+                    {
+                        if (scan >= sliceEnd) { clearCurrentNote(); data.reset(); return; }
+                        for (auto& p : piece)
+                        {
+                            if (p.age >= grainLen) { p.from = scan; p.age = 0.0; p.first = false; }   // the next piece starts where the slow reading point has got to
+                            // (the first piece reads on from the slice's start as if its first half had already gone by)
+                            const double at = p.first ? p.from + (p.age - grainLen * 0.5) * inc : p.from + p.age * inc;
+                            if (at < sliceEnd)
+                            {
+                                const float w = 0.5f - 0.5f * (float) std::cos (MathConstants<double>::twoPi * p.age / grainLen);
+                                l += interp (L, at, len) * w;
+                                r += interp (R, at, len) * w;
+                            }
+                            p.age += 1.0;
+                        }
+                        const float edge = (float) jmin (1.0, (sliceEnd - scan) / (fadeLen * jmax (0.05, scanRate)));
+                        l *= edge; r *= edge;
+                        scan += scanRate;
+                    }
+                    else
+                    {
+                        if (pos >= sliceEnd || pos >= len - 2) { clearCurrentNote(); data.reset(); return; }
+                        const float edge = (float) jmin (1.0, (sliceEnd - pos) / fadeLen);
+                        l = interp (L, pos, len) * edge;
+                        r = interp (R, pos, len) * edge;
+                        pos += inc;
+                    }
+                    if (ftype > 0)
+                    {
+                        const int mode = ftype == 1 ? 0 : ftype == 2 ? 1 : 2;
+                        l = filter.process (l, 0, mode);
+                        r = filter.process (r, 1, mode);
+                    }
+                    const float e = amp.getNextSample() * gain;
+                    out.addSample (0, start + i, l * e * gl);
+                    if (out.getNumChannels() > 1) out.addSample (1, start + i, r * e * gr);
+                    if (! amp.isActive()) { clearCurrentNote(); data.reset(); return; }
+                }
+                const int slot = getCurrentlyPlayingNote() % (int) o.playheads.size();
+                o.playheads[(size_t) slot].store ((float) ((stretching ? scan : pos) / len));
             }
 
             /** Granular mode: short windowed grains read from around the Scan position. */
@@ -2043,6 +2225,11 @@ namespace pulse
             int noteNumber = 60, zoneRoot = -1;
             float velocity = 1, bend = 0;
             bool releasing = false;
+            // slice mode
+            struct Piece { double from = 0.0, age = 0.0; bool first = false; };
+            Piece piece[2];
+            bool slicing = false, stretching = false;
+            double sliceStart = 0.0, sliceEnd = 1.0, scan = 0.0, scanRate = 1.0, grainLen = 2048.0;
             ADSR amp;
             SVF filter;
         };
@@ -2050,6 +2237,8 @@ namespace pulse
         mutable SpinLock sampleLock;
         std::shared_ptr<SampleData> sample, audioSample;
         std::shared_ptr<const std::vector<LoadedZone>> zones, audioZones;
+        std::shared_ptr<const std::vector<float>> slices, audioSlices;
+        std::atomic<double> bpm { 120.0 };
     };
 
 }
