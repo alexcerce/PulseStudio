@@ -1526,6 +1526,22 @@ namespace SelfTest
             edit->getUndoManager().clearUndoHistory();
         }
 
+        // --- v0.99.25: session launches land on the launch grid in the arrangement --------------------------
+        {
+            using SR = Launcher::SessionRecorder;
+            const auto was = edit->getLaunchQuantisation().type.get();
+            edit->getLaunchQuantisation().type = te::LaunchQType::sixteenth;
+            const double sixteenth = SR::gridBeats (*edit);
+            edit->getLaunchQuantisation().type = te::LaunchQType::bar;
+            const double bar = SR::gridBeats (*edit);
+            edit->getLaunchQuantisation().type = was;
+            // a launch on beat 2.25 that is noticed a little later (up to a sixth of a beat) is still put on 2.25
+            const bool punched = std::abs (SR::punchBeat (2.26, 0.25) - 2.25) < 1e-9 && std::abs (SR::punchBeat (2.41, 0.25) - 2.25) < 1e-9 && std::abs (SR::punchBeat (2.5, 0.25) - 2.5) < 1e-9
+                                 && std::abs (SR::punchBeat (8.1, 4.0) - 8.0) < 1e-9 && std::abs (SR::punchBeat (7.99, 4.0) - 8.0) < 1e-9;
+            rep.check (std::abs (sixteenth - 0.25) < 1e-9 && std::abs (bar - EngineHelpers::beatsPerBar (*edit)) < 1e-9 && punched,
+                       "Session recording: launches written into the arrangement land on the launch grid (sixteenths to bars)", "grid for 1/16: " + String (sixteenth, 2) + " beats, for a bar: " + String (bar, 1));
+        }
+
         // --- sharing: collect all, templates -----------------------------------------------------------
         {
             auto outside = File::getSpecialLocation (File::tempDirectory).getChildFile ("PulseStudioSelfTestOutside");

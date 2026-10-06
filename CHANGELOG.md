@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.25 - 2026-10-06
+
+- Session clips recorded into the arrangement now start and end on the launch grid (down to sixteenths), not only on whole beats
+
 ## 0.99.24 - 2026-10-06
 
 - Warped audio clips show the hits in their audio as ticks; dragging one pins it with a warp marker and moves it

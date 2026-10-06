@@ -214,6 +214,25 @@ namespace Launcher
 
         bool isEnabled() const { return enabled; }
 
+        /** The grid that launches fall on (beats): the session's launch quantisation, or sixteenths when it is off. */
+        static double gridBeats (te::Edit& e)
+        {
+            const double bar = EngineHelpers::beatsPerBar (e);
+            switch (e.getLaunchQuantisation().type.get())
+            {
+                case te::LaunchQType::eightBars: return bar * 8.0;
+                case te::LaunchQType::fourBars:  return bar * 4.0;
+                case te::LaunchQType::twoBars:   return bar * 2.0;
+                case te::LaunchQType::bar:       return bar;
+                case te::LaunchQType::half:      return 2.0;
+                case te::LaunchQType::quarter:   return 1.0;
+                case te::LaunchQType::eighth:    return 0.5;
+                default:                         return 0.25;
+            }
+        }
+        /** A change is noticed a moment after it happened: the grid line it happened on is the last one before now. */
+        static double punchBeat (double nowBeat, double grid) { return std::floor (nowBeat / grid + 0.02) * grid; }
+
         /** Call regularly (the session view does, 12 times a second). */
         void tick (te::Edit& e)
         {
@@ -221,6 +240,7 @@ namespace Launcher
             auto& tc = e.getTransport();
             if (! tc.isPlaying()) { closeAll (e); return; }
             lastBeat = EngineHelpers::timeToBeat (e, tc.getPosition());
+            grid = gridBeats (e);
             for (auto t : EngineHelpers::getUserTracks (e))
             {
                 te::Clip* playing = nullptr;
@@ -231,8 +251,9 @@ namespace Launcher
                 auto it = open.find (t->itemID);
                 te::Clip* current = it != open.end() ? it->second.src.get() : nullptr;
                 if (playing == current) continue;
-                if (current != nullptr) commit (*t, it->second, lastBeat);
-                if (playing != nullptr) open[t->itemID] = { playing, std::round (lastBeat) };
+                // the clip changed on a launch-grid line: the old one ends there and the new one starts there
+                if (current != nullptr) commit (*t, it->second, punchBeat (lastBeat, grid));
+                if (playing != nullptr) open[t->itemID] = { playing, punchBeat (lastBeat, grid) };
                 else                    open.erase (t->itemID);
             }
         }
@@ -256,7 +277,7 @@ namespace Launcher
         void commit (te::AudioTrack& t, const Segment& seg, double endBeat)
         {
             if (seg.src == nullptr) return;
-            endBeat = std::round (endBeat);
+            endBeat = std::round (endBeat / grid) * grid;   // (stopping the song can land anywhere: to the nearest grid line)
             if (endBeat <= seg.startBeat) return;
             auto& e = t.edit;
             e.getUndoManager().beginNewTransaction ("Arrangement record");
@@ -273,7 +294,7 @@ namespace Launcher
         }
 
         bool enabled = false;
-        double lastBeat = 0.0;
+        double lastBeat = 0.0, grid = 1.0;
         std::map<te::EditItemID, Segment> open;
     };
 

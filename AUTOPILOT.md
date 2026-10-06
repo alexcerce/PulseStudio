@@ -169,7 +169,7 @@ well EVERYWHERE." So, besides the list:
 3. MIDI: [x] note length  [x] pitch  [x] random  [x] velocity  [x] drawable arpeggiator / note-echo patterns
    [x] chord track + chord progressions (piano roll and MIDI effects follow it)  [x] step sequencer view for drum clips
 4. Audio editing: [x] warp by dragging transients on the waveform, follow-tempo per clip  [ ] per-note pitch and time
-   editing of audio  [x] reverse / crop / consolidate clips  [ ] clip launch recorded into the arrangement with quantised punch
+   editing of audio  [x] reverse / crop / consolidate clips  [x] clip launch recorded into the arrangement with quantised punch
 5. Mixing: [ ] VCA faders  [ ] reference track A/B with loudness match  [ ] mastering chain preset + assistant
    [ ] match EQ  [ ] linear-phase EQ mode  [ ] loudness report on export  [ ] automatic freeze under load
    [ ] sidechain picker on every device
@@ -513,3 +513,9 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   thread belongs on the quality list under "nothing blocks the UI for more than 100 ms"). Markers at all hits,
   audio quantise and warp-to-tempo existed already. 303 checks, quick tier.
   Left in group 4: per-note pitch and time editing of audio; clip launch recorded into the arrangement.
+- 2026-10-06: v0.99.25. Recording session launches into the arrangement existed (Launcher::SessionRecorder) but
+  rounded every change to a whole beat; it now uses the session's launch quantisation as its grid and takes the
+  grid line before the moment the change was noticed. 304 checks, quick tier.
+  Group 4 has one item left, and it is a big one: per-note pitch and time editing of audio (pitch tracking,
+  notes shown as blobs on the clip, each one dragged in pitch or time, the result written to a new file).
+  Melodyne and other ARA plugins can already be used on a clip for this. Do it as a run of its own.
