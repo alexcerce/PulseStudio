@@ -192,6 +192,9 @@ namespace SelfTest
             m.set (M::idx (2, M::bThreshold), -35); m.set (M::idx (2, M::bRatio), 3);
         }, "shot_multiband.png");
         shoot (pulse::Limiter::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Limiter::pGain, 8); p.set (pulse::Limiter::pCeiling, -1); }, "shot_limiter.png");
+        shoot (pulse::Gate::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Gate::pThreshold, -22); p.set (pulse::Gate::pRange, 40); p.set (pulse::Gate::pHysteresis, 6); }, "shot_gate.png");
+        shoot (pulse::TransientShaper::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::TransientShaper::pAttack, 0.6f); p.set (pulse::TransientShaper::pSustain, -0.4f); }, "shot_transient.png");
+        shoot (pulse::DeEsser::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::DeEsser::pThreshold, -36); p.set (pulse::DeEsser::pRange, 10); }, "shot_deesser.png");
         shoot (pulse::WavetableSynth::xmlTypeName, [] (pulse::PulsePlugin& p)
         {
             auto& w = dynamic_cast<pulse::WavetableSynth&> (p);
@@ -3727,6 +3730,157 @@ namespace SelfTest
             const float measured = lim->truePeakDb.load(), st = lim->shortTermLufs.load();
             rep.check (tp < -0.9f && measured < -0.5f && st > -30.0f && lim->history.write.load() > 0, "Limiter: true-peak ceiling, loudness readouts, history",
                        "true peak " + String (tp, 2) + " dBTP (limiter reads " + String (measured, 2) + "), short-term " + String (st, 1) + " LUFS");
+
+            // --- gate / expander / ducker, transient shaper, de-esser -------------------------------------
+            {
+                auto mk = [&] (const char* type) { auto pl = edit->getPluginCache().createNewPlugin (type, {}); t->pluginList.insertPlugin (pl, 0, nullptr); return pl; };
+                auto gp = mk (pulse::Gate::xmlTypeName), tp2 = mk (pulse::TransientShaper::xmlTypeName), dp2 = mk (pulse::DeEsser::xmlTypeName);
+                auto* gate = dynamic_cast<pulse::Gate*> (gp.get());
+                auto* shaper = dynamic_cast<pulse::TransientShaper*> (tp2.get());
+                auto* deEss = dynamic_cast<pulse::DeEsser*> (dp2.get());
+                using G = pulse::Gate;
+                using T = pulse::TransientShaper;
+                using D = pulse::DeEsser;
+                const float a20 = Decibels::decibelsToGain (-20.0f), a50 = Decibels::decibelsToGain (-50.0f), a43 = Decibels::decibelsToGain (-43.0f);
+
+                // gate: quiet is shut by the range, loud passes untouched
+                gate->set (G::pThreshold, -40); gate->set (G::pRange, 60); gate->set (G::pHysteresis, 0); gate->set (G::pHold, 0); gate->set (G::pRelease, 20);
+                const float gQuiet = runFx (*gate, sine (1000, a50), 0.6), gLoud = runFx (*gate, sine (1000, a20), 0.6);
+                // hysteresis: after a loud start, 3 dB under the threshold stays open with 6 dB of hysteresis and shuts with none
+                auto loudThenLow = [a20, a43] (int, double tm) { return (tm < 0.2 ? a20 : a43) * (float) std::sin (MathConstants<double>::twoPi * 1000.0 * tm); };
+                const float noHyst = runFx (*gate, loudThenLow, 0.8);
+                gate->set (G::pHysteresis, 6);
+                const float withHyst = runFx (*gate, loudThenLow, 0.8);
+                // expander: 10 dB under the threshold at 1 : 2 comes out 10 dB lower still
+                gate->set (G::pMode, 1); gate->set (G::pRatio, 2);
+                const float gExp = runFx (*gate, sine (1000, a50), 0.6);
+                // ducker: turned down by the range while the key is above the threshold
+                gate->set (G::pMode, 2); gate->set (G::pRange, 12);
+                const float gDuck = runFx (*gate, sine (1000, a20), 0.6), gDuckQuiet = runFx (*gate, sine (1000, a50), 0.6);
+                gate->set (G::pLookahead, 5);
+                const double gLat = gate->getLatencySeconds();
+                gate->set (G::pLookahead, 0); gate->set (G::pMode, 0); gate->set (G::pRange, 60);
+                const bool gateOk = gQuiet < -105.0f && std::abs (gLoud + 20.0f) < 0.3f && noHyst < -95.0f && std::abs (withHyst + 43.0f) < 0.5f
+                                    && std::abs (gExp + 60.0f) < 1.0f && std::abs (gDuck + 32.0f) < 0.6f && std::abs (gDuckQuiet + 50.0f) < 0.5f
+                                    && std::abs (gLat - 0.005) < 1e-6 && std::abs (gate->staticGainDb (-50.0f) + 60.0f) < 0.01f;
+                rep.check (gateOk, "Pulse Gate (gate, hysteresis, expander, ducker, lookahead latency)",
+                           "quiet " + String (gQuiet, 1) + ", loud " + String (gLoud, 1) + ", 3 dB under: " + String (noHyst, 1) + " / with hysteresis " + String (withHyst, 1)
+                           + ", expander " + String (gExp, 1) + ", ducker " + String (gDuck, 1) + " / " + String (gDuckQuiet, 1));
+
+                // transient shaper: a steady low note is left alone; the start of a burst follows Attack; a dying tail follows Sustain
+                shaper->set (T::pClip, 0); shaper->set (T::pAttack, 1.0f); shaper->set (T::pSustain, 1.0f);
+                const float steady = runFx (*shaper, sine (60, 0.25f), 1.5) - Decibels::gainToDecibels (0.25f);
+                auto bursts = [] (int, double tm) { const double ph = std::fmod (tm, 0.5); return ph < 0.1 ? 0.1f * (float) std::sin (MathConstants<double>::twoPi * 1000.0 * tm) : 0.0f; };
+                auto hitPeak = [&] (float attack)
+                {
+                    shaper->set (T::pAttack, attack); shaper->set (T::pSustain, 0.0f);
+                    AudioBuffer<float> kept;
+                    runFx (*shaper, bursts, 1.2, &kept);
+                    return Decibels::gainToDecibels (kept.getMagnitude (0, (int) (1.003 * sr), (int) (0.008 * sr)), -100.0f) + 20.0f;   // against the 0.1 that went in (3 ms late)
+                };
+                const float hitUp = hitPeak (1.0f), hitFlat = hitPeak (0.0f), hitDown = hitPeak (-1.0f);
+                auto dying = [] (int, double tm) { const double ph = std::fmod (tm, 1.0); return 0.4f * (float) (std::exp (-ph * 18.0) * std::sin (MathConstants<double>::twoPi * 220.0 * tm)); };
+                auto tailLevel = [&] (float sustain)
+                {
+                    shaper->set (T::pAttack, 0.0f); shaper->set (T::pSustain, sustain);
+                    AudioBuffer<float> kept;
+                    runFx (*shaper, dying, 1.4, &kept);
+                    return Decibels::gainToDecibels (kept.getRMSLevel (0, (int) (1.15 * sr), (int) (0.1 * sr)), -100.0f);
+                };
+                const float tailUp = tailLevel (1.0f), tailFlat = tailLevel (0.0f), tailDown = tailLevel (-1.0f);
+                // dry/wet at zero gives back exactly what went in
+                shaper->set (T::pAttack, 1.0f); shaper->set (T::pMix, 0.0f);
+                AudioBuffer<float> dryKept;
+                runFx (*shaper, bursts, 0.3, &dryKept);
+                float dryErr = 0;
+                const int late = (int) (0.003 * sr);   // its lookahead, which it reports as latency
+                for (int i = late; i < dryKept.getNumSamples(); ++i) dryErr = jmax (dryErr, std::abs (dryKept.getSample (0, i) - bursts (0, (i - late) / sr)));
+                shaper->set (T::pMix, 1.0f); shaper->set (T::pAttack, 0.3f); shaper->set (T::pSustain, 0.0f); shaper->set (T::pClip, 1);
+                const bool shaperOk = std::abs (steady) < 0.6f && std::abs (hitFlat) < 0.2f && hitUp > hitFlat + 5.0f && hitDown < hitFlat - 5.0f
+                                      && tailUp > tailFlat + 4.0f && tailDown < tailFlat - 4.0f && dryErr < 1.0e-6f && std::abs (shaper->getLatencySeconds() - 0.003) < 1e-9;
+                rep.check (shaperOk, "Transient Shaper (steady notes untouched, attack and sustain both ways, dry/wet)",
+                           "steady 60 Hz " + String (steady, 2) + " dB, hit " + String (hitDown, 1) + " / " + String (hitFlat, 1) + " / " + String (hitUp, 1)
+                           + " dB, tail " + String (tailDown, 1) + " / " + String (tailFlat, 1) + " / " + String (tailUp, 1) + " dB");
+
+                // de-esser: a loud "s" tone comes down by the range, a low tone is left alone, and split band keeps the lows of a mix
+                auto toneDb = [&] (const AudioBuffer<float>& b, double hz)   // level of one frequency over the last 0.1 s
+                {
+                    const int len = (int) (0.1 * sr), from = b.getNumSamples() - len;
+                    double re = 0, im = 0;
+                    for (int i = 0; i < len; ++i)
+                    {
+                        const double ph = MathConstants<double>::twoPi * hz * (from + i) / sr;
+                        re += b.getSample (0, from + i) * std::cos (ph); im += b.getSample (0, from + i) * std::sin (ph);
+                    }
+                    return Decibels::gainToDecibels ((float) (2.0 * std::sqrt (re * re + im * im) / len), -120.0f);
+                };
+                deEss->set (D::pFreq, 6500); deEss->set (D::pThreshold, -30); deEss->set (D::pRange, 8);
+                const float a10b = Decibels::decibelsToGain (-10.0f), a16 = Decibels::decibelsToGain (-16.0f);
+                const float ess = runFx (*deEss, sine (6500, a10b), 0.6), lowTone = runFx (*deEss, sine (300, a10b), 0.6);
+                auto mixSig = [a16] (int, double tm) { return a16 * (float) (std::sin (MathConstants<double>::twoPi * 300.0 * tm) + std::sin (MathConstants<double>::twoPi * 6500.0 * tm)); };
+                AudioBuffer<float> splitOut, wideOut;
+                runFx (*deEss, mixSig, 0.6, &splitOut);
+                deEss->set (D::pMode, 1);
+                runFx (*deEss, mixSig, 0.6, &wideOut);
+                const float essWide = runFx (*deEss, sine (6500, a10b), 0.6);
+                deEss->set (D::pMode, 0);
+                const float splitLow = toneDb (splitOut, 300), splitHigh = toneDb (splitOut, 6500), wideLow = toneDb (wideOut, 300);
+                const bool deEssOk = std::abs (ess + 18.0f) < 1.2f && std::abs (lowTone + 10.0f) < 0.3f && std::abs (essWide + 18.0f) < 0.6f
+                                     && std::abs (splitLow + 16.0f) < 0.4f && splitHigh < -22.0f && wideLow < -22.0f && deEss->reductionDb.load() > 6.0f;
+                rep.check (deEssOk, "De-esser (takes the range off an \"s\", leaves lows alone, split and wide band)",
+                           "6.5 kHz " + String (ess, 1) + " (wide " + String (essWide, 1) + "), 300 Hz " + String (lowTone, 1) + ", in a mix: split keeps 300 Hz at " + String (splitLow, 1)
+                           + " and 6.5 kHz at " + String (splitHigh, 1) + ", wide takes 300 Hz to " + String (wideLow, 1));
+
+                // their windows: the settings are points on the graph, and every parameter also has a control
+                {
+                    PulseLookAndFeel laf;
+                    LookAndFeel::setDefaultLookAndFeel (&laf);
+                    EditViewState evs (*edit, sm);
+                    DynamicsUI::GateView gv (*gate);
+                    DynamicsUI::TransientView tv (*shaper);
+                    DynamicsUI::DeEsserView dv (*deEss);
+                    for (Component* c : { (Component*) &gv, (Component*) &tv, (Component*) &dv }) c->setSize (1000, 520);
+                    const float th0 = gate->get (G::pThreshold), rg0 = gate->get (G::pRange), at0 = shaper->get (T::pAttack), su0 = shaper->get (T::pSustain), ln0 = shaper->get (T::pLength);
+                    const float fr0 = deEss->get (D::pFreq), dth0 = deEss->get (D::pThreshold);
+                    gv.dragHandle (0, 0.0f, -40.0f);    // threshold up
+                    gv.dragHandle (2, 0.0f, -30.0f);    // range smaller
+                    tv.dragHandle (0, 0.0f, -40.0f);    // more attack
+                    tv.dragHandle (1, 0.0f, 30.0f);     // less sustain
+                    tv.dragHandle (2, 60.0f, 0.0f);     // longer hit
+                    dv.dragHandle (0, -80.0f, -30.0f);  // lower frequency, higher threshold
+                    const bool handlesOk = gate->get (G::pThreshold) > th0 + 2.0f && gate->get (G::pRange) < rg0 - 2.0f
+                                           && shaper->get (T::pAttack) > at0 + 0.1f && shaper->get (T::pSustain) < su0 - 0.1f && shaper->get (T::pLength) > ln0 + 3.0f
+                                           && deEss->get (D::pFreq) < fr0 - 300.0f && deEss->get (D::pThreshold) > dth0 + 1.0f;
+                    StringArray missing;
+                    int built = 0;
+                    for (auto* pp : std::initializer_list<pulse::PulsePlugin*> { gate, shaper, deEss })
+                    {
+                        DeviceEditors::Editor ed (evs, *pp);
+                        ed.setSize (1100, 760);
+                        std::set<te::AutomatableParameter*> seen;
+                        std::function<void (Component&)> walk = [&] (Component& c)
+                        {
+                            if (auto* k = dynamic_cast<ParamKnob*> (&c)) seen.insert (&k->getParameter());
+                            if (auto* k = dynamic_cast<ParamChoice*> (&c)) seen.insert (&k->getParameter());
+                            if (auto* k = dynamic_cast<ParamToggle*> (&c)) seen.insert (&k->getParameter());
+                            for (auto* ch : c.getChildren()) walk (*ch);
+                        };
+                        walk (ed);
+                        for (int i = 0; i < pp->numParams(); ++i) if (! seen.count (&*pp->param (i))) missing.add (pp->getName() + ": " + pp->param (i)->paramID);
+                        auto img = ed.createComponentSnapshot (ed.getLocalBounds());
+                        auto f = dir.getChildFile ("dyn_" + File::createLegalFileName (pp->getName()) + ".png");
+                        f.deleteFile();
+                        if (auto os = f.createOutputStream()) { PNGImageFormat png; if (png.writeImageToStream (img, *os)) ++built; }
+                        if (! DeviceEditors::hasFullEditor (*pp)) missing.add (pp->getName() + ": no full window");
+                    }
+                    rep.check (handlesOk && missing.isEmpty() && built == 3, "Gate, Transient Shaper and De-esser windows: points on the graph, and a control for every parameter",
+                               missing.isEmpty() ? "threshold " + String (roundToInt (th0)) + " -> " + String (roundToInt (gate->get (G::pThreshold))) + " dB, attack " + String (at0, 2) + " -> " + String (shaper->get (T::pAttack), 2)
+                                                   + ", frequency " + String (roundToInt (fr0)) + " -> " + String (roundToInt (deEss->get (D::pFreq))) + " Hz"
+                                                 : missing.joinIntoString ("; "));
+                    LookAndFeel::setDefaultLookAndFeel (nullptr);
+                }
+                gp = nullptr; tp2 = nullptr; dp2 = nullptr;
+            }
 
             // displays build
             {

@@ -303,6 +303,43 @@ namespace FactoryPresetsMore
                 { "Tape Glue (Bus)", { { "type", 1 }, { "drive", 4 }, { "tone", -0.15f }, { "mix", 1.0f } } } } },
 
             //----------------------------------------------------------------------------------
+            // Pulse Gate: mode 0 gate, 1 expander, 2 ducker
+            { "pulseGate", {
+                { "Tight Drum Gate", { { "threshold", -30 }, { "range", 80 }, { "hysteresis", 4 }, { "attack", 0.05f }, { "hold", 20 }, { "release", 60 }, { "lookahead", 1.5f } } },
+                { "Kick (lows keyed)", { { "threshold", -26 }, { "range", 60 }, { "attack", 0.05f }, { "hold", 40 }, { "release", 90 }, { "sclpf", 800 }, { "lookahead", 2 } } },
+                { "Snare (mids keyed)", { { "threshold", -28 }, { "range", 50 }, { "attack", 0.05f }, { "hold", 50 }, { "release", 140 }, { "schpf", 150 }, { "sclpf", 6000 }, { "lookahead", 2 } } },
+                { "Tom Clean-up", { { "threshold", -32 }, { "range", 40 }, { "hysteresis", 5 }, { "attack", 0.2f }, { "hold", 120 }, { "release", 300 }, { "lookahead", 2 } } },
+                { "Vocal Breath Tamer", { { "mode", 1 }, { "threshold", -38 }, { "ratio", 2 }, { "range", 14 }, { "attack", 3 }, { "release", 200 }, { "schpf", 120 } } },
+                { "Guitar Amp Hush", { { "mode", 1 }, { "threshold", -45 }, { "ratio", 3 }, { "range", 30 }, { "attack", 1 }, { "release", 250 } } },
+                { "Soft Noise Floor", { { "mode", 1 }, { "threshold", -50 }, { "ratio", 1.5f }, { "range", 12 }, { "attack", 5 }, { "release", 400 } } },
+                { "Trance Gate (key it)", { { "threshold", -30 }, { "range", 80 }, { "hysteresis", 2 }, { "attack", 1 }, { "hold", 0 }, { "release", 30 } } },
+                { "Pump (duck to the kick)", { { "mode", 2 }, { "threshold", -30 }, { "range", 12 }, { "attack", 2 }, { "hold", 20 }, { "release", 220 }, { "sclpf", 500 } } },
+                { "Voice-over Duck", { { "mode", 2 }, { "threshold", -36 }, { "range", 9 }, { "hysteresis", 6 }, { "attack", 30 }, { "hold", 400 }, { "release", 900 }, { "schpf", 150 } } } } },
+
+            //----------------------------------------------------------------------------------
+            { "pulseTransient", {
+                { "Punchy Drums", { { "attack", 0.5f }, { "sustain", -0.1f }, { "length", 20 } } },
+                { "Snappy Snare", { { "attack", 0.7f }, { "sustain", 0 }, { "length", 12 } } },
+                { "Tight Kick", { { "attack", 0.35f }, { "sustain", -0.5f }, { "length", 25 } } },
+                { "Dry Up The Room", { { "attack", 0.1f }, { "sustain", -0.8f }, { "length", 20 } } },
+                { "Bring Up The Room", { { "attack", -0.1f }, { "sustain", 0.7f }, { "length", 20 }, { "output", -3 } } },
+                { "Soften The Pick", { { "attack", -0.6f }, { "sustain", 0.15f }, { "length", 8 } } },
+                { "Push It Back", { { "attack", -0.8f }, { "sustain", 0.3f }, { "length", 30 }, { "output", -1 } } },
+                { "Bass Definition", { { "attack", 0.4f }, { "sustain", 0.1f }, { "length", 35 } } },
+                { "Parallel Smack", { { "attack", 1.0f }, { "sustain", -0.3f }, { "length", 15 }, { "mix", 0.4f } } } } },
+
+            //----------------------------------------------------------------------------------
+            // De-esser: mode 0 split band, 1 wide band
+            { "pulseDeEsser", {
+                { "Gentle Vocal", { { "freq", 6500 }, { "threshold", -32 }, { "range", 5 } } },
+                { "Bright Female Vocal", { { "freq", 8000 }, { "threshold", -34 }, { "range", 8 } } },
+                { "Male Vocal", { { "freq", 5200 }, { "threshold", -32 }, { "range", 7 } } },
+                { "Heavy Sibilance", { { "freq", 7000 }, { "threshold", -38 }, { "range", 14 }, { "release", 40 } } },
+                { "Spoken Word (wide)", { { "freq", 6000 }, { "threshold", -30 }, { "range", 6 }, { "mode", 1 }, { "release", 90 } } },
+                { "Cymbal Tamer", { { "freq", 9500 }, { "threshold", -28 }, { "range", 6 }, { "release", 120 } } },
+                { "Harsh Guitar", { { "freq", 3500 }, { "threshold", -28 }, { "range", 6 }, { "release", 100 } } } } },
+
+            //----------------------------------------------------------------------------------
             { "pulseUtility", {
                 { "Phase Flip", { { "invert", 3 } } },
                 { "Swap L/R", { { "channels", 3 } } },

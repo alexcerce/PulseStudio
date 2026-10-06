@@ -1622,6 +1622,12 @@ namespace DeviceEditors
             add ("Compressor", std::make_unique<DynamicsUI::CompressorPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::MultibandDynamics*> (&p))
             add ("Multiband", std::make_unique<DynamicsUI::MultibandPanel> (evs, *s));
+        else if (auto s = dynamic_cast<pulse::Gate*> (&p))
+            add ("Gate", std::make_unique<DynamicsUI::GatePanel> (evs, *s));
+        else if (auto s = dynamic_cast<pulse::TransientShaper*> (&p))
+            add ("Transient Shaper", std::make_unique<DynamicsUI::TransientPanel> (evs, *s));
+        else if (auto s = dynamic_cast<pulse::DeEsser*> (&p))
+            add ("De-esser", std::make_unique<DynamicsUI::DeEsserPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::Reverb*> (&p))
             add ("Reverb", std::make_unique<SpaceUI::ReverbPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::Delay*> (&p))
@@ -1672,7 +1678,8 @@ namespace DeviceEditors
             || dynamic_cast<pulse::Simpler*> (&p) != nullptr
             || dynamic_cast<pulse::DrumSynth*> (&p) != nullptr
             || dynamic_cast<pulse::Reverb*> (&p) != nullptr || dynamic_cast<pulse::Delay*> (&p) != nullptr || dynamic_cast<pulse::Saturator*> (&p) != nullptr
-            || dynamic_cast<pulse::MultibandDynamics*> (&p) != nullptr || dynamic_cast<pulse::Limiter*> (&p) != nullptr;
+            || dynamic_cast<pulse::MultibandDynamics*> (&p) != nullptr || dynamic_cast<pulse::Limiter*> (&p) != nullptr
+            || dynamic_cast<pulse::Gate*> (&p) != nullptr || dynamic_cast<pulse::TransientShaper*> (&p) != nullptr || dynamic_cast<pulse::DeEsser*> (&p) != nullptr;
     }
 
     //==============================================================================

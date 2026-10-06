@@ -752,9 +752,9 @@ private:
                 addButton ("+ Layer...", top.removeFromLeft (80).reduced (1), [this] { browseSamples (selected, true); }, "Add velocity / round-robin layers");
                 addButton ("Spread velocity", top.removeFromLeft (110).reduced (1), [this]
                 {
-                    if (auto s = sel()) { begin ("Spread layer velocities"); s->spreadVelocities(); refreshDetail(); }
+                    if (auto s = sel()) { begin ("Spread layer velocities"); s->spreadVelocities(); refreshSoon(); }
                 }, "Split 1-127 evenly across the layers (layer 1 softest)");
-                addButton ("Clear", top.removeFromLeft (56).reduced (1), [this] { begin ("Clear pad"); DrumRack::clearPad (*rack, selected); refreshDetail(); repaintPads(); });
+                addButton ("Clear", top.removeFromLeft (56).reduced (1), [this] { begin ("Clear pad"); DrumRack::clearPad (*rack, selected); refreshSoon(); });
                 area.removeFromTop (4);
 
                 auto knobs = area.removeFromBottom (76);
@@ -806,7 +806,7 @@ private:
                 b->setColour (TextButton::buttonColourId, src->isSynth() ? Theme::accent.darker (0.3f) : Theme::panel2);
                 b->onClick = [this]
                 {
-                    if (auto s = sel()) { begin ("Pad source"); s->set (pulse::DrumPad::pSource, s->isSynth() ? 0.0f : 1.0f); refreshDetail(); repaintPads(); }
+                    if (auto s = sel()) { begin ("Pad source"); s->set (pulse::DrumPad::pSource, s->isSynth() ? 0.0f : 1.0f); refreshSoon(); }
                 };
                 addButton ("Play", top.removeFromLeft (56).reduced (1), [this] { audition (selected); });
                 addLabel (src->isSynth() ? "" : "  (the pad plays its samples until the synth is switched on)", top);

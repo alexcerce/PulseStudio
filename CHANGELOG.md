@@ -2,6 +2,18 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.7 - 2026-10-05
+
+- New effect: Pulse Gate (gate, expander and ducker with hysteresis, hold, lookahead and a filtered key)
+- New effect: Transient Shaper (attack and sustain of every hit, up or down)
+- New effect: De-esser (split band or wide band)
+- Each has its own window to work in directly, and presets
+- Fixed: a crash in the Drum Rack when clicking Clear, Spread velocity or the pad's synth switch
+
+## 0.99.6 - 2026-10-05
+
+- The Drum Synth has its own window
+
 ## 0.99.4 - 2026-10-05
 
 - Fixed: bouncing, freezing a group or exporting while the audio engine was live could crash or glitch; the project is now taken off the engine for the duration of a render

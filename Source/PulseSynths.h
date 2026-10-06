@@ -1882,6 +1882,7 @@ namespace pulse
 #include "FMSynth.h"
 #include "PrismEQ.h"
 #include "Dynamics.h"
+#include "Dynamics2.h"
 
 namespace pulse
 {
@@ -1900,6 +1901,9 @@ namespace pulse
         pm.createBuiltInType<MultibandDynamics>();
         pm.createBuiltInType<AutoFilter>();
         pm.createBuiltInType<Limiter>();
+        pm.createBuiltInType<Gate>();
+        pm.createBuiltInType<TransientShaper>();
+        pm.createBuiltInType<DeEsser>();
         pm.createBuiltInType<Arpeggiator>();
         pm.createBuiltInType<ChordFx>();
         pm.createBuiltInType<ScaleFx>();

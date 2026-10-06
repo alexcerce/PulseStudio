@@ -24,8 +24,26 @@ this work after usage-limit windows. **Read this whole file before doing anythin
 ## Lock
 
 `.autopilot.lock` (repo root, git-ignored) holds the time a session last worked. If it exists and was modified
-less than 90 minutes ago, another session is active: **do nothing and stop.** Otherwise create/touch it
-when you start, touch it after each step, and delete it when you stop.
+less than 45 minutes ago, another session is active: **do nothing and stop.** Otherwise create/touch it
+when you start, touch it at least every 20 minutes (before and after every build, test run and commit; before a
+run that takes longer, such as `--soak`, start a background loop that touches it), and delete it when you stop.
+
+The scheduled task fires every hour. A run that finds a fresh lock stops at once (that is the normal case while
+a session is working). A run that finds no lock or a stale one takes over: it first runs `git status`; work left
+uncommitted by a session that died is kept if it builds and passes the self-test, otherwise it is finished or
+set aside with `git stash` (never deleted) and noted in the log.
+
+A run does not stop after one item. It keeps going down the Programme until the context is nearly full or the
+usage limit ends it, committing after every finished item so nothing is lost when it is cut off.
+**The computer sleeps when no session is in the middle of a turn** (the app only holds it awake while a turn is
+running; found 2026-10-05: a background test run stood still for 85 minutes, and the 15:29 scheduled run froze
+two minutes in, both because the PC went to sleep). So: never start a build or test in the background and end
+the turn to wait for it; run every build and test in the foreground (each under 10 minutes; split longer ones),
+and call the keep-awake tool (`request_keep_awake`, until `session_idle`) at the start of a run. A sleeping PC
+also fires no scheduled runs: the owner has been asked to set Windows not to sleep on mains power.
+
+The owner is not there during a run: never ask a question, never wait for an answer, never open a window that
+needs a person (file choosers, message boxes); make the reasonable choice and note it in the log.
 
 ## Queue (top first)
 
@@ -104,7 +122,28 @@ factory presets (4 or more per device); a control for every parameter; self-test
 round trip, undo steps where it edits the project); a clean run under the Debug build and of `--monkey` / `--command-fuzz`;
 README and CHANGELOG entries. Prefer fewer features done properly over many done thinly. Tick items here as they land.
 
-1. Effects: [ ] transient shaper  [ ] de-esser  [ ] gate / expander  [ ] convolution reverb (built-in spaces)
+Owner, 2026-10-05 (later): "We will go from that list for now. It's also not simply any missing effects that
+logic/ableton have, its also quality of life things and making sure the quality is professional like those as
+well EVERYWHERE." So, besides the list:
+
+- **Quality pass with every item.** Whatever part of the app an item touches is left at the standard of Live and
+  Logic, not only the new code: sound (no clicks on parameter moves, bypass or preset change; no zipper noise;
+  correct latency reporting; sensible at 44.1 to 192 kHz and any block size), looks (house style, aligned, nothing
+  clipped at the smallest and largest window size, light themes too), and behaviour (undo for every edit, double
+  click resets, wheel and fine-drag on every control, typed values, tooltips, right-click menus, keyboard access).
+- **Quality-of-life list** (add to it whenever something is noticed; do one or two with every version):
+  [ ] typed value entry on every knob and readout  [ ] A/B compare and copy A>B in every device window
+  [ ] undo/redo inside device windows shown in the window  [ ] per-device input/output meters and gain match
+  [ ] "what does this do" hover help everywhere, with a status-bar line  [ ] search in every menu that has more
+  than 20 entries  [ ] drag any device, clip, preset or sample anywhere it could sensibly go
+  [ ] consistent modifier keys (fine, snap off, copy-drag) across arrangement, piano roll, automation and devices
+  [ ] collect-all-and-save, missing-file finder  [ ] undo history list  [ ] default track / device presets
+  [ ] zoom to selection / fit, and remembered zoom per view  [ ] crash-safe autosave restore prompt reviewed
+  [ ] every list sortable and keyboard-navigable  [ ] nothing blocks the UI for more than 100 ms (progress
+  shown instead)  [ ] first-run experience: audio set-up check, demo project, short tour
+- Nothing that already works is taken away, and a rough edge found on the way is fixed then, or written here.
+
+1. Effects: [x] transient shaper  [x] de-esser  [x] gate / expander  [ ] convolution reverb (built-in spaces)
    [ ] shimmer reverb  [ ] spectral (freeze / blur / shift / spectral delay)  [ ] chorus / flanger / phaser
    [ ] tremolo / auto-pan  [ ] frequency shifter  [ ] bit reduction  [ ] amp + cabinet  [ ] exciter  [ ] beat repeat
    [ ] grain delay  [ ] looper  [ ] resonators
@@ -341,3 +380,14 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   about +80 MB between minutes 5 and 7, then flat; cause not found (caches suspected). Audio loop takes: the engine
   already adds file-based takes after a loop recording (WaveInputDevice applyLastRecording); unverified without an
   audio input. 243 checks.
+- 2026-10-05 (evening): v0.99.7. Programme group 1 started: Pulse Gate (gate / expander / ducker, hysteresis, hold,
+  lookahead, filtered key, sidechain), Transient Shaper (peak follower first so low notes are not read as hits; 3 ms
+  lookahead reported as latency), De-esser (split / wide). Source/Dynamics2.h + Dynamics2Display.h; windows are
+  HandleViews in DynamicsUI panels; 10 / 9 / 7 presets. 250 self-test checks pass (Release and Debug); monkey and
+  command-fuzz clean. Autopilot repaired: the 15:29 scheduled run had taken the lock and then stalled after two
+  minutes (most likely on a permission prompt nobody was there to answer), and runs were only every 3 hours.
+  Now hourly, 45-minute lock, runs go on past one item, leftover work is checked and kept. Owner added: quality of
+  life and professional quality everywhere (see the Programme section). The monkey run (seed 606) found a crash in
+  the Drum Rack (buttons inside the detail rebuilt it during their own click): fixed, seeds 606 and 607 clean.
+  The stalls were the PC going to sleep, not a prompt (see Lock). Not judged by ear. De-esser display could
+  still get a live spectrum behind the band.
