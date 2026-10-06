@@ -741,3 +741,16 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   the project, run on a thread from the panel; Sharing::planCollect / copyPlanned / finishCollect split
   collect-all so the copying runs on a thread. Still on the message thread: loading a long sample into
   Simpler or a pad, slicing, importing a wavetable, reading transients for warp markers, opening a project.
+- 2026-10-06: v0.99.50. The demo song, asked for by the user ("I'd use this mostly for experimental techno
+  music; make a full end-to-end techno track for the demo"). Source/DemoSong.h builds it: 132 BPM, 120 bars,
+  seven tracks (Kick, Drums, Bass, Acid, Stab, Drone, Riser), six sections, 5260 notes generated bar by bar,
+  the acid's cutoff and resonance and the riser's cutoff in automation, sidechain compressors keyed from the
+  kick on the bass and the drone, three returns (Reverb, Delay, Metal = resonators), two VCA groups, the
+  mastering chain with 6 dB of limiter gain, sections, chords, the song key, project and track notes, and four
+  session scenes cut from the arrangement. MainComponent::createDemoContent only calls it now.
+  NOT LISTENED TO. It was balanced by measurement only: each track rendered alone (drop II: kick -16.0,
+  drums -19.7, acid -22.7, stab -24.6, bass -27.1, drone -33.7 LUFS; the bass and the drone are measured with
+  their compressors working on themselves, which they do not do in the mix) and the mix (intro -13.8, drop
+  -12.5, breakdown -21.3, drop II -12.0 LUFS, true peak -3.4 dB). My first settings had every synth about
+  25 dB under the drums; nothing but the numbers showed it. Whether it is a GOOD techno track only ears can
+  say: the user should play it and say what to change. 333 checks, quick tier.

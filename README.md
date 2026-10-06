@@ -40,7 +40,7 @@ A small splash shows while Pulse starts: opening the audio interface can take a 
 1. **Audio Settings → Audio / MIDI**: pick your interface. Choose **ASIO** for the lowest latency, then set the buffer size.
 2. **Audio Settings → Recording**: set the count-in, MIDI overdub and a per-input recording offset.
 3. **Plugins**: click *Options → Scan for new or updated VST3 plugins*. Scanning runs in a separate process, so a crashing plugin is skipped instead of taking the app down.
-4. Press **Space** to play the demo song.
+4. Press **Space** to play the demo song: a whole techno track (132 BPM, 120 bars, about 3:40) made only of Pulse's own instruments and effects. Intro, build, drop, breakdown, a second drop and an outro; a 909 kick that the bass and the drone duck under, hats and a rim playing three against four, a rolling bass and an acid line whose filter is drawn in automation across the song, stabs into a ping-pong delay, noise risers, a return where the drums ring through resonators, two VCA groups and a mastering chain. *File > Notes* in the demo lists what to look at.
 
 Projects are saved as `.tracktionedit` files in `Documents/Pulse Studio/`. Presets go in `Documents/Pulse Studio/Presets/`, and bounces in a `Bounces` folder next to the project.
 
@@ -394,7 +394,7 @@ All of these can be changed in *File → Keyboard shortcuts*. New: **Ctrl+P** co
 ## Command line
 
 - `--render out.wav` renders the last project offline and exits.
-- `--selftest report.txt` builds a scratch project and runs 332 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--selftest report.txt` builds a scratch project and runs 333 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
 - `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
 
 ## Code layout
@@ -404,7 +404,8 @@ All app code is header-only in `Source/` and compiled through `Main.cpp`.
 | File | Contents |
 | --- | --- |
 | `Main.cpp` | App, window, engine setup, out-of-process plugin scanning, command line |
-| `MainComponent.h` | Project lifecycle, layout, shortcuts, autosave, demo song, dialogs |
+| `MainComponent.h` | Project lifecycle, layout, shortcuts, autosave, dialogs |
+| `DemoSong.h` | The demo song: a whole techno track built from the app's own devices |
 | `TransportBar.h` | Transport, tempo/position, view toggles, file menu, Push status |
 | `ArrangementView.h` | Ruler, track and group rows, clips (fades, multi-select), rubber band, drag & drop |
 | `AutomationLane.h` | Automation lanes |

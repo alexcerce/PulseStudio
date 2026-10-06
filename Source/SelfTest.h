@@ -26,6 +26,7 @@
 #include "Video.h"
 #include "HelpLine.h"
 #include "FirstRun.h"
+#include "DemoSong.h"
 #include "SessionView.h"
 #include "Browser.h"
 #include "PluginWindow.h"
@@ -2901,6 +2902,80 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
                        String (nothing && stale && offered ? "" : "offered at the wrong time; ") + (damaged && refuses ? "" : "a damaged autosave is offered or used; ") + (first ? "" : "recover wrong; ")
                        + (second ? "" : "a second recovery loses the first kept version; ") + (neverSaved ? "" : "a project never saved does not recover; ") + "ok");
             rdir.deleteRecursively();
+        }
+
+        // --- v0.99.50: the demo song (a whole techno track) ---------------------------------------------------
+        {
+            rep.step ("demo song");
+            auto demoFile = dir.getChildFile ("demo_song_test.tracktionedit");
+            demoFile.deleteFile();
+            auto demo = te::createEmptyEdit (engine, demoFile);
+            te::EditFileOperations (*demo).save (true, true, false);
+            DemoSong::build (*demo);
+            te::EditFileOperations (*demo).save (true, true, false);
+            auto dtracks = EngineHelpers::getUserTracks (*demo);
+            StringArray wrong;
+            auto expect = [&] (bool ok, const String& what) { if (! ok) wrong.add (what); };
+            StringArray names;
+            int notes = 0, emptyTracks = 0;
+            for (auto t : dtracks)
+            {
+                names.add (t->getName());
+                int n = 0;
+                for (auto c : t->getClips()) if (auto mc = dynamic_cast<te::MidiClip*> (c)) n += mc->getSequence().getNumNotes();
+                if (n == 0) ++emptyTracks;
+                notes += n;
+            }
+            expect (names.joinIntoString (",") == "Kick,Drums,Bass,Acid,Stab,Drone,Riser", "tracks: " + names.joinIntoString (","));
+            expect (emptyTracks == 0 && notes > 5000, "notes: " + String (notes) + ", tracks without any: " + String (emptyTracks));
+            const double songBars = demo->getLength().inSeconds() * DemoSong::bpm / 240.0;
+            expect (std::abs (songBars - DemoSong::totalBars) < 1.0, "length " + String (songBars, 1) + " bars");
+            expect (std::abs (demo->tempoSequence.getTempo (0)->getBpm() - 132.0) < 0.01, "tempo");
+            // the things it is meant to show are really there
+            te::Plugin* acidSynth = dtracks.size() > 3 ? dtracks[3]->pluginList[0] : nullptr;
+            auto cutoff = acidSynth != nullptr ? acidSynth->getAutomatableParameterByID ("cutoff") : nullptr;
+            expect (cutoff != nullptr && cutoff->getCurve().getNumPoints() >= 20, "the acid's filter automation");
+            int ducked = 0;
+            for (auto t : dtracks) for (auto p : t->pluginList) if (dynamic_cast<pulse::ProCompressor*> (p) != nullptr && p->getSidechainSourceID() == dtracks[0]->itemID) ++ducked;
+            expect (ducked == 2, String (ducked) + " compressors keyed from the kick");
+            expect (Routing::getReturnTracks (*demo).size() == 3 && Vca::all (*demo).size() == 2 && demo->getMasterPluginList().findFirstPluginOfType<pulse::Limiter>() != nullptr, "returns / VCAs / mastering chain");
+            expect (SongKey::get (*demo) == 0 && Notes::ofProject (*demo).contains ("techno") && Notes::has (*dtracks[3]), "key / notes");
+            int slotClips = 0;
+            for (auto t : dtracks) for (auto slot : t->getClipSlotList().getClipSlots()) if (slot->getClip() != nullptr) ++slotClips;
+            expect (slotClips >= 16, String (slotClips) + " clips in the session view");
+            expect (Sharing::missingFiles (*demo).isEmpty(), "it points at files");
+            // and it sounds: the drop is loud but under full scale, the breakdown (no kick) quieter, the very start not silent
+            demo->getTransport().ensureContextAllocated();
+            auto renderBars = [&] (int from, int to, const String& tag, te::Track* only = nullptr)
+            {
+                te::Renderer::Parameters p (*demo);
+                p.tracksToDo = only != nullptr ? te::toBitSet (juce::Array<te::Track*> { only }) : te::toBitSet (te::getAllTracks (*demo));
+                if (only != nullptr) p.useMasterPlugins = false;
+                p.destFile = dir.getChildFile ("demo_" + tag + ".wav");
+                p.destFile.deleteFile();
+                p.audioFormat = engine.getAudioFileFormatManager().getWavFormat();
+                p.bitDepth = 24;
+                p.sampleRateForAudio = 48000.0;
+                p.time = { EngineHelpers::beatToTime (*demo, from * 4.0), EngineHelpers::beatToTime (*demo, to * 4.0) };
+                p.checkNodesForAudio = false;
+                p.usePlugins = true; if (only == nullptr) p.useMasterPlugins = true;
+                auto f = EditingOps::renderDetached ("demo " + tag, p);
+                return f.existsAsFile() ? pulse::LoudnessAnalyser::measureFile (engine, f) : pulse::LoudnessAnalyser::Result();
+            };
+            const auto drop = renderBars (40, 48, "drop"), brk = renderBars (56, 64, "breakdown"), intro = renderBars (0, 8, "intro"), drop2 = renderBars (88, 96, "drop2");
+            // each track on its own over the same eight bars of the second drop: the balance of the mix, in numbers
+            String balance;
+            for (auto t : dtracks) balance << t->getName() << " " << String (renderBars (88, 96, "solo", t).integrated, 1) << ", ";
+            balance << "breakdown: ";
+            for (auto t : dtracks) balance << t->getName() << " " << String (renderBars (56, 64, "solo", t).integrated, 1) << ", ";
+            expect (drop.integrated > -18.0 && drop.integrated < -7.0 && drop.truePeakDb < -0.5f, "the drop: " + String (drop.integrated, 1) + " LUFS, peak " + String (drop.truePeakDb, 1));
+            expect (drop2.integrated > -18.0 && drop2.integrated < -7.0 && drop2.truePeakDb < -0.5f, "the second drop: " + String (drop2.integrated, 1) + " LUFS, peak " + String (drop2.truePeakDb, 1));
+            expect (brk.integrated < drop.integrated - 3.0 && brk.integrated > -40.0, "the breakdown: " + String (brk.integrated, 1) + " LUFS against the drop's " + String (drop.integrated, 1));
+            expect (intro.integrated > -35.0 && intro.integrated < drop.integrated, "the intro: " + String (intro.integrated, 1) + " LUFS");
+            rep.check (wrong.isEmpty(), "Demo song (a whole techno track: seven tracks, 120 bars, automation, sidechain, returns, mastering; it renders at sensible levels)",
+                       (wrong.isEmpty() ? String() : wrong.joinIntoString ("; ") + " | ") + String (notes) + " notes; intro " + String (intro.integrated, 1) + ", drop " + String (drop.integrated, 1) + " (peak " + String (drop.truePeakDb, 1)
+                         + "), breakdown " + String (brk.integrated, 1) + ", drop II " + String (drop2.integrated, 1) + " LUFS (peak " + String (drop2.truePeakDb, 1) + "); each track alone in drop II: " + balance);
+            demo = nullptr;
         }
 
         // --- sharing: collect all, templates -----------------------------------------------------------
