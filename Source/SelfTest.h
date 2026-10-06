@@ -22,6 +22,7 @@
 #include "DeviceChain.h"
 #include "PulseLookAndFeel.h"
 #include "MidiLearn.h"
+#include "MidiMapView.h"
 #include "SessionView.h"
 #include "Browser.h"
 #include "PluginWindow.h"
@@ -2141,6 +2142,101 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
                        + (copied ? "" : "copy wrong; ") + (round ? "" : "next wrong; ") + (unique ? "" : "clip ids shared; ") + (renamed ? "" : "rename wrong; ")
                        + (removedCurrent && removedOther && lastStays ? "" : "delete wrong; ") + (letters ? "" : "letters wrong; ") + (saved ? "" : "not in the project; ") + (headerOk ? "" : "header / menu wrong; ") + "ok");
             edit->deleteTrack (at);
+            edit->getUndoManager().clearUndoHistory();
+        }
+
+        // --- v0.99.37: controller mapping pages --------------------------------------------------------------
+        {
+            rep.step ("mapping pages");
+            auto pt = ClipImport::createContentTrack (*edit, "Pages", false);
+            auto vol = pt->getVolumePlugin()->volParam;
+            auto pan = pt->getVolumePlugin()->panParam;
+            edit->state.removeChild (edit->state.getChildWithName ("PULSEMIDIMAP"), nullptr);
+            bool pagesOk = false, kept = false, windowOk = false;
+            String note;
+            {
+                MidiLearn learn (*edit);
+                // with no page chosen, a mapping is "always"
+                learn.startLearning (*vol);
+                learn.processControllerForTest (1, 30, 10);
+                const bool always = learn.isMapped (*vol) && learn.numMappingsOn (0) == 1 && learn.getPage() == 0;
+                // on page 1 knob 31 is the pan; on page 2 the same knob is the volume
+                learn.setPage (1);
+                learn.startLearning (*pan);
+                learn.processControllerForTest (1, 31, 0);
+                learn.setPage (2);
+                const bool panOnlyOn1 = ! learn.isMapped (*pan);
+                learn.startLearning (*vol);
+                learn.processControllerForTest (1, 31, 0);
+                const bool counts = learn.numMappingsOn (0) == 1 && learn.numMappingsOn (1) == 1 && learn.numMappingsOn (2) == 1;
+                pan->setNormalisedParameter (0.5f, sendNotificationSync);
+                vol->setNormalisedParameter (0.5f, sendNotificationSync);
+                learn.processControllerForTest (1, 31, 127);   // page 2: the volume
+                const bool page2 = vol->getCurrentNormalisedValue() > 0.95f && std::abs (pan->getCurrentNormalisedValue() - 0.5f) < 0.01f;
+                learn.setPage (1);
+                learn.processControllerForTest (1, 31, 0);     // page 1: the pan
+                const bool page1 = pan->getCurrentNormalisedValue() < 0.05f && vol->getCurrentNormalisedValue() > 0.95f;
+                learn.processControllerForTest (1, 30, 0);     // the "always" one works on every page
+                const bool alwaysWorks = vol->getCurrentNormalisedValue() < 0.05f;
+                // two buttons of the controller step through the pages that have something on them (3..8 are empty)
+                learn.startLearningPageButton (true);
+                const bool learningButton = learn.isLearning() && learn.getLearningName().contains ("next");
+                learn.processControllerForTest (1, 40, 127);
+                learn.startLearningPageButton (false);
+                learn.processControllerForTest (1, 41, 127);
+                learn.processControllerForTest (1, 40, 0); learn.processControllerForTest (1, 41, 0);
+                learn.processControllerForTest (1, 40, 127);
+                const bool stepped = learn.getPage() == 2 && learn.pageJustChanged();
+                learn.processControllerForTest (1, 40, 100);   // still held: no second step
+                const bool held = learn.getPage() == 2;
+                learn.processControllerForTest (1, 40, 0);
+                learn.processControllerForTest (1, 40, 127);   // round to page 1 (pages 3..8 have nothing)
+                const bool wrapped = learn.getPage() == 1;
+                learn.processControllerForTest (1, 41, 127);   // and back
+                const bool back = learn.getPage() == 2 && learn.pageButtonText (true) == "CC 40 (ch 1)" && learn.pageButtonText (false) == "CC 41 (ch 1)";
+                // names, moving a mapping to another page, removing one
+                learn.setPageName (2, "Mixer");
+                const bool named = learn.pageName (2) == "Mixer" && learn.pageName (1) == "Page 1" && learn.pageName (0) == "Always" && learn.mappingText (*vol).contains ("on Mixer");
+                auto rows2 = learn.rows (2);
+                const bool rowsOk = rows2.size() == 1 && rows2[0].cc == 31 && rows2[0].target.contains ("Pages");
+                if (! rows2.empty()) learn.moveToPage (rows2[0].index, 3);
+                const bool moved = learn.numMappingsOn (2) == 0 && learn.numMappingsOn (3) == 1;
+                {
+                    PulseLookAndFeel laf;
+                    LookAndFeel::setDefaultLookAndFeel (&laf);
+                    MidiMap::Panel panel (learn);
+                    panel.setSize (640, 420);
+                    learn.setPage (3);
+                    panel.refreshNow();
+                    const bool shows = panel.numRowsShown() == 1 && panel.rowText (0).startsWith ("CC 31") && panel.nameShown() == "Page 3";
+                    learn.setPage (2);
+                    panel.refreshNow();
+                    const bool empty = panel.numRowsShown() == 0 && panel.nameShown() == "Mixer";
+                    auto img = panel.createComponentSnapshot (panel.getLocalBounds());
+                    learn.setPage (3);
+                    panel.refreshNow();
+                    auto img2 = panel.createComponentSnapshot (panel.getLocalBounds());
+                    auto f = dir.getChildFile ("midi_pages.png");
+                    f.deleteFile();
+                    if (auto os = f.createOutputStream()) { PNGImageFormat png; png.writeImageToStream (img2, *os); }
+                    windowOk = shows && empty && img.isValid();
+                    LookAndFeel::setDefaultLookAndFeel (nullptr);
+                }
+                pagesOk = always && panOnlyOn1 && counts && page2 && page1 && alwaysWorks && learningButton && stepped && held && wrapped && back && named && rowsOk && moved;
+                note = String (always ? "" : "always wrong; ") + (panOnlyOn1 && counts ? "" : "pages mixed up; ") + (page2 && page1 ? "" : "the same knob does not change with the page; ") + (alwaysWorks ? "" : "always-mapping lost on a page; ")
+                       + (learningButton && stepped && held && wrapped && back ? "" : "page buttons wrong (page " + String (learn.getPage()) + "); ") + (named ? "" : "names wrong; ") + (rowsOk && moved ? "" : "rows / move wrong; ");
+            }
+            {
+                // everything is in the project: a new reader finds the page, the names, the buttons and the mappings
+                MidiLearn again (*edit);
+                kept = again.getPage() == 3 && again.pageName (2) == "Mixer" && again.numMappingsOn (0) == 1 && again.numMappingsOn (1) == 1 && again.numMappingsOn (3) == 1 && again.pageButtonText (true) == "CC 40 (ch 1)";
+                again.setPage (0);
+                again.clearPageButton (true); again.clearPageButton (false);
+            }
+            rep.check (pagesOk && kept && windowOk, "Controller mapping pages (the same knob does something else on each page, always-mappings, page buttons on the controller, names, kept in the project, the window)",
+                       note + (kept ? "" : "not kept in the project; ") + (windowOk ? "" : "window wrong; ") + "ok");
+            edit->state.removeChild (edit->state.getChildWithName ("PULSEMIDIMAP"), nullptr);
+            edit->deleteTrack (pt);
             edit->getUndoManager().clearUndoHistory();
         }
 

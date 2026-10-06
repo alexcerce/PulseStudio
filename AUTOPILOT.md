@@ -175,7 +175,7 @@ well EVERYWHERE." So, besides the list:
    [x] sidechain picker on every device
 6. Workflow: [ ] device racks with parallel chains  [x] track alternatives  [x] project and track notes
    [x] browser preview in time and in key  [x] macros on the track header  [x] toolbar / window layouts
-   [ ] controller mapping pages  [ ] video track
+   [x] controller mapping pages  [ ] video track
 
 Not attempted (told the owner why): content libraries and AI session players (large downloads / trained models),
 a scripting environment like Max for Live, surround / Atmos, a score editor. Still owed from before: rerun the
@@ -603,3 +603,9 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   done exactly that since it was written, so a track with several clips kept some of them beside the rendered
   one; it has its own check now. Not done: alternatives for folder tracks; automation is shared by all
   alternatives of a track (Logic's are too, unless asked otherwise). 319 checks, quick tier.
+- 2026-10-06: v0.99.37. Controller mapping pages. MidiLearn.h: each mapping has a page (0 = always; old
+  projects read as always), the page chosen, page names, and two learned buttons that step through the pages
+  that have something on them (on the press, not while held); everything in "PULSEMIDIMAP". MidiMapView.h:
+  the mappings window. MainComponent: commands midi.mappings / pageNext / pagePrev / pageAlways, the banner
+  says the page for a moment when it changes. Tested with made-up controller messages; no real controller was
+  used. Push 2 keeps its own handling and has no part in this. 320 checks, quick tier.

@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.37 - 2026-10-06
+
+- Controller mapping pages: eight pages of MIDI mappings, a mappings window, and page buttons learned from the controller
+
 ## 0.99.36 - 2026-10-06
 
 - Track alternatives: several versions of a track's clips, one in use (track menu > Alternatives)

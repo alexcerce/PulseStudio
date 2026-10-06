@@ -2,6 +2,7 @@
 
 #include "Mastering.h"
 #include "Layouts.h"
+#include "MidiMapView.h"
 #include "About.h"
 #include "UndoSync.h"
 #include "Common.h"
@@ -348,6 +349,10 @@ public:
             c.add ("view.layout" + String (i + 1), "Window layout: " + Layouts::builtIn()[(size_t) i].name, "View", {}, [this, i] { applyBuiltInLayout (i); });
         for (int i = 0; i < 4; ++i)
             c.add ("view.myLayout" + String (i + 1), "Window layout: your own, number " + String (i + 1), "View", {}, [this, i] { applySavedLayout (i); });
+        c.add ("midi.mappings", "Controller mappings and pages", "MIDI", {}, [this] { if (midiLearn != nullptr && ! About::isCapturing()) MidiMap::show (*midiLearn); });
+        c.add ("midi.pageNext", "Controller mappings: next page", "MIDI", {}, [this] { if (midiLearn != nullptr) midiLearn->stepPage (true); });
+        c.add ("midi.pagePrev", "Controller mappings: previous page", "MIDI", {}, [this] { if (midiLearn != nullptr) midiLearn->stepPage (false); });
+        c.add ("midi.pageAlways", "Controller mappings: no page (only what is always mapped)", "MIDI", {}, [this] { if (midiLearn != nullptr) midiLearn->setPage (0); });
         c.add ("view.notes", "Notes for the project and its tracks", "View", {}, [this] { if (edit != nullptr && ! About::isCapturing()) Notes::show (*edit); });
         c.add ("view.steps", "Piano roll: step grid on / off", "View", {}, [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->showSteps (! pianoRoll->stepGrid().isVisible()); } });
         c.add ("midi.fitChords", "MIDI: fit to the chord track", "MIDI", {}, [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("fitchords"); } });
@@ -1023,6 +1028,7 @@ private:
         midiLearn->addChangeListener (this);
         if (push != nullptr) push->setView (evs.get());
         evs->midiLearn = midiLearn.get();
+        midiLearn->onShowMappings = [this] { if (midiLearn != nullptr && ! About::isCapturing()) MidiMap::show (*midiLearn); };
 
         transport.setEdit (edit.get());
         StartupTimer::mark ("helpers");
@@ -1130,6 +1136,7 @@ private:
         arrangement = nullptr;
         if (push != nullptr) push->setView (nullptr);
         Launcher::slotRecordings().clear();
+        MidiMap::close();
         midiLearn = nullptr;
         linkSync = nullptr;
         envelopePlayer = nullptr;
@@ -1150,6 +1157,20 @@ private:
     {
         if (midiLearn != nullptr && source == midiLearn.get())
         {
+            if (! midiLearn->isLearning() && midiLearn->pageJustChanged())
+            {
+                // the page was changed (perhaps from the controller): say which one it is now, for a moment
+                learnBanner.setText ("Controller page: " + midiLearn->pageName (midiLearn->getPage()), dontSendNotification);
+                learnBanner.setVisible (true);
+                learnBanner.toFront (false);
+                const auto shownAt = ++bannerShows;
+                Timer::callAfterDelay (1400, [sp = SafePointer<MainComponent> (this), shownAt]
+                {
+                    if (sp != nullptr && sp->bannerShows == shownAt && (sp->midiLearn == nullptr || ! sp->midiLearn->isLearning())) sp->learnBanner.setVisible (false);
+                });
+                return;
+            }
+            ++bannerShows;
             learnBanner.setText ("MIDI Learn: move a knob or fader on your controller for  " + midiLearn->getLearningName()
                                    + "   (Esc to cancel)", dontSendNotification);
             learnBanner.setVisible (midiLearn->isLearning());
@@ -1663,6 +1684,7 @@ private:
     std::unique_ptr<CommandRegistry> commands;
     std::unique_ptr<CommandPalette> palette;
     Label learnBanner;
+    int bannerShows = 0;
 
     std::unique_ptr<Push2Controller> push;   // declared before transport: transport polls its status
     TransportBar transport;
