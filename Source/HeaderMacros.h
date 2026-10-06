@@ -2,6 +2,7 @@
 
 #include "EditViewState.h"
 #include "Macros.h"
+#include "ValueEntry.h"
 
 /** A track's macros on its header: small dials for the macros that control something, shown when the track is
     tall enough to have room for them. The sound of a track can then be played from the arrangement, without
@@ -55,14 +56,16 @@ namespace HeaderMacros
             g.drawText (macro->macroName.get(), label.expanded (3.0f, 0.0f), Justification::centred, true);
         }
 
-        void mouseDown (const MouseEvent&) override
+        void mouseDown (const MouseEvent& e) override
         {
+            if (e.mods.isPopupMenu()) { typing = true; ValueEntry::ask (*this, *macro); return; }
+            typing = false;
             track.edit.getUndoManager().beginNewTransaction ("Macro " + macro->macroName.get());
             macro->parameterChangeGestureBegin();
             atDown = value();
         }
-        void mouseDrag (const MouseEvent& e) override { turnTo (atDown - (float) e.getDistanceFromDragStartY() / (e.mods.isShiftDown() ? 800.0f : 160.0f)); }
-        void mouseUp (const MouseEvent&) override     { macro->parameterChangeGestureEnd(); }
+        void mouseDrag (const MouseEvent& e) override { if (! typing) turnTo (atDown - (float) e.getDistanceFromDragStartY() / (e.mods.isShiftDown() ? 800.0f : 160.0f)); }
+        void mouseUp (const MouseEvent&) override     { if (! typing) macro->parameterChangeGestureEnd(); }
         void mouseDoubleClick (const MouseEvent&) override
         {
             track.edit.getUndoManager().beginNewTransaction ("Reset macro");
@@ -77,6 +80,7 @@ namespace HeaderMacros
         te::AudioTrack& track;
         te::MacroParameter::Ptr macro;
         float atDown = 0.0f;
+        bool typing = false;
     };
 
     /** The row of dials. Empty (and asking for no room) when the track has no mapped macro. */

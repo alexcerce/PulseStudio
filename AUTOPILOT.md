@@ -148,12 +148,12 @@ well EVERYWHERE." So, besides the list:
   clipped at the smallest and largest window size, light themes too), and behaviour (undo for every edit, double
   click resets, wheel and fine-drag on every control, typed values, tooltips, right-click menus, keyboard access).
 - **Quality-of-life list** (add to it whenever something is noticed; do one or two with every version):
-  [ ] typed value entry on every knob and readout  [ ] A/B compare and copy A>B in every device window
+  [x] typed value entry on every knob and readout  [ ] A/B compare and copy A>B in every device window
   [ ] undo/redo inside device windows shown in the window  [ ] per-device input/output meters and gain match
   [ ] "what does this do" hover help everywhere, with a status-bar line  [ ] search in every menu that has more
   than 20 entries  [ ] drag any device, clip, preset or sample anywhere it could sensibly go
   [ ] consistent modifier keys (fine, snap off, copy-drag) across arrangement, piano roll, automation and devices
-  [ ] collect-all-and-save, missing-file finder  [ ] undo history list  [ ] default track / device presets
+  [ ] collect-all-and-save, missing-file finder  [x] undo history list  [ ] default track / device presets
   [ ] zoom to selection / fit, and remembered zoom per view  [ ] crash-safe autosave restore prompt reviewed
   [ ] every list sortable and keyboard-navigable  [ ] nothing blocks the UI for more than 100 ms (progress
   shown instead)  [ ] first-run experience: audio set-up check, demo project, short tour
@@ -647,3 +647,14 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   events (seed 331), command fuzz 720 commands (seed 332), installer PulseStudio-0.99.39-Setup.exe. Groups 1,
   2, 3, 5 and 6 of the Programme are complete. Open: group 4's per-note pitch and time editing of audio; the
   quality-of-life list; the one-hour --soak; nothing has been judged by ear.
+- 2026-10-06: v0.99.40. First item of the quality-of-life list: typing a value. Source/ValueEntry.h: parse()
+  reads a typed or shown value as a number in base units; valueFor() finds the parameter value whose own text
+  says the typed number (by halving the range against the parameter's own valueToString, so no unit has to be
+  known here), then takes the typed number itself when the value is in a plain unit, so it is not rounded to
+  what the display shows. ParamKnob: the value under the knob is a box to type into. Mixer: the level readout.
+  ParamBar (rack bars) and the header's macro dials: a small box on a right-click (ValueEntry::ask).
+  Not covered: the points on the graph displays (HandleView), the VCA strips' readouts.
+  Audit of the list against the code: "undo history list" was there already (UndoHistory.h) and is ticked;
+  A/B exists in the device window but without copy A>B; no per-device meters; no status-bar help line; no
+  search inside menus; no finder for missing files; no default presets; the welcome screen exists, a tour
+  does not. 323 checks, quick tier.

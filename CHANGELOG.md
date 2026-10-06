@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.40 - 2026-10-06
+
+- Type a value: click the value under a knob (or a mixer level) and type it, with units
+
 ## 0.99.39 - 2026-10-06
 
 - Video: a window that shows the project's film in step with the song (File menu)

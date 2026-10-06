@@ -27,8 +27,14 @@ public:
         onDragEnd = [this] { param->parameterChangeGestureEnd(); };
         onValueChange = [this] { param->setParameter ((float) getValue(), sendNotificationSync); };
         if (auto def = p.getDefaultValue()) setDoubleClickReturnValue (true, *def);
-        setTooltip (p.getParameterName() + " (double-click to reset)");
+        setTooltip (p.getParameterName() + " (double-click to reset, right-click to type a value)");
         startTimerHz (8);
+    }
+
+    void mouseDown (const MouseEvent& e) override
+    {
+        if (e.mods.isPopupMenu()) { ValueEntry::ask (*this, *param); return; }
+        Slider::mouseDown (e);
     }
 
     void paint (Graphics& g) override

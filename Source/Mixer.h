@@ -255,6 +255,14 @@ public:
         db.setJustificationType (Justification::centred);
         db.setFont (FontOptions (12.0f));
         db.setColour (Label::textColourId, Theme::muted);
+        // click the level to type one
+        db.setEditable (true, false, true);
+        db.setTooltip ("The fader's level in dB: click to type one");
+        db.setColour (Label::backgroundWhenEditingColourId, Theme::well);
+        db.setColour (Label::outlineWhenEditingColourId, Theme::accent);
+        db.setColour (Label::textWhenEditingColourId, Theme::text);
+        db.onEditorShow = [this] { if (auto* ed = db.getCurrentTextEditor()) { ed->setJustification (Justification::centred); ed->selectAll(); } };
+        db.onTextChange = [this] { typeLevel (db.getText()); };
         addAndMakeVisible (db);
 
         if (meterPlugin != nullptr)
@@ -493,7 +501,7 @@ private:
             if (! fader.isMouseButtonDown()) fader.setValue (volPlugin->getVolumeDb(), dontSendNotification);
             if (! pan.isMouseButtonDown())   pan.setValue (volPlugin->getPan(), dontSendNotification);
             auto v = volPlugin->getVolumeDb();
-            db.setText (v <= -59.9f ? "-inf" : String (v, 1), dontSendNotification);
+            if (! db.isBeingEdited()) db.setText (v <= -59.9f ? "-inf" : String (v, 1), dontSendNotification);
         }
         if (meter != nullptr)
         {
@@ -558,6 +566,16 @@ private:
         for (auto p : evs.edit.getMasterPluginList())
             if (dynamic_cast<pulse::Limiter*> (p) != nullptr) return p;
         return nullptr;
+    }
+
+    /** Sets the fader from typed text ("-6", "-inf", "+2.5 dB"), as the level readout does. False for nonsense. */
+    bool typeLevel (const String& text)
+    {
+        double v = 0.0;
+        if (volPlugin == nullptr || ! ValueEntry::parse (text, v)) return false;
+        evs.edit.getUndoManager().beginNewTransaction ("Type level");
+        volPlugin->setVolumeDb ((float) jlimit (fader.getMinimum(), fader.getMaximum(), v));
+        return true;
     }
 
     void showVcaMenu()

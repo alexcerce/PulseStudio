@@ -2426,6 +2426,73 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
             edit->getUndoManager().clearUndoHistory();
         }
 
+        // --- v0.99.40: typing a value under a knob ---------------------------------------------------------------
+        {
+            rep.step ("typed values");
+            StringArray wrong;
+            auto reads = [&] (const String& text, double want)
+            {
+                double got = 0.0;
+                if (! ValueEntry::parse (text, got) || std::abs (got - want) > jmax (1.0e-9, std::abs (want) * 1.0e-6)) wrong.add ("\"" + text + "\" read as " + String (got));
+            };
+            reads ("1.5 kHz", 1500.0); reads ("2k", 2000.0); reads ("440", 440.0); reads ("250 ms", 0.25); reads ("1.2 s", 1.2); reads ("35%", 35.0); reads ("-6 dB", -6.0); reads ("+3", 3.0);
+            reads ("25L", -25.0); reads ("25R", 25.0); reads ("C", 0.0); reads ("4.0:1", 4.0); reads ("0,5", 0.5); reads ("12 st", 12.0);
+            double junk = 0.0;
+            if (ValueEntry::parse ("hello", junk) || ValueEntry::parse ("", junk) || ValueEntry::parse ("-", junk)) wrong.add ("words read as numbers");
+            if (! ValueEntry::parse ("-inf dB", junk) || junk > -1.0e6) wrong.add ("-inf not read");
+
+            // on real parameters: a frequency, a level, a share shown as a percentage, a time, a choice
+            auto vt = ClipImport::createContentTrack (*edit, "Typed", false);
+            auto eqp = edit->getPluginCache().createNewPlugin (pulse::PrismEQ::xmlTypeName, {});
+            auto cmp = edit->getPluginCache().createNewPlugin (pulse::ProCompressor::xmlTypeName, {});
+            vt->pluginList.insertPlugin (eqp, 0, nullptr); vt->pluginList.insertPlugin (cmp, 1, nullptr);
+            auto* eq = dynamic_cast<pulse::PrismEQ*> (eqp.get());
+            auto* comp = dynamic_cast<pulse::ProCompressor*> (cmp.get());
+            using EQ = pulse::PrismEQ;
+            auto type = [&] (te::AutomatableParameter* p, const String& text, float want, float tol, const char* what)
+            {
+                if (! ValueEntry::apply (*p, text)) { wrong.add (String (what) + ": \"" + text + "\" refused"); return; }
+                if (std::abs (p->getCurrentValue() - want) > tol) wrong.add (String (what) + ": \"" + text + "\" gave " + String (p->getCurrentValue(), 3) + " (" + p->getCurrentValueAsString() + ")");
+            };
+            auto* freq = eq->param (EQ::idx (2, EQ::pFreq));
+            type (freq, "2k", 2000.0f, 0.5f, "frequency");
+            type (freq, "3", 3000.0f, 0.5f, "frequency, a bare number under kHz");
+            type (freq, "440 hz", 440.0f, 0.5f, "frequency");
+            type (freq, "250", 250.0f, 0.5f, "frequency, a bare number under Hz");
+            type (freq, "1234", 1234.0f, 0.5f, "frequency, more exact than it is shown");
+            type (freq, "99999", 30000.0f, 0.5f, "frequency past the end");
+            type (eq->param (EQ::idx (2, EQ::pGain)), "-6", -6.0f, 0.01f, "gain");
+            type (eq->param (EQ::idx (2, EQ::pGain)), "+4.5 dB", 4.5f, 0.01f, "gain");
+            type (eq->param (eq->g (EQ::gMix)), "35", 0.35f, 0.006f, "mix");
+            type (eq->param (eq->g (EQ::gMix)), "80%", 0.8f, 0.006f, "mix");
+            type (eq->param (EQ::idx (2, EQ::pAttack)), "0.02 s", 20.0f, 0.2f, "attack in seconds");
+            type (eq->param (EQ::idx (2, EQ::pAttack)), "7.5", 7.5f, 0.06f, "attack, a bare number under ms");
+            type (eq->param (EQ::idx (2, EQ::pType)), "notch", (float) EQ::notch, 0.01f, "a choice by name");
+            type (eq->param (EQ::idx (2, EQ::pType)), "high sh", (float) EQ::highShelf, 0.01f, "a choice by the start of its name");
+            type (eq->param (EQ::idx (2, EQ::pSlope)), "48", 6.0f, 0.01f, "a slope by its number");
+            type (comp->param (pulse::ProCompressor::pRatio), "4", 4.0f, 0.05f, "ratio");
+            type (comp->param (pulse::ProCompressor::pThreshold), "-18.5", -18.5f, 0.06f, "threshold");
+            // nonsense is refused and changes nothing; typing is one undo step
+            const float before = freq->getCurrentValue();
+            if (ValueEntry::apply (*freq, "loud") || freq->getCurrentValue() != before) wrong.add ("nonsense accepted");
+            {
+                PulseLookAndFeel laf;
+                LookAndFeel::setDefaultLookAndFeel (&laf);
+                EditViewState evs (*edit, sm);
+                ParamKnob knob (evs, *freq);
+                knob.setSize (64, 78);
+                freq->setParameter (1000.0f, sendNotificationSync);
+                edit->getUndoManager().beginNewTransaction ("before typing");
+                if (! knob.typeValue ("5k") || std::abs (freq->getCurrentValue() - 5000.0f) > 0.5f) wrong.add ("the knob's box does not set the value");
+                if (knob.typeValue ("purple") || std::abs (freq->getCurrentValue() - 5000.0f) > 0.5f) wrong.add ("the knob's box accepts nonsense");
+                LookAndFeel::setDefaultLookAndFeel (nullptr);
+            }
+            rep.check (wrong.isEmpty(), "Typing a value (units as the knobs show them, bare numbers in the unit shown, choices by name, more exact than the display, nonsense refused)",
+                       wrong.isEmpty() ? String ("14 readings, 17 typed values on an EQ and a compressor") : wrong.joinIntoString ("; "));
+            edit->deleteTrack (vt);
+            edit->getUndoManager().clearUndoHistory();
+        }
+
         // --- sharing: collect all, templates -----------------------------------------------------------
         {
             auto outside = File::getSpecialLocation (File::tempDirectory).getChildFile ("PulseStudioSelfTestOutside");

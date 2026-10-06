@@ -4,6 +4,7 @@
 
 #include "EditViewState.h"
 #include "Macros.h"
+#include "ValueEntry.h"
 #include "MidiLearn.h"
 #include "Modulators.h"
 
@@ -63,11 +64,35 @@ public:
         name.setInterceptsMouseClicks (false, false);
         value.setFont (FontOptions (11.5f));
         value.setJustificationType (Justification::centred);
-        value.setInterceptsMouseClicks (false, false);
+        // click the value to type one: "2k", "-6", "35%", "0.02 s", or the name of a choice
+        value.setEditable (true, false, true);
+        value.setTooltip ("Click to type a value");
+        value.setColour (Label::backgroundWhenEditingColourId, Theme::well);
+        value.setColour (Label::outlineWhenEditingColourId, Theme::accent);
+        value.setColour (Label::textWhenEditingColourId, Theme::text);
+        value.onEditorShow = [this]
+        {
+            if (auto* ed = value.getCurrentTextEditor())
+            {
+                ed->setJustification (Justification::centred);
+                ed->setInputRestrictions (32);
+                ed->setFont (value.getFont());
+                ed->selectAll();
+            }
+        };
+        value.onTextChange = [this] { typeValue (value.getText()); };
         if (showName) addAndMakeVisible (name);
         addAndMakeVisible (value);
         startTimerHz (12);
         timerCallback();   // show the value straight away
+    }
+
+    /** Sets the value from typed text (what the box under the knob does). False when the text means nothing here. */
+    bool typeValue (const String& text)
+    {
+        const bool ok = ValueEntry::apply (*param, text);
+        refreshValueText();
+        return ok;
     }
 
     /** A shorter label than the parameter's name (e.g. "Freq" inside a "Band 3" section). */
@@ -177,6 +202,7 @@ public:
         Macros::addToMenu (m, *param);
         Modulators::addToMenu (m, *param);
         PushMap::addToMenu (m, *param);
+        m.addItem ("Type a value...", [sp = SafePointer<ParamKnob> (this)] { if (sp != nullptr) sp->value.showEditor(); });
         if (auto def = param->getDefaultValue())
             m.addItem ("Reset to default", [this, v = *def] { param->setParameter (v, sendNotificationSync); });
         m.showMenuAsync (PopupMenu::Options().withTargetComponent (this));
@@ -200,11 +226,13 @@ public:
     Label name;
 
 private:
+    void refreshValueText() { value.setText (formatter ? formatter (param->getCurrentBaseValue()) : param->getCurrentValueAsStringWithLabel(), dontSendNotification); }
+
     void timerCallback() override
     {
         if (! slider.isMouseButtonDown())
             slider.setValue (Modulators::isModulated (*param) ? param->getCurrentBaseValue() : param->getCurrentValue(), dontSendNotification);
-        value.setText (formatter ? formatter (param->getCurrentBaseValue()) : param->getCurrentValueAsStringWithLabel(), dontSendNotification);
+        if (! value.isBeingEdited()) refreshValueText();
         // the overlays (modulation arcs and dots) only need drawing again when one of them has moved
         float lo = 0, hi = 0;
         const bool swept = ModDrop::sweep && ModDrop::sweep (*param, lo, hi);
