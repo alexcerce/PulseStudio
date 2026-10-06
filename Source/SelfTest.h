@@ -1868,6 +1868,62 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
             edit->getUndoManager().clearUndoHistory();
         }
 
+        // --- v0.99.32: notes for the project and for each track -----------------------------------------------
+        {
+            rep.step ("notes");
+            auto na = ClipImport::createContentTrack (*edit, "Lead Vocal", false), nb = ClipImport::createContentTrack (*edit, "Guitar", false);
+            edit->getUndoManager().beginNewTransaction ("note");
+            Notes::set (*na, "Retake the second verse.\nBorrowed mic: +6 dB at the preamp.");
+            Notes::setProject (*edit, "Master by Friday.");
+            const bool stored = Notes::has (*na) && ! Notes::has (*nb) && Notes::ofProject (*edit) == "Master by Friday." && Notes::of (*na).startsWith ("Retake");
+            const bool sums = Notes::summary (String::repeatedString ("word ", 100)).endsWith ("...") && Notes::summary (String::repeatedString ("word ", 100)).length() <= 243 && Notes::summary ("  short  ") == "short";
+            // a note of nothing but spaces is no note; an empty one takes the property away again
+            Notes::set (*nb, "   ");
+            const bool blank = ! Notes::has (*nb);
+            Notes::set (*nb, {});
+            const bool removed = ! nb->state.hasProperty (Notes::noteID);
+            // the window: the project first, then the tracks; what is typed goes to the one chosen, and undo brings the old text back
+            bool windowOk = false;
+            String windowNote;
+            {
+                PulseLookAndFeel laf;
+                LookAndFeel::setDefaultLookAndFeel (&laf);
+                Notes::Panel panel (*edit);
+                panel.setSize (720, 460);
+                const bool lists = panel.numRows() == Notes::tracks (*edit).size() + 1 && panel.selectedRow() == 0 && panel.shownText() == "Master by Friday.";
+                panel.select (na);
+                const bool shows = panel.shownText().startsWith ("Retake") && panel.selectedRow() == Notes::tracks (*edit).indexOf (na) + 1;
+                panel.select (nb);
+                edit->getUndoManager().beginNewTransaction ("type");
+                panel.type ("Tune the low E.");
+                const bool typed = Notes::of (*nb) == "Tune the low E." && Notes::of (*na).startsWith ("Retake");
+                edit->getUndoManager().undo();
+                const bool undone = ! Notes::has (*nb);
+                edit->getUndoManager().redo();
+                const bool redone = Notes::of (*nb) == "Tune the low E.";
+                auto img = panel.createComponentSnapshot (panel.getLocalBounds());
+                auto f = dir.getChildFile ("notes.png");
+                f.deleteFile();
+                if (auto os = f.createOutputStream()) { PNGImageFormat png; png.writeImageToStream (img, *os); }
+                // the track's header wears the mark, and says the note when asked
+                EditViewState evs (*edit, sm);
+                TrackHeader head (evs, na), plain (evs, ClipImport::createContentTrack (*edit, "Plain", false));
+                head.setSize (200, 70);
+                const bool marked = head.overNoteMark ({ 5, 5 }) && ! head.overNoteMark ({ 60, 30 }) && ! plain.overNoteMark ({ 5, 5 });
+                windowOk = lists && shows && typed && undone && redone && marked;
+                windowNote = String (lists ? "" : "list wrong; ") + (shows ? "" : "track's note not shown; ") + (typed ? "" : "typing went elsewhere; ") + (undone && redone ? "" : "undo / redo wrong; ") + (marked ? "" : "header mark wrong; ");
+                LookAndFeel::setDefaultLookAndFeel (nullptr);
+            }
+            // the notes travel with the project file
+            const auto xml = edit->state.toXmlString();
+            const bool saved = xml.contains ("Master by Friday.") && xml.contains ("Tune the low E.");
+            rep.check (stored && sums && blank && removed && windowOk && saved, "Notes (for the project and for each track, kept in the project, undoable; the window, and the mark on the track)",
+                       String (stored ? "" : "not stored; ") + (sums ? "" : "summary wrong; ") + (blank && removed ? "" : "empty notes wrong; ") + windowNote + (saved ? "" : "not in the project file; ") + "ok");
+            Notes::setProject (*edit, {});
+            for (auto tr : te::getAudioTracks (*edit)) if (tr->getName() == "Lead Vocal" || tr->getName() == "Guitar" || tr->getName() == "Plain") edit->deleteTrack (tr);
+            edit->getUndoManager().clearUndoHistory();
+        }
+
         // --- sharing: collect all, templates -----------------------------------------------------------
         {
             auto outside = File::getSpecialLocation (File::tempDirectory).getChildFile ("PulseStudioSelfTestOutside");

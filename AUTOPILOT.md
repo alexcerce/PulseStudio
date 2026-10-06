@@ -173,7 +173,7 @@ well EVERYWHERE." So, besides the list:
 5. Mixing: [x] VCA faders  [x] reference track A/B with loudness match  [x] mastering chain preset + assistant
    [x] match EQ  [x] linear-phase EQ mode  [x] loudness report on export  [x] automatic freeze under load
    [x] sidechain picker on every device
-6. Workflow: [ ] device racks with parallel chains  [ ] track alternatives  [ ] project and track notes
+6. Workflow: [ ] device racks with parallel chains  [ ] track alternatives  [x] project and track notes
    [ ] browser preview in time and in key  [ ] macros on the track header  [ ] toolbar / window layouts
    [ ] controller mapping pages  [ ] video track
 
@@ -572,3 +572,8 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   random input 4000 events on the demo project (seed 311) and on the 30-track project (seed 312), command fuzz
   504 commands (seed 313), installer PulseStudio-0.99.31-Setup.exe. Group 5 is done. Next: group 6 (workflow);
   group 4's per-note pitch and time editing of audio is still owed and wants a run of its own.
+- 2026-10-06: v0.99.32. Notes. Source/Notes.h: the text is the property "pulseNote" on the project's state and
+  on each track's; Notes::Panel (list + editor, one undo step per burst of typing, follows undo and tracks that
+  come and go), Notes::Window (one at a time; closed with the project), command view.notes, the track menu, a
+  folded corner on TrackHeader (TooltipClient: hover reads the note, click opens it). Folder tracks are in the
+  window's list but their headers have no mark or menu entry yet. 314 checks, quick tier.

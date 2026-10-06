@@ -326,6 +326,7 @@ public:
         c.add ("midi.humanize", "MIDI: humanize notes", "MIDI", key ('H', ctrl | altM), [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("humanize"); } });
         c.add ("midi.legato", "MIDI: legato", "MIDI", key ('L', ctrl | altM), [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("legato"); } });
         c.add ("midi.fitScale", "MIDI: fit to scale", "MIDI", key ('F', ctrl | altM), [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("fit"); } });
+        c.add ("view.notes", "Notes for the project and its tracks", "View", {}, [this] { if (edit != nullptr && ! About::isCapturing()) Notes::show (*edit); });
         c.add ("view.steps", "Piano roll: step grid on / off", "View", {}, [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->showSteps (! pianoRoll->stepGrid().isVisible()); } });
         c.add ("midi.fitChords", "MIDI: fit to the chord track", "MIDI", {}, [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("fitchords"); } });
         c.add ("midi.strum", "MIDI: strum chords up", "MIDI", {}, [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("strum"); } });
@@ -1028,6 +1029,7 @@ private:
         transport.setEdit (nullptr);
         DeviceEditors::closeAll();
         UndoHistory::closeAll();
+        Notes::close();
         pianoRoll = nullptr;
         mixer = nullptr;
         deviceChain = nullptr;

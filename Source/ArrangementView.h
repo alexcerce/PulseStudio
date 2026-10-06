@@ -17,6 +17,7 @@
 #include "SampleEditor.h"
 #include "Meters.h"
 #include "DragDrop.h"
+#include "Notes.h"
 
 //==============================================================================
 /** Draws a bar/beat grid between x positions for the given view. */
@@ -1299,6 +1300,7 @@ private:
 //==============================================================================
 class TrackHeader : public Component,
                     public DragAndDropTarget,
+                    public TooltipClient,
                     private Timer
 {
 public:
@@ -1387,6 +1389,13 @@ public:
         g.setColour (TrackColours::textOn (col));
         g.setFont (FontOptions (11.0f, Font::bold));
         g.drawText (String (number), badge, Justification::centred);
+        if (Notes::has (*track))   // a folded corner: this track has notes
+        {
+            Path corner;
+            corner.addTriangle (0.0f, 0.0f, 11.0f, 0.0f, 0.0f, 11.0f);
+            g.setColour (Theme::yellow);
+            g.fillPath (corner);
+        }
         g.setColour (Theme::well);
         g.fillRect (0, getHeight() - 1, getWidth(), 1);
     }
@@ -1449,10 +1458,14 @@ public:
 
     bool overInstrumentLabel (juce::Point<int> p) const { return type.isVisible() && type.getBounds().contains (p) && instrument() != nullptr; }
 
+    /** The corner mark of a track that has notes: hovering shows them, a click opens them. */
+    bool overNoteMark (juce::Point<int> p) const { return Notes::has (*track) && p.x < 16 && p.y < 16; }
+    String getTooltip() override { return overNoteMark (getMouseXYRelative()) ? "Notes:\n" + Notes::summary (Notes::of (*track)) : String(); }
+
     void mouseMove (const MouseEvent& e) override
     {
         setMouseCursor (onResizeEdge (e.y) ? MouseCursor::UpDownResizeCursor
-                                           : overInstrumentLabel (e.getPosition()) ? MouseCursor::PointingHandCursor : MouseCursor::NormalCursor);
+                                           : overInstrumentLabel (e.getPosition()) || overNoteMark (e.getPosition()) ? MouseCursor::PointingHandCursor : MouseCursor::NormalCursor);
         type.setColour (Label::textColourId, overInstrumentLabel (e.getPosition()) ? Theme::accent : Theme::muted);
     }
     void mouseExit (const MouseEvent&) override { type.setColour (Label::textColourId, Theme::muted); }
@@ -1460,6 +1473,7 @@ public:
     void mouseDown (const MouseEvent& e) override
     {
         auto& sm = evs.selectionManager;
+        if (! e.mods.isPopupMenu() && overNoteMark (e.getPosition())) { Notes::show (evs.edit, track.get()); return; }
         resizing = ! e.mods.isPopupMenu() && onResizeEdge (e.y);
         if (resizing) { resizeStart = evs.baseHeight (*track); return; }
         if (! e.mods.isPopupMenu() && overInstrumentLabel (e.getPosition()))   // click the instrument name: open it
@@ -1533,6 +1547,7 @@ public:
             if (auto folder = track->getParentFolderTrack())
                 m.addItem ("Ungroup \"" + folder->getName() + "\"", [folder] { EditingOps::ungroup (*folder); });
 
+            m.addItem (Notes::has (*track) ? "Notes for this track..." : "Write a note for this track...", [this] { Notes::show (evs.edit, track.get()); });
             m.addSeparator();
             const bool frozen = track->isFrozen (te::Track::individualFreeze);
             m.addItem (frozen ? "Unfreeze track" : "Freeze track", [t = track] { EditingOps::toggleFreeze (*t); });
@@ -1707,10 +1722,12 @@ public:
     }
 
 private:
+    bool hadNote = false;
     void timerCallback() override { refresh(); }
 
     void refresh()
     {
+        if (const bool noted = Notes::has (*track); noted != hadNote) { hadNote = noted; repaint(); }
         muteBtn.setToggleState (track->isMuted (false), dontSendNotification);
         soloBtn.setToggleState (track->isSolo (false), dontSendNotification);
         armBtn.setToggleState (EngineHelpers::isTrackArmed (*track), dontSendNotification);

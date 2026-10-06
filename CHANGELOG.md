@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.32 - 2026-10-06
+
+- Notes for the project and for each track, in one window; tracks with notes are marked on their header
+
 ## 0.99.31 - 2026-10-06
 
 - Reference song: A/B the mix against a finished song at matched loudness (Mastering menu on the master strip, or the Reference device)
