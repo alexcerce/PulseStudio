@@ -1632,6 +1632,12 @@ namespace DeviceEditors
             add ("Reverb", std::make_unique<SpaceUI::ReverbPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::ConvolutionReverb*> (&p))
             add ("Space", std::make_unique<SpaceUI::ConvolutionPanel> (evs, *s));
+        else if (auto s = dynamic_cast<pulse::Resonators*> (&p))
+            add ("Resonators", std::make_unique<TimeUI::ResonatorsPanel> (evs, *s));
+        else if (auto s = dynamic_cast<pulse::Shimmer*> (&p))
+            add ("Shimmer", std::make_unique<TimeUI::ShimmerPanel> (evs, *s));
+        else if (auto s = dynamic_cast<pulse::GrainDelay*> (&p))
+            add ("Grain Delay", std::make_unique<TimeUI::GrainPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::Amp*> (&p))
             add ("Amp", std::make_unique<AmpUI::AmpPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::FreqShifter*> (&p))
@@ -1696,6 +1702,7 @@ namespace DeviceEditors
             || dynamic_cast<pulse::Reverb*> (&p) != nullptr || dynamic_cast<pulse::Delay*> (&p) != nullptr || dynamic_cast<pulse::Saturator*> (&p) != nullptr
             || dynamic_cast<pulse::MultibandDynamics*> (&p) != nullptr || dynamic_cast<pulse::Limiter*> (&p) != nullptr
             || dynamic_cast<pulse::ConvolutionReverb*> (&p) != nullptr || dynamic_cast<pulse::ModEffect*> (&p) != nullptr
+            || dynamic_cast<pulse::Resonators*> (&p) != nullptr || dynamic_cast<pulse::Shimmer*> (&p) != nullptr
             || dynamic_cast<pulse::Amp*> (&p) != nullptr || dynamic_cast<pulse::Redux*> (&p) != nullptr || dynamic_cast<pulse::Exciter*> (&p) != nullptr
             || dynamic_cast<pulse::Gate*> (&p) != nullptr || dynamic_cast<pulse::TransientShaper*> (&p) != nullptr || dynamic_cast<pulse::DeEsser*> (&p) != nullptr;
     }

@@ -322,6 +322,43 @@ namespace FactoryPresetsMore
                 { "Send (100% wet hall)", { { "space", 6 }, { "predelay", 20 }, { "lowcut", 150 }, { "mix", 1.0f } } } } },
 
             //----------------------------------------------------------------------------------
+            // Resonators: chord 0 octaves, 1 fifths, 2 major, 3 minor, 4 sus 4, 5 major 7, 6 minor 7, 7 harmonics; note = MIDI note of the lowest string
+            { "pulseResonators", {
+                { "Drums to Chords (A minor)", { { "note", 45 }, { "chord", 3 }, { "decay", 1.2f }, { "mix", 0.5f } } },
+                { "Sympathetic Strings", { { "note", 38 }, { "chord", 1 }, { "decay", 4 }, { "colour", 3000 }, { "mix", 0.25f } } },
+                { "Major Glow", { { "note", 48 }, { "chord", 2 }, { "decay", 2.5f }, { "detune", 8 }, { "mix", 0.4f } } },
+                { "Dreamy Major 7", { { "note", 41 }, { "chord", 5 }, { "decay", 5 }, { "colour", 2500 }, { "detune", 10 }, { "mix", 0.45f } } },
+                { "Moody Minor 7", { { "note", 40 }, { "chord", 6 }, { "decay", 3.5f }, { "colour", 3500 }, { "mix", 0.45f } } },
+                { "Metal Pipe", { { "note", 57 }, { "chord", 7 }, { "decay", 0.6f }, { "colour", 12000 }, { "detune", 0 }, { "mix", 0.6f } } },
+                { "Sitar Drone", { { "note", 36 }, { "chord", 0 }, { "decay", 8 }, { "colour", 9000 }, { "detune", 14 }, { "mix", 0.35f } } },
+                { "Short Tuned Body", { { "note", 50 }, { "chord", 4 }, { "decay", 0.2f }, { "mix", 0.5f } } } } },
+
+            //----------------------------------------------------------------------------------
+            // Shimmer: interval 0 octave down, 1 fourth up, 2 fifth up, 3 octave up, 4 octave + fifth, 5 two octaves
+            { "pulseShimmer", {
+                { "Classic Shimmer", { { "decay", 6 }, { "shimmer", 0.5f }, { "interval", 3 }, { "mix", 0.35f } } },
+                { "Endless Heaven", { { "decay", 20 }, { "shimmer", 0.7f }, { "interval", 3 }, { "size", 1.0f }, { "damping", 6000 }, { "mix", 0.5f } } },
+                { "Fifths Choir", { { "decay", 8 }, { "shimmer", 0.6f }, { "interval", 2 }, { "mix", 0.4f } } },
+                { "Glass Octaves", { { "decay", 5 }, { "shimmer", 0.6f }, { "interval", 5 }, { "damping", 14000 }, { "lowcut", 300 }, { "mix", 0.3f } } },
+                { "Dark Descent", { { "decay", 10 }, { "shimmer", 0.6f }, { "interval", 0 }, { "damping", 4000 }, { "lowcut", 60 }, { "mix", 0.4f } } },
+                { "Organ Swell", { { "decay", 7 }, { "shimmer", 0.8f }, { "interval", 4 }, { "damping", 5000 }, { "mix", 0.45f } } },
+                { "Just a Big Hall", { { "decay", 4 }, { "shimmer", 0 }, { "mix", 0.3f } } },
+                { "Send (100% wet)", { { "decay", 8 }, { "shimmer", 0.55f }, { "interval", 3 }, { "mix", 1.0f } } } } },
+
+            //----------------------------------------------------------------------------------
+            // Grain Delay: sync 0 free, 1 1/16, 2 1/8, 3 1/4, 4 1/2, 5 1 bar
+            { "pulseGrainDelay", {
+                { "Octave Up Echo", { { "time", 300 }, { "pitch", 12 }, { "feedback", 0.4f }, { "mix", 0.35f } } },
+                { "Rising Stairs (1/8)", { { "sync", 2 }, { "pitch", 7 }, { "feedback", 0.65f }, { "mix", 0.4f } } },
+                { "Falling Stairs (1/4)", { { "sync", 3 }, { "pitch", -5 }, { "feedback", 0.6f }, { "mix", 0.4f } } },
+                { "Cloud", { { "time", 150 }, { "grain", 120 }, { "spray", 300 }, { "randompitch", 0.05f }, { "feedback", 0.5f }, { "mix", 0.5f } } },
+                { "Sparkle Dust", { { "time", 80 }, { "pitch", 12 }, { "grain", 30 }, { "spray", 200 }, { "randompitch", 1.0f }, { "feedback", 0.3f }, { "mix", 0.3f } } },
+                { "Thickener (tiny detune)", { { "time", 25 }, { "pitch", 0.12f }, { "grain", 80 }, { "spray", 10 }, { "feedback", 0 }, { "mix", 0.4f } } },
+                { "Sub Shadow", { { "time", 40 }, { "pitch", -12 }, { "grain", 100 }, { "feedback", 0 }, { "mix", 0.4f } } },
+                { "Smeared Repeat", { { "time", 400 }, { "grain", 200 }, { "spray", 120 }, { "feedback", 0.7f }, { "mix", 0.4f } } },
+                { "Glitch Scatter (1/16)", { { "sync", 1 }, { "grain", 20 }, { "spray", 400 }, { "randompitch", 0.5f }, { "feedback", 0.4f }, { "mix", 0.5f } } } } },
+
+            //----------------------------------------------------------------------------------
             // Pulse Amp: model 0 clean, 1 crunch, 2 lead, 3 heavy, 4 bass; cabinet 0 none, 1 1x12 open, 2 2x12, 3 4x12 closed, 4 bass 1x15
             { "pulseAmp", {
                 { "Sparkling Clean", { { "model", 0 }, { "gain", 0.35f }, { "bass", 0.45f }, { "mid", 0.4f }, { "treble", 0.65f }, { "presence", 0.6f }, { "cabinet", 1 }, { "mic", 0.2f } } },

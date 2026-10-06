@@ -160,9 +160,9 @@ well EVERYWHERE." So, besides the list:
 - Nothing that already works is taken away, and a rough edge found on the way is fixed then, or written here.
 
 1. Effects: [x] transient shaper  [x] de-esser  [x] gate / expander  [x] convolution reverb (built-in spaces)
-   [ ] shimmer reverb  [ ] spectral (freeze / blur / shift / spectral delay)  [x] chorus / flanger / phaser
+   [x] shimmer reverb  [ ] spectral (freeze / blur / shift / spectral delay)  [x] chorus / flanger / phaser
    [x] tremolo / auto-pan  [x] frequency shifter  [x] bit reduction  [x] amp + cabinet  [x] exciter  [ ] beat repeat
-   [ ] grain delay  [ ] looper  [ ] resonators
+   [x] grain delay  [ ] looper  [x] resonators
 2. Instruments: [ ] Wavetable third oscillator + wavetable import from audio  [ ] sampler (slices, per-slice stretch,
    zones)  [ ] analogue-style subtractive synth  [ ] physical-modelling instrument (string / mallet)
    [ ] electric piano  [ ] tonewheel organ
@@ -426,3 +426,7 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   Known limit, written into its test: a full-level 5 kHz sine through the four-stage Heavy amp with no cabinet
   still folds back at -30 dB (very high harmonics of a near-square wave); 4 x or anti-aliased clipping would be
   the next step if it is ever heard. 11 presets, 270 checks. Quick tier only (slow tier owed for group 1).
+- 2026-10-06: v0.99.12. Resonators, Shimmer, Grain Delay: Source/TimeFx.h (GrainShift = two-tap delay-line pitch
+  shifter, used by Shimmer), TimeFxDisplay.h. 8 / 8 / 9 presets. 277 checks, quick tier only. The device fuzz found
+  the Resonators getting far too loud at long decays (input now scaled by sqrt(1 - g^2), and each string is
+  limited); Shimmer's fed-back level is scaled down with decay. Left in group 1: spectral, beat repeat, looper.

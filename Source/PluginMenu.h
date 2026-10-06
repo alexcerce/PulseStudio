@@ -136,6 +136,9 @@ namespace PluginMenu
         addBuiltIn<pulse::Reverb> (effects, edit, cb);
         addBuiltIn<pulse::ConvolutionReverb> (effects, edit, cb);
         addBuiltIn<pulse::Delay> (effects, edit, cb);
+        addBuiltIn<pulse::Shimmer> (effects, edit, cb);
+        addBuiltIn<pulse::GrainDelay> (effects, edit, cb);
+        addBuiltIn<pulse::Resonators> (effects, edit, cb);
         addBuiltIn<pulse::Chorus> (effects, edit, cb);
         addBuiltIn<pulse::PhaserFlanger> (effects, edit, cb);
         addBuiltIn<pulse::AutoPan> (effects, edit, cb);

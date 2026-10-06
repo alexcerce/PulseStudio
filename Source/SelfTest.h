@@ -200,6 +200,9 @@ namespace SelfTest
         shoot (pulse::Redux::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Redux::pRate, 6000); p.set (pulse::Redux::pBits, 4); }, "shot_redux.png");
         shoot (pulse::Exciter::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Exciter::pAmount, 0.6f); p.set (pulse::Exciter::pColour, 0.6f); }, "shot_exciter.png");
         shoot (pulse::Amp::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Amp::pModel, 2); p.set (pulse::Amp::pGain, 0.7f); p.set (pulse::Amp::pMid, 0.7f); p.set (pulse::Amp::pCabinet, 3); }, "shot_amp.png");
+        shoot (pulse::Resonators::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Resonators::pChord, 5); p.set (pulse::Resonators::pDecay, 3.0f); }, "shot_resonators.png");
+        shoot (pulse::Shimmer::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Shimmer::pShimmer, 0.7f); }, "shot_shimmer.png");
+        shoot (pulse::GrainDelay::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::GrainDelay::pPitch, 7); p.set (pulse::GrainDelay::pSpray, 150); p.set (pulse::GrainDelay::pRandomPitch, 0.3f); p.set (pulse::GrainDelay::pFeedback, 0.6f); }, "shot_grain.png");
         shoot (pulse::Gate::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Gate::pThreshold, -22); p.set (pulse::Gate::pRange, 40); p.set (pulse::Gate::pHysteresis, 6); }, "shot_gate.png");
         shoot (pulse::TransientShaper::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::TransientShaper::pAttack, 0.6f); p.set (pulse::TransientShaper::pSustain, -0.4f); }, "shot_transient.png");
         shoot (pulse::DeEsser::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::DeEsser::pThreshold, -36); p.set (pulse::DeEsser::pRange, 10); }, "shot_deesser.png");
@@ -4379,6 +4382,142 @@ namespace SelfTest
                     LookAndFeel::setDefaultLookAndFeel (nullptr);
                 }
                 ap3 = nullptr;
+            }
+
+            // --- resonators, shimmer, grain delay ---------------------------------------------------------
+            {
+                auto mk = [&] (const char* type) { auto pl = edit->getPluginCache().createNewPlugin (type, {}); t->pluginList.insertPlugin (pl, 0, nullptr); return pl; };
+                auto rp3 = mk (pulse::Resonators::xmlTypeName), sp3 = mk (pulse::Shimmer::xmlTypeName), gp3 = mk (pulse::GrainDelay::xmlTypeName);
+                auto* reson = dynamic_cast<pulse::Resonators*> (rp3.get());
+                auto* shim = dynamic_cast<pulse::Shimmer*> (sp3.get());
+                auto* grain = dynamic_cast<pulse::GrainDelay*> (gp3.get());
+                using RS = pulse::Resonators;
+                using SH = pulse::Shimmer;
+                using GD = pulse::GrainDelay;
+                AudioBuffer<float> out;
+                auto partAt = [&] (const AudioBuffer<float>& b, double hz, double from, double len)   // level of one frequency in a stretch of time
+                {
+                    const int a = (int) (from * sr), n = (int) (len * sr);
+                    double re = 0, im = 0;
+                    for (int i = 0; i < n; ++i)
+                    {
+                        const double ph = MathConstants<double>::twoPi * hz * (a + i) / sr;
+                        re += b.getSample (0, a + i) * std::cos (ph); im += b.getSample (0, a + i) * std::sin (ph);
+                    }
+                    return Decibels::gainToDecibels ((float) (2.0 * std::sqrt (re * re + im * im) / n), -140.0f);
+                };
+                auto rmsAt = [&] (const AudioBuffer<float>& b, double from, double len) { return Decibels::gainToDecibels (b.getRMSLevel (0, (int) (from * sr), (int) (len * sr)), -140.0f); };
+                auto click = [] (int, double tm) { return tm == 0.0 ? 1.0f : 0.0f; };
+                Random nrng (11);
+                auto noiseBurst = [&nrng] (int, double tm) { return tm < 0.3 ? (nrng.nextFloat() * 2.0f - 1.0f) * 0.25f : 0.0f; };
+
+                // resonators: noise comes out ringing at the notes of the strings (and not between them); the ring lasts as long as Decay says
+                reson->set (RS::pNote, 57); reson->set (RS::pChord, 0); reson->set (RS::pDecay, 2.0f); reson->set (RS::pDetune, 0.0f); reson->set (RS::pMix, 1.0f); reson->set (RS::pColour, 16000.0f);
+                runFx (*reson, noiseBurst, 2.4, &out);
+                const float onNote = partAt (out, 220.0, 0.5, 0.5), offNote = partAt (out, 277.0, 0.5, 0.5);
+                const float ringEarly = rmsAt (out, 0.4, 0.2), ringLate = rmsAt (out, 1.4, 0.2);
+                reson->set (RS::pDecay, 12.0f); reson->set (RS::pInput, 12.0f);
+                Random nrng2 (12);
+                const float resLoud = runFx (*reson, [&nrng2] (int, double) { return (nrng2.nextFloat() * 2.0f - 1.0f) * 0.25f; }, 4.0);
+                reson->set (RS::pDecay, 1.5f); reson->set (RS::pInput, 0.0f); reson->set (RS::pMix, 0.0f);
+                auto tone5 = sine (440, 0.25f);
+                runFx (*reson, tone5, 0.2, &out);
+                float resDry = 0;
+                for (int i = 0; i < out.getNumSamples(); ++i) resDry = jmax (resDry, std::abs (out.getSample (0, i) - tone5 (0, i / sr)));
+                reson->set (RS::pMix, 0.5f);
+                const bool resOk = onNote > offNote + 15.0f && std::abs ((ringEarly - ringLate) - 30.0f) < 8.0f && resLoud < 24.0f && resDry < 1.0e-6f
+                                   && std::abs (reson->frequency (0) - 220.0f) < 0.01f && std::abs (reson->frequency (1) - 440.0f) < 0.01f;
+                rep.check (resOk, "Resonators (ring at their notes, for as long as Decay says, stable at the longest decay)",
+                           "220 Hz " + String (onNote, 1) + " dB against " + String (offNote, 1) + " between the notes; falls " + String (ringEarly - ringLate, 1) + " dB in a second at 2 s decay; loudest "
+                           + String (resLoud, 1) + " dBFS with noise at 12 s and +12 dB input");
+
+                // shimmer: a 440 Hz note leaves an octave above it in the tail, which it does not without Shimmer; it dies away; nothing runs off
+                auto note440 = [] (int, double tm) { return tm < 0.5 ? 0.25f * (float) std::sin (MathConstants<double>::twoPi * 440.0 * tm) : 0.0f; };
+                shim->set (SH::pMix, 1.0f); shim->set (SH::pDecay, 4.0f); shim->set (SH::pShimmer, 0.8f); shim->set (SH::pInterval, 3); shim->set (SH::pDamping, 16000.0f);
+                runFx (*shim, note440, 6.0, &out);
+                const float octave = partAt (out, 880.0, 1.5, 0.1), shimEarly = rmsAt (out, 1.0, 0.5), shimLate = rmsAt (out, 5.4, 0.5);
+                shim->set (SH::pShimmer, 0.0f);
+                runFx (*shim, note440, 2.2, &out);
+                const float noOctave = partAt (out, 880.0, 1.5, 0.1);
+                shim->set (SH::pShimmer, 1.0f); shim->set (SH::pDecay, 30.0f);
+                Random nrng3 (13);
+                const float shimLoud = runFx (*shim, [&nrng3] (int, double) { return (nrng3.nextFloat() * 2.0f - 1.0f) * 0.25f; }, 8.0);
+                shim->set (SH::pInterval, 0);
+                Random nrng4 (14);
+                const float shimLoudDown = runFx (*shim, [&nrng4] (int, double) { return (nrng4.nextFloat() * 2.0f - 1.0f) * 0.25f; }, 8.0);
+                shim->set (SH::pShimmer, 0.5f); shim->set (SH::pDecay, 5.0f); shim->set (SH::pInterval, 3); shim->set (SH::pMix, 0.35f); shim->set (SH::pDamping, 8000.0f);
+                const bool shimOk = octave > noOctave + 20.0f && octave > -60.0f && shimLate < shimEarly - 10.0f && shimLoud < 12.0f && shimLoudDown < 12.0f;
+                rep.check (shimOk, "Shimmer (the tail climbs an octave, dies away, and stays in hand at full shimmer and 30 s)",
+                           "880 Hz in the tail of a 440 Hz note " + String (octave, 1) + " dB (without shimmer " + String (noOctave, 1) + "); tail " + String (shimEarly, 1) + " -> " + String (shimLate, 1)
+                           + " dB; loudest with noise " + String (shimLoud, 1) + " dBFS up, " + String (shimLoudDown, 1) + " down");
+
+                // grain delay: with no pitch change it is a plain delay; an octave up really is; feedback stays stable; sync follows the tempo
+                grain->set (GD::pTime, 100.0f); grain->set (GD::pPitch, 0.0f); grain->set (GD::pSpray, 0.0f); grain->set (GD::pRandomPitch, 0.0f); grain->set (GD::pFeedback, 0.0f); grain->set (GD::pMix, 1.0f);
+                runFx (*grain, tone5, 0.6, &out);
+                float delayErr = 0;
+                const int late = (int) (0.1 * sr);
+                for (int i = late + (int) (0.2 * sr); i < out.getNumSamples(); ++i) delayErr = jmax (delayErr, std::abs (out.getSample (0, i) - tone5 (0, (i - late) / sr)));
+                grain->set (GD::pPitch, 12.0f);
+                runFx (*grain, tone5, 1.0, &out);
+                // (each grain starts at its own point in the wave, so the octave is counted by how often the wave crosses zero, not by one exact frequency)
+                int crossings = 0;
+                for (int i = (int) (0.5 * sr) + 1; i < (int) (1.0 * sr); ++i) if ((out.getSample (0, i) >= 0.0f) != (out.getSample (0, i - 1) >= 0.0f)) ++crossings;
+                const float upOct = (float) crossings, stayed = partAt (out, 440.0, 0.5, 0.5);
+                grain->set (GD::pFeedback, 0.95f); grain->set (GD::pSpray, 300.0f); grain->set (GD::pRandomPitch, 1.0f);
+                Random nrng5 (15);
+                const float grainLoud = runFx (*grain, [&nrng5] (int, double) { return (nrng5.nextFloat() * 2.0f - 1.0f) * 0.25f; }, 6.0);
+                grain->set (GD::pSync, 2);
+                const float synced = grain->timeMs();
+                grain->set (GD::pSync, 0); grain->set (GD::pFeedback, 0.3f); grain->set (GD::pSpray, 0.0f); grain->set (GD::pRandomPitch, 0.0f); grain->set (GD::pPitch, 0.0f); grain->set (GD::pTime, 250.0f);
+                const float eighth = (float) (30000.0 / edit->tempoSequence.getTempo (0)->getBpm());
+                const bool grainOk = delayErr < 1.0e-3f && std::abs (upOct - 880.0f) < 90.0f && stayed < -50.0f && grainLoud < 12.0f && std::abs (synced - eighth) < 0.5f;
+                rep.check (grainOk, "Grain Delay (a plain delay at no pitch change, an octave up, stable at 95% feedback, tempo sync)",
+                           "against a plain 100 ms delay: off by " + String (delayErr, 4) + "; +12: " + String (crossings) + " zero crossings in half a second (880 = an octave up), 440 Hz left at " + String (stayed, 1) + " dB" + "; loudest " + String (grainLoud, 1)
+                           + " dBFS; 1/8 = " + String (synced, 1) + " ms");
+
+                // their windows
+                {
+                    PulseLookAndFeel laf;
+                    LookAndFeel::setDefaultLookAndFeel (&laf);
+                    EditViewState evs (*edit, sm);
+                    TimeUI::ResonatorsView rv3 (*reson);
+                    TimeUI::ShimmerView sv3 (*shim);
+                    TimeUI::GrainView gv3 (*grain);
+                    Image img (Image::ARGB, 1000, 520, true);
+                    for (Component* c : { (Component*) &rv3, (Component*) &sv3, (Component*) &gv3 }) { c->setSize (1000, 520); Graphics g (img); c->paint (g); }
+                    const float n0 = reson->get (RS::pNote), d0 = reson->get (RS::pDecay), sd0 = shim->get (SH::pDecay), ss0 = shim->get (SH::pShimmer);
+                    const float gt0 = grain->get (GD::pTime), gp0 = grain->get (GD::pPitch), gs0 = grain->get (GD::pSpray);
+                    rv3.dragHandle (0, 60.0f, -40.0f);
+                    sv3.dragHandle (0, 80.0f, 0.0f);
+                    sv3.dragHandle (1, 0.0f, -60.0f);
+                    gv3.dragHandle (0, 100.0f, -80.0f);
+                    gv3.dragHandle (1, 80.0f, -40.0f);
+                    const bool handlesOk = reson->get (RS::pNote) > n0 + 1.0f && reson->get (RS::pDecay) > d0 * 1.2f && shim->get (SH::pDecay) > sd0 + 0.3f && shim->get (SH::pShimmer) > ss0 + 0.05f
+                                           && grain->get (GD::pTime) > gt0 + 30.0f && grain->get (GD::pPitch) > gp0 + 3.0f && grain->get (GD::pSpray) > gs0 + 20.0f && grain->get (GD::pRandomPitch) > 0.05f;
+                    StringArray missing;
+                    for (auto* pp : std::initializer_list<pulse::PulsePlugin*> { reson, shim, grain })
+                    {
+                        DeviceEditors::Editor ed (evs, *pp);
+                        ed.setSize (1100, 760);
+                        std::set<te::AutomatableParameter*> seen;
+                        std::function<void (Component&)> walk = [&] (Component& c)
+                        {
+                            if (auto* k = dynamic_cast<ParamKnob*> (&c)) seen.insert (&k->getParameter());
+                            if (auto* k = dynamic_cast<ParamChoice*> (&c)) seen.insert (&k->getParameter());
+                            if (auto* k = dynamic_cast<ParamCombo*> (&c)) seen.insert (&k->getParameter());
+                            for (auto* chd : c.getChildren()) walk (*chd);
+                        };
+                        walk (ed);
+                        for (int i = 0; i < pp->numParams(); ++i) if (! seen.count (&*pp->param (i))) missing.add (pp->getName() + ": " + pp->param (i)->paramID);
+                        if (! DeviceEditors::hasFullEditor (*pp)) missing.add (pp->getName() + ": no full window");
+                    }
+                    rep.check (handlesOk && missing.isEmpty(), "Resonators, Shimmer and Grain Delay windows: points on the graph, and a control for every parameter",
+                               missing.isEmpty() ? "note " + String (roundToInt (n0)) + " -> " + String (roundToInt (reson->get (RS::pNote))) + ", shimmer decay " + String (sd0, 1) + " -> " + String (shim->get (SH::pDecay), 1)
+                                                   + " s, grain pitch " + String (gp0, 1) + " -> " + String (grain->get (GD::pPitch), 1) + " st"
+                                                 : missing.joinIntoString ("; "));
+                    LookAndFeel::setDefaultLookAndFeel (nullptr);
+                }
+                rp3 = nullptr; sp3 = nullptr; gp3 = nullptr;
             }
 
             // displays build

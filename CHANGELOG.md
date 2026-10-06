@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.12 - 2026-10-06
+
+- New effects: Resonators (five tuned strings), Shimmer (a reverb that climbs in pitch) and Grain Delay, each with its own window and presets
+
 ## 0.99.11 - 2026-10-06
 
 - New effect: Pulse Amp, five amplifiers and four speaker cabinets in one device
