@@ -711,12 +711,13 @@ public:
                              pulse::Spectral::xmlTypeName, pulse::MultibandDynamics::xmlTypeName, pulse::GlueCompressor::xmlTypeName, pulse::PulseEQ::xmlTypeName,
                              pulse::Vocoder::xmlTypeName };
         const int numFx = (int) std::size (fx);
-        const char* synths[] = { pulse::WavetableSynth::xmlTypeName, pulse::FMSynth::xmlTypeName, pulse::WavetableSynth::xmlTypeName };
+        const char* synths[] = { pulse::WavetableSynth::xmlTypeName, pulse::FMSynth::xmlTypeName, pulse::Analog::xmlTypeName, pulse::StringModel::xmlTypeName,
+                                 pulse::Organ::xmlTypeName, pulse::EPiano::xmlTypeName };
         for (int t = EngineHelpers::getUserTracks (*edit).size(); t < numTracks; ++t)
         {
             auto track = ClipImport::createContentTrack (*edit, "Big " + String (t + 1), false);
             if (track == nullptr) break;
-            PluginMenu::insertPlugin (track, track->pluginList, edit->getPluginCache().createNewPlugin (synths[t % 3], {}), nullptr);
+            PluginMenu::insertPlugin (track, track->pluginList, edit->getPluginCache().createNewPlugin (synths[t % (int) std::size (synths)], {}), nullptr);
             for (int k = 0; k < 2 + t % 3; ++k)
                 PluginMenu::insertPlugin (track, track->pluginList, edit->getPluginCache().createNewPlugin (fx[(t * 3 + k) % numFx], {}), nullptr);
             for (int bar = (t % 4) * 4; bar < 120; bar += 8 + (t % 3) * 4)

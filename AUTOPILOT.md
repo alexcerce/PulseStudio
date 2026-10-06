@@ -462,3 +462,7 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   a cent); voices get their memory in initialise(), nothing is allocated while playing. Known limit: hard sync
   is not band-limited (it can fold back on high notes). 10 presets each. 293 checks, quick tier.
   Left in group 2: the sampler (slices, per-slice stretch, zones) - that one extends the existing Simpler.
+- 2026-10-06: slow tier for v0.99.15 to v0.99.17 (Wavetable osc 3 / import, Organ, Electric Piano, Analog, String):
+  Debug self-test 293 pass; monkey seeds 1701 / 1702 on the 30-track project, which now also holds the four new
+  instruments; command fuzz 1701: all clean, no crash report. Nothing owed. Group 2 has one item left: the
+  sampler (slices, per-slice stretch; key and velocity zones already exist in Simpler since v0.18).
