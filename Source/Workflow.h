@@ -441,6 +441,31 @@ namespace Workflow
         return added;
     }
 
+    /** The hit in the clip's audio nearest to a beat of the song (within `withinBeats`), as a time in its file, if there is one. */
+    inline std::optional<te::TimePosition> transientNearBeat (te::AudioClipBase& ac, double beat, double withinBeats)
+    {
+        auto& wm = ac.getWarpTimeManager();
+        std::optional<te::TimePosition> best;
+        double bestDist = withinBeats;
+        for (auto t : sourceTransients (ac))
+        {
+            const double d = std::abs (warpTimeToEditBeat (ac, wm.sourceTimeToWarpTime (t)) - beat);
+            if (d < bestDist) { bestDist = d; best = t; }
+        }
+        return best;
+    }
+
+    /** Pins a hit: a warp marker exactly on it, where it sounds now (so nothing moves until the marker is dragged).
+        Returns the marker's index (the one already there, if the hit has one). */
+    inline int addWarpMarkerAtTransient (te::AudioClipBase& ac, te::TimePosition sourceTime)
+    {
+        auto& wm = ac.getWarpTimeManager();
+        auto find = [&] { for (int i = 0; i < wm.getMarkers().size(); ++i) if (std::abs ((wm.getMarkers()[i]->sourceTime - sourceTime).inSeconds()) < 0.005) return i; return -1; };
+        if (const int have = find(); have >= 0) return have;
+        wm.insertMarker (te::WarpMarker (sourceTime, wm.sourceTimeToWarpTime (sourceTime)));
+        return find();
+    }
+
     /** Audio quantize: warp markers at the transients are pulled towards the grid
         (strength 1 = exactly on the grid). Returns the number of markers moved, or -1 while the
         transient analysis is still running. */

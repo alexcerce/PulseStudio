@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.24 - 2026-10-06
+
+- Warped audio clips show the hits in their audio as ticks; dragging one pins it with a warp marker and moves it
+
 ## 0.99.23 - 2026-10-06
 
 - Clips: crop to the loop range, and consolidate several clips into one (Ctrl+Shift+J)

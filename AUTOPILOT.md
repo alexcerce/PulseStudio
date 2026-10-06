@@ -168,7 +168,7 @@ well EVERYWHERE." So, besides the list:
    [x] electric piano  [x] tonewheel organ
 3. MIDI: [x] note length  [x] pitch  [x] random  [x] velocity  [x] drawable arpeggiator / note-echo patterns
    [x] chord track + chord progressions (piano roll and MIDI effects follow it)  [x] step sequencer view for drum clips
-4. Audio editing: [ ] warp by dragging transients on the waveform, follow-tempo per clip  [ ] per-note pitch and time
+4. Audio editing: [x] warp by dragging transients on the waveform, follow-tempo per clip  [ ] per-note pitch and time
    editing of audio  [x] reverse / crop / consolidate clips  [ ] clip launch recorded into the arrangement with quantised punch
 5. Mixing: [ ] VCA faders  [ ] reference track A/B with loudness match  [ ] mastering chain preset + assistant
    [ ] match EQ  [ ] linear-phase EQ mode  [ ] loudness report on export  [ ] automatic freeze under load
@@ -507,3 +507,9 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   Left in group 4: warp by dragging transients on the waveform; per-note pitch and time editing of audio (a
   large item: needs pitch tracking and a resynthesis that the engine does not have ready-made); clip launch
   recorded into the arrangement with quantised punch. Read SampleEditor.h, ClipProperties.h (warp), SessionView.h.
+- 2026-10-06: v0.99.24. Warp by grabbing hits: Workflow::transientNearBeat / addWarpMarkerAtTransient; the clip
+  component draws the hits as ticks in its warp strip (selected clips only: sourceTransients reads the whole file
+  the first time, on the message thread, which is a pause of its own on long files: moving that to a background
+  thread belongs on the quality list under "nothing blocks the UI for more than 100 ms"). Markers at all hits,
+  audio quantise and warp-to-tempo existed already. 303 checks, quick tier.
+  Left in group 4: per-note pitch and time editing of audio; clip launch recorded into the arrangement.

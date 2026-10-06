@@ -126,7 +126,9 @@ public:
     {
         auto m = modeAt (e.position);
         setMouseCursor (m == Mode::move ? MouseCursor::DraggingHandCursor : MouseCursor::LeftRightResizeCursor);
-        setTooltip (m == Mode::warp ? "Warp marker: drag to move (Alt = no snap), right-click to delete" : String());
+        setTooltip (m == Mode::warp ? "Warp marker: drag to move (Alt = no snap), right-click to delete"
+                                    : dynamic_cast<te::AudioClipBase*> (clip.get()) != nullptr && static_cast<te::AudioClipBase*> (clip.get())->getWarpTime() && e.position.y >= (float) getHeight() - markerStripHeight
+                                        ? "Drag a hit (a small tick) to pin it to a beat; double-click elsewhere for a marker" : String());
     }
 
     void mouseDown (const MouseEvent& e) override
@@ -155,6 +157,19 @@ public:
         dragStartBeat = EngineHelpers::timeToBeat (evs.edit, pos.getStart());
         dragEndBeat = EngineHelpers::timeToBeat (evs.edit, pos.getEnd());
         mode = modeAt (e.position);
+
+        // Grabbing a hit in the warp strip where there is no marker yet: one is put exactly on the hit, and the drag moves it.
+        if (mode != Mode::warp)
+            if (auto ac = dynamic_cast<te::AudioClipBase*> (clip.get()); ac != nullptr && ac->getWarpTime() && e.position.y >= (float) getHeight() - markerStripHeight)
+            {
+                const double beat = evs.xToBeat (evs.beatToX (ac->getStartBeat().inBeats()) + e.position.x);
+                if (auto hit = Workflow::transientNearBeat (*ac, beat, 6.0 / jmax (1.0, (double) evs.pixelsPerBeat)))
+                {
+                    evs.edit.getUndoManager().beginNewTransaction ("Warp marker on a hit");
+                    warpIndex = Workflow::addWarpMarkerAtTransient (*ac, *hit);
+                    if (warpIndex >= 0) mode = Mode::warp;
+                }
+            }
 
         // remember every selected clip's start so they can move together
         groupStarts.clear();
@@ -572,6 +587,18 @@ private:
         const float bottom = (float) getHeight();
         g.setColour (Colours::black.withAlpha (0.3f));
         g.fillRect (0.0f, bottom - markerStripHeight, (float) getWidth(), markerStripHeight);
+
+        // the hits in the audio, as small ticks to grab (for the selected clip: working them out reads its file)
+        if (evs.selectionManager.isSelected (clip.get()))
+        {
+            auto& wm = ac.getWarpTimeManager();
+            g.setColour (Colours::white.withAlpha (0.45f));
+            for (auto t : Workflow::sourceTransients (ac))
+            {
+                const float x = evs.beatToX (Workflow::warpTimeToEditBeat (ac, wm.sourceTimeToWarpTime (t))) - x0;
+                if (x >= 0.0f && x <= (float) getWidth()) g.fillRect (x - 0.5f, bottom - markerStripHeight + 2.0f, 1.5f, markerStripHeight - 4.0f);
+            }
+        }
 
         auto& markers = ac.getWarpTimeManager().getMarkers();
         for (int i = 0; i < markers.size(); ++i)

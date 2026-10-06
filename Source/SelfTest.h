@@ -1463,6 +1463,69 @@ namespace SelfTest
             edit->getUndoManager().clearUndoHistory();
         }
 
+        // --- v0.99.24: warping by grabbing the hits ---------------------------------------------------------
+        {
+            rep.step ("warp hits");
+            auto wt = ClipImport::createContentTrack (*edit, "Warp test", false);
+            const double bpmNow = edit->tempoSequence.getTempo (0)->getBpm(), beatSec = 60.0 / bpmNow;
+            // a recording of four drum-like hits, one on each beat at the song's tempo
+            auto f = dir.getChildFile ("warp_hits.wav");
+            f.deleteFile();
+            {
+                const int len = (int) (48000.0 * beatSec * 4.0);
+                AudioBuffer<float> b (2, len);
+                b.clear();
+                Random r (8);
+                for (int h = 0; h < 4; ++h)
+                    for (int i = 0; i < 4000; ++i)
+                    {
+                        const int at = (int) (h * beatSec * 48000.0) + i;
+                        const float v = 0.7f * std::exp (-i / 600.0f) * (r.nextFloat() * 2.0f - 1.0f);
+                        if (at < len) { b.setSample (0, at, v); b.setSample (1, at, v); }
+                    }
+                WavAudioFormat wav;
+                if (auto os = f.createOutputStream())
+                    if (std::unique_ptr<AudioFormatWriter> w { wav.createWriterFor (os.release(), 48000.0, 2, 24, {}, 0) }) w->writeFromAudioSampleBuffer (b, 0, len);
+            }
+            te::Clip::Ptr wc = ClipImport::importFile (*wt, *edit, f, te::TimePosition());
+            auto* ac = dynamic_cast<te::AudioClipBase*> (wc.get());
+            bool ok = ac != nullptr;
+            String detail;
+            if (ac != nullptr)
+            {
+                Workflow::enableWarpMarkers (*ac, true);
+                const auto hits = Workflow::sourceTransients (*ac);
+                const int markersBefore = ac->getWarpTimeManager().getMarkers().size();
+                // the hit near beat 2 (the third one) is found; halfway between two hits there is none
+                const auto near = Workflow::transientNearBeat (*ac, 2.03, 0.15), none = Workflow::transientNearBeat (*ac, 2.5, 0.15);
+                const bool found = hits.size() == 4 && near.has_value() && std::abs (near->inSeconds() - 2.0 * beatSec) < 0.02 && ! none.has_value();
+                // pinning it puts a marker exactly there and moves nothing; pinning it again gives the same marker
+                int index = -1, again = -1;
+                double pinnedBeat = -1.0, movedBeat = -1.0, sourceAfter = -1.0;
+                if (near.has_value())
+                {
+                    index = Workflow::addWarpMarkerAtTransient (*ac, *near);
+                    again = Workflow::addWarpMarkerAtTransient (*ac, *near);
+                    auto& wm = ac->getWarpTimeManager();
+                    if (index >= 0)
+                    {
+                        pinnedBeat = Workflow::warpTimeToEditBeat (*ac, wm.getMarkers()[index]->warpTime);
+                        // dragging the marker a quarter of a beat later makes the hit sound there
+                        wm.moveMarker (index, Workflow::editBeatToWarpTime (*ac, 2.25));
+                        movedBeat = Workflow::warpTimeToEditBeat (*ac, wm.getMarkers()[index]->warpTime);
+                        sourceAfter = wm.getMarkers()[index]->sourceTime.inSeconds();
+                    }
+                }
+                const int markersAfter = ac->getWarpTimeManager().getMarkers().size();
+                ok = found && index >= 0 && again == index && markersAfter == markersBefore + 1 && std::abs (pinnedBeat - 2.0) < 0.05 && std::abs (movedBeat - 2.25) < 0.01
+                     && std::abs (sourceAfter - 2.0 * beatSec) < 0.02;
+                detail = String (hits.size()) + " hits found; pinned at beat " + String (pinnedBeat, 2) + ", dragged to " + String (movedBeat, 2) + " (still the audio at " + String (sourceAfter, 2) + " s)";
+            }
+            rep.check (ok, "Warp by grabbing a hit (the hit under the mouse is found, pinned where it sounds, and moves with the marker)", detail);
+            edit->deleteTrack (wt);
+            edit->getUndoManager().clearUndoHistory();
+        }
+
         // --- sharing: collect all, templates -----------------------------------------------------------
         {
             auto outside = File::getSpecialLocation (File::tempDirectory).getChildFile ("PulseStudioSelfTestOutside");
