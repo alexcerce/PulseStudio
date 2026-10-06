@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.33 - 2026-10-06
+
+- Browser: previews in the song's key (Key button), beside previews in time
+
 ## 0.99.32 - 2026-10-06
 
 - Notes for the project and for each track, in one window; tracks with notes are marked on their header

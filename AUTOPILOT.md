@@ -174,7 +174,7 @@ well EVERYWHERE." So, besides the list:
    [x] match EQ  [x] linear-phase EQ mode  [x] loudness report on export  [x] automatic freeze under load
    [x] sidechain picker on every device
 6. Workflow: [ ] device racks with parallel chains  [ ] track alternatives  [x] project and track notes
-   [ ] browser preview in time and in key  [ ] macros on the track header  [ ] toolbar / window layouts
+   [x] browser preview in time and in key  [ ] macros on the track header  [ ] toolbar / window layouts
    [ ] controller mapping pages  [ ] video track
 
 Not attempted (told the owner why): content libraries and AI session players (large downloads / trained models),
@@ -577,3 +577,12 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   come and go), Notes::Window (one at a time; closed with the project), command view.notes, the track menu, a
   folded corner on TrackHeader (TooltipClient: hover reads the note, click opens it). Folder tracks are in the
   window's list but their headers have no mark or menu entry yet. 314 checks, quick tier.
+- 2026-10-06: v0.99.33. Previews in key. Source/SongKey.h (the song's key as the property "pulseKey" on the
+  project, 0..11 = the major key's root; fromWord / fromName read a key from a file name; shiftFor = shortest
+  way, -6..+5). Browser.h: AudioPreviewer::play takes semitones; playSynced became playRendered (with an edit:
+  the loop in time as before, now also shifted; without: played once, shifted, at its own speed; the looping
+  source can now play once); a Key button with a menu beside Preview and Sync. Previews in time were there
+  already (Sync). Tested: the name reading (13 names, 5 of them traps such as "FM Bass" and "A Finished Song"),
+  the sums, the project key and undo. Not tested: the sound of a shifted preview (it plays through the audio
+  device, which the offline rig does not have). Only files up to 40 s are shifted. Nothing else uses the song's
+  key yet (the piano roll's scale and the chord track could). 315 checks, quick tier.

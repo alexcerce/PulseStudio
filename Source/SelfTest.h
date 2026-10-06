@@ -1924,6 +1924,47 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
             edit->getUndoManager().clearUndoHistory();
         }
 
+        // --- v0.99.33: the song's key, and previews in key ----------------------------------------------------
+        {
+            rep.step ("song key");
+            using SongKey::fromName;
+            auto is = [] (const String& name, int tonic, bool minor) { const auto f = SongKey::fromName (name); return f.valid() && f.tonic == tonic && f.minor == minor; };
+            auto none = [] (const String& name) { return ! SongKey::fromName (name).valid(); };
+            StringArray wrong;
+            auto expect = [&] (bool ok, const char* what) { if (! ok) wrong.add (what); };
+            expect (is ("Bass Loop Am 120bpm", 9, true), "Am");
+            expect (is ("Pad_F#min", 6, true), "F#min");
+            expect (is ("KSHMR_Lead_Bb", 10, false), "Bb");
+            expect (is ("Keys Emaj7 chords", 4, false), "Emaj7");
+            expect (is ("Strings in E minor", 4, true), "E minor");
+            expect (is ("Guitar key G", 7, false), "key G");
+            expect (is ("Pluck-C#m-128", 1, true), "C#m");
+            expect (is ("Choir Dbmaj", 1, false), "Dbmaj");
+            expect (none ("A Finished Song"), "A Finished Song");
+            expect (none ("FM Bass 01"), "FM Bass");
+            expect (none ("Drum Loop 120bpm"), "Drum Loop");
+            expect (none ("Big Beat E"), "Big Beat E");
+            expect (none ("Ambient Dub"), "Ambient Dub");
+            // relative keys are the same notes; the shift is the shortest way round
+            const bool sums = SongKey::fromName ("x Am").signature() == 0 && SongKey::fromName ("x F#m").signature() == 9 && SongKey::shiftFor (0, 7) == -5 && SongKey::shiftFor (0, 5) == 5
+                              && SongKey::shiftFor (9, 0) == 3 && SongKey::shiftFor (4, 4) == 0 && SongKey::shiftFor (0, 6) == -6;
+            // the song's key lives in the project and is undoable
+            const bool unset = SongKey::get (*edit) == -1 && SongKey::shiftForFile (*edit, File::getCurrentWorkingDirectory().getChildFile ("Bass Am.wav")) == 0;
+            edit->getUndoManager().beginNewTransaction ("key");
+            SongKey::set (*edit, 7);   // G major / E minor
+            const bool setOk = SongKey::get (*edit) == 7 && SongKey::name (7) == "G major / E minor" && SongKey::shortName (7) == "G/Em";
+            const int amToG = SongKey::shiftForFile (*edit, File::getCurrentWorkingDirectory().getChildFile ("Bass Am.wav"));          // C -> G: down 5
+            const int emToG = SongKey::shiftForFile (*edit, File::getCurrentWorkingDirectory().getChildFile ("Lead Em.wav"));          // the same key
+            const int drums = SongKey::shiftForFile (*edit, File::getCurrentWorkingDirectory().getChildFile ("Drum Loop 120bpm.wav")); // says nothing
+            edit->getUndoManager().undo();
+            const bool undone = SongKey::get (*edit) == -1;
+            rep.check (wrong.isEmpty() && sums && unset && setOk && amToG == -5 && emToG == 0 && drums == 0 && undone,
+                       "Song key (a sample's key is read from its name and never guessed, relative keys count as one, the shortest shift, kept in the project)",
+                       wrong.isEmpty() ? "Am into G/Em: " + String (amToG) + " st, Em: " + String (emToG) + ", drums: " + String (drums) + (sums ? "" : "; sums wrong") + (unset && setOk && undone ? "" : "; project key wrong")
+                                       : "misread: " + wrong.joinIntoString (", "));
+            edit->getUndoManager().clearUndoHistory();
+        }
+
         // --- sharing: collect all, templates -----------------------------------------------------------
         {
             auto outside = File::getSpecialLocation (File::tempDirectory).getChildFile ("PulseStudioSelfTestOutside");

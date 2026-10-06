@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "EditViewState.h"
+#include "SongKey.h"
 #include "ClipImport.h"
 #include "PluginMenu.h"
 #include "Presets.h"
@@ -30,12 +31,15 @@ public:
         player.setSource (nullptr);
     }
 
-    void play (const File& f, te::Edit* syncTo)
+    /** Plays a file. With `syncTo` (and the song running) a loop is stretched to the song's tempo and starts on the
+        next bar; `semitones` moves its pitch without changing its length (short files only: it is worked out first). */
+    void play (const File& f, te::Edit* syncTo, float semitones = 0.0f)
     {
         stop();
         const int gen = ++*genPtr;
 
-        if (syncTo != nullptr && syncTo->getTransport().isPlaying() && playSynced (f, *syncTo, gen))
+        const bool sync = syncTo != nullptr && syncTo->getTransport().isPlaying();
+        if ((sync || std::abs (semitones) > 0.01f) && playRendered (f, sync ? syncTo : nullptr, gen, semitones))
             return;
 
         auto* reader = engine.getAudioFileFormatManager().readFormatManager.createReaderFor (f);
@@ -95,12 +99,13 @@ private:
         void prepareToPlay (int, double) override {}
         void releaseResources() override {}
 
-        void set (AudioBuffer<float>&& b, int64 waitSamples)
+        void set (AudioBuffer<float>&& b, int64 waitSamples, bool loops)
         {
             const SpinLock::ScopedLockType sl (lock);
             buffer = std::move (b);
             wait = waitSamples;
             pos = 0;
+            looping = loops;
             active = buffer.getNumSamples() > 0;
         }
 
@@ -127,6 +132,7 @@ private:
                     info.buffer->addFrom (ch, start, buffer, jmin (ch, buffer.getNumChannels() - 1), pos, n, 0.8f);
                 pos = (pos + n) % len;
                 start += n; num -= n;
+                if (pos == 0 && ! looping) { active = false; break; }   // played once
             }
         }
 
@@ -134,28 +140,35 @@ private:
         AudioBuffer<float> buffer;
         int64 wait = 0;
         int pos = 0;
-        bool active = false;
+        bool active = false, looping = true;
     };
 
-    /** Reads, stretches and resamples the loop on a background thread, then starts it on the next bar. */
-    bool playSynced (const File& f, te::Edit& edit, int gen)
+    /** Reads, stretches / shifts and resamples the file on a background thread. With an edit: a loop in time with the
+        song, starting on the next bar. Without: played once, at its own speed, moved by `semitones`. */
+    bool playRendered (const File& f, te::Edit* edit, int gen, float semitones)
     {
         std::unique_ptr<AudioFormatReader> reader (engine.getAudioFileFormatManager().readFormatManager.createReaderFor (f));
         if (reader == nullptr) return false;
 
         const double fileRate = reader->sampleRate;
         const double lengthSecs = (double) reader->lengthInSamples / fileRate;
-        if (lengthSecs > 40.0) return false;   // only loops get synced
+        if (lengthSecs > 40.0 || reader->lengthInSamples < 64) return false;   // only loops and short sounds
 
-        const double projectBpm = edit.tempoSequence.getTempo (0)->getBpm();
-        const int bpb = EngineHelpers::beatsPerBar (edit);
-        const double fileBpm = estimateBpm (engine, f, lengthSecs, projectBpm, bpb);
-        if (fileBpm <= 0.0) return false;
+        const bool sync = edit != nullptr;
+        double projectBpm = 120.0, fileBpm = 120.0;
+        int bpb = 4;
+        if (sync)
+        {
+            projectBpm = edit->tempoSequence.getTempo (0)->getBpm();
+            bpb = EngineHelpers::beatsPerBar (*edit);
+            fileBpm = estimateBpm (engine, f, lengthSecs, projectBpm, bpb);
+            if (fileBpm <= 0.0) return false;
+        }
 
         const double deviceRate = engine.getDeviceManager().getSampleRate();
         auto* raw = reader.release();
 
-        Thread::launch ([this, g = genPtr, raw, gen, fileRate, fileBpm, projectBpm, deviceRate, &edit, bpb]
+        Thread::launch ([this, g = genPtr, raw, gen, fileRate, fileBpm, projectBpm, deviceRate, edit, bpb, sync, semitones]
         {
             std::unique_ptr<AudioFormatReader> r (raw);
             const int numCh = jlimit (1, 2, (int) r->numChannels);
@@ -166,7 +179,7 @@ private:
             const float ratio = (float) (fileBpm / projectBpm);
             te::TimeStretcher ts;
             ts.initialise (fileRate, 512, numCh, te::TimeStretcher::defaultMode, {}, false);
-            ts.setSpeedAndPitch (ratio, 0.0f);
+            ts.setSpeedAndPitch (ratio, semitones);
 
             AudioBuffer<float> stretched (numCh, (int) (src.getNumSamples() * ratio) + 8192);
             AudioBuffer<float> block (numCh, 512);
@@ -192,7 +205,8 @@ private:
                 append (got);
 
             // 2. trim to an exact number of beats, 3. resample to the device rate
-            const double loopSecs = std::round (src.getNumSamples() / fileRate * fileBpm / 60.0) * 60.0 / projectBpm;
+            const double loopSecs = sync ? std::round (src.getNumSamples() / fileRate * fileBpm / 60.0) * 60.0 / projectBpm
+                                         : jmin (outPos, src.getNumSamples()) / fileRate;
             const int loopLenFile = jlimit (1, outPos, (int) std::round (loopSecs * fileRate));
             const int loopLenDev = (int) std::round (loopSecs * deviceRate);
             AudioBuffer<float> loop (numCh, loopLenDev);
@@ -203,18 +217,19 @@ private:
                                 loopLenFile, 0);
             }
 
-            MessageManager::callAsync ([this, g, gen, l = std::move (loop), &edit, deviceRate, bpb] () mutable
+            MessageManager::callAsync ([this, g, gen, l = std::move (loop), edit, deviceRate, bpb, sync] () mutable
             {
                 if (*g != gen) return;   // stale (or the previewer is gone)
+                ignoreUnused (bpb);
+                if (! sync) { synced.set (std::move (l), 0, false); return; }
                 // samples until the next bar line of the running transport
-                auto& tc = edit.getTransport();
-                auto& ts2 = edit.tempoSequence;
+                auto& tc = edit->getTransport();
+                auto& ts2 = edit->tempoSequence;
                 auto pos = tc.getPosition();
                 auto bb = ts2.toBarsAndBeats (pos);
                 auto nextBar = ts2.toTime (te::tempo::BarsAndBeats { bb.bars + 1 });
                 auto wait = (int64) ((nextBar - pos).inSeconds() * deviceRate);
-                ignoreUnused (bpb);
-                synced.set (std::move (l), jmax<int64> (0, wait));
+                synced.set (std::move (l), jmax<int64> (0, wait), true);
             });
         });
         return true;
@@ -622,6 +637,10 @@ public:
         syncBtn.onClick = [this] { settings.setValue ("browserSync", syncBtn.getToggleState()); };
         addAndMakeVisible (syncBtn);
 
+        keyBtn.onClick = [this] { showKeyMenu(); };
+        addAndMakeVisible (keyBtn);
+        refreshKeyButton ({});
+
         tree.setDragAndDropDescription ("PulseFiles");
         tree.setColour (TreeView::backgroundColourId, Theme::panel);
         tree.setColour (FileTreeComponent::textColourId, Theme::text);
@@ -667,7 +686,7 @@ public:
 
         g.setColour (Theme::muted);
         g.setFont (FontOptions (11.0f));
-        g.drawText (isFileMode() ? "Drag onto a track, the empty area or a clip slot" : "Drag onto a track or double-click to add",
+        g.drawText (isFileMode() ? "Drag to a track or a slot" : "Drag onto a track or double-click to add",
                     hintArea, Justification::centredLeft, true);
     }
 
@@ -687,6 +706,7 @@ public:
         auto bottom = r.removeFromBottom (26).reduced (6, 3);
         syncBtn.setBounds (bottom.removeFromRight (52));
         preview.setBounds (bottom.removeFromRight (70));
+        keyBtn.setBounds (bottom.removeFromRight (58).reduced (2, 0));
         hintArea = bottom;
         sidebar.setBounds (r.removeFromLeft (112));
         r.removeFromLeft (1);
@@ -864,6 +884,7 @@ private:
         results.setVisible (! cat && showingResults());
         preview.setVisible (! cat);
         syncBtn.setVisible (! cat);
+        keyBtn.setVisible (! cat);
         if (cat) previewer.stop();
         repaint();
 
@@ -909,9 +930,44 @@ private:
     void previewFile (const File& f)
     {
         if (preview.getToggleState() && f.existsAsFile() && ClipImport::isAudioFile (f))
-            previewer.play (f, syncBtn.getToggleState() ? &evs.edit : nullptr);
+        {
+            // in key: a sample whose name says its key is moved to the song's
+            const int shift = SongKey::shiftForFile (evs.edit, f);
+            const auto found = SongKey::ofFile (f);
+            refreshKeyButton (found.valid() && SongKey::get (evs.edit) >= 0
+                                  ? f.getFileName() + " is in " + found.text() + (shift == 0 ? String (": already in the song's key") : ": played " + String (std::abs (shift)) + (shift > 0 ? " semitones higher" : " semitones lower"))
+                                  : String());
+            previewer.play (f, syncBtn.getToggleState() ? &evs.edit : nullptr, (float) shift);
+        }
         else
             previewer.stop();
+    }
+
+    /** The song's key, for previews in key. */
+    void showKeyMenu()
+    {
+        PopupMenu m;
+        const int now = SongKey::get (evs.edit);
+        m.addSectionHeader ("The song's key (samples that name their key are previewed in it)");
+        m.addItem ("Not set: play samples as they are", true, now < 0, [this] { setSongKey (-1); });
+        for (int k = 0; k < 12; ++k) m.addItem (SongKey::name (k), true, now == k, [this, k] { setSongKey (k); });
+        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&keyBtn));
+    }
+
+    void setSongKey (int k)
+    {
+        evs.edit.getUndoManager().beginNewTransaction ("Song key");
+        SongKey::set (evs.edit, k);
+        refreshKeyButton ({});
+    }
+
+    void refreshKeyButton (const String& lastPreview)
+    {
+        const int k = SongKey::get (evs.edit);
+        keyBtn.setButtonText (SongKey::shortName (k));
+        keyBtn.setTooltip ((k < 0 ? String ("The song's key: not set. Choose it, and samples whose name says their key (\"Am\", \"F#min\") are previewed in the song's key.")
+                                  : "The song's key: " + SongKey::name (k) + ". Samples whose name says their key are previewed in it.")
+                           + (lastPreview.isNotEmpty() ? "\n" + lastPreview : String()));
     }
 
     void showFileMenu (const File& f, Component* target)
@@ -952,6 +1008,7 @@ private:
     ListBox sidebar;
     Entry current { {}, {}, Kind::category, 0 };
     ToggleButton preview { "Preview" }, syncBtn { "Sync" };
+    TextButton keyBtn { "Key" };
     TextEditor search;
     Rectangle<int> hintArea;
     FileResultsList results { settings };
