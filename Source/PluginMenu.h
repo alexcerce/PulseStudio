@@ -139,6 +139,7 @@ namespace PluginMenu
         addBuiltIn<pulse::AutoFilter> (effects, edit, cb);
         addBuiltIn<pulse::Limiter> (effects, edit, cb);
         addBuiltIn<pulse::MatchEQ> (effects, edit, cb);
+        addBuiltIn<pulse::Reference> (effects, edit, cb);
         addBuiltIn<pulse::Gate> (effects, edit, cb);
         addBuiltIn<pulse::TransientShaper> (effects, edit, cb);
         addBuiltIn<pulse::DeEsser> (effects, edit, cb);

@@ -170,7 +170,7 @@ well EVERYWHERE." So, besides the list:
    [x] chord track + chord progressions (piano roll and MIDI effects follow it)  [x] step sequencer view for drum clips
 4. Audio editing: [x] warp by dragging transients on the waveform, follow-tempo per clip  [ ] per-note pitch and time
    editing of audio  [x] reverse / crop / consolidate clips  [x] clip launch recorded into the arrangement with quantised punch
-5. Mixing: [x] VCA faders  [ ] reference track A/B with loudness match  [x] mastering chain preset + assistant
+5. Mixing: [x] VCA faders  [x] reference track A/B with loudness match  [x] mastering chain preset + assistant
    [x] match EQ  [x] linear-phase EQ mode  [x] loudness report on export  [x] automatic freeze under load
    [x] sidechain picker on every device
 6. Workflow: [ ] device racks with parallel chains  [ ] track alternatives  [ ] project and track notes
@@ -560,3 +560,11 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   mixer.freezeHeaviest (kept out of the command fuzz: it renders). Tested with made-up costs (the offline rig
   has no real load); the real path from device-manager load to the red readout has not been seen happening.
   311 checks, quick tier. Left in group 5: reference track A/B with loudness match.
+- 2026-10-06: v0.99.31. Reference song. Source/Reference.h (pulse::Reference: the song is read on a thread of
+  its own, brought to the engine's sample rate with a windowed sinc, its loudness measured once; the mix is
+  measured as it plays; "listen" swaps the song in with a 10 ms fade, at project time + "Start At"; it does
+  nothing at all when fc.isRendering), Source/ReferenceDisplay.h, Mastering::reference / toggleReference
+  (insertIndex now also stays in front of the Reference, so a mastering chain added later is not put after it),
+  the Mastering menu of the master strip, command mixer.referenceToggle, 5 presets. Measured: a -6.1 LUFS song
+  against a -20.8 LUFS mix is turned by -14.7 dB and heard at the mix's level. The song is held in memory
+  (15 minutes at most). Not judged by ear. 313 checks, quick tier. Group 5 is complete: slow tier next.

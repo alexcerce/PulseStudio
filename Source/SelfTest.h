@@ -244,6 +244,29 @@ namespace SelfTest
             m.learnFromFile (f2, true);
             f1.deleteFile(); f2.deleteFile();
         }, "shot_matcheq.png");
+        shoot (pulse::Reference::xmlTypeName, [] (pulse::PulsePlugin& p)
+        {
+            // a made-up song, so that the picture has something in it
+            auto& r = dynamic_cast<pulse::Reference&> (p);
+            auto f = File::getSpecialLocation (File::tempDirectory).getChildFile ("A Finished Song.wav");
+            Random rnd (11);
+            AudioBuffer<float> a (2, 48000 * 20);
+            float lp = 0.0f;
+            for (int i = 0; i < a.getNumSamples(); ++i)
+            {
+                const double tm = i / 48000.0;
+                const float loud = (tm < 3.0 ? 0.25f : tm < 8.0 ? 0.6f : tm < 11.0 ? 0.35f : tm < 17.0 ? 0.8f : 0.8f * (float) (20.0 - tm) / 3.0f) * (0.6f + 0.4f * (float) std::pow (1.0 - std::fmod (tm * 2.0, 1.0), 3.0));
+                lp = lp * 0.9f + (rnd.nextFloat() * 2.0f - 1.0f) * 0.1f;
+                a.setSample (0, i, lp * loud * 3.0f); a.setSample (1, i, lp * loud * 3.0f);
+            }
+            f.deleteFile();
+            WavAudioFormat wav;
+            if (auto os = f.createOutputStream())
+                if (std::unique_ptr<AudioFormatWriter> w { wav.createWriterFor (os.release(), 48000.0, 2, 24, {}, 0) }) w->writeFromAudioSampleBuffer (a, 0, a.getNumSamples());
+            r.loadNow (f);
+            r.set (pulse::Reference::pOffset, 3.0f);
+            f.deleteFile();
+        }, "shot_reference.png");
         shoot (pulse::Gate::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Gate::pThreshold, -22); p.set (pulse::Gate::pRange, 40); p.set (pulse::Gate::pHysteresis, 6); }, "shot_gate.png");
         shoot (pulse::TransientShaper::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::TransientShaper::pAttack, 0.6f); p.set (pulse::TransientShaper::pSustain, -0.4f); }, "shot_transient.png");
         shoot (pulse::DeEsser::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::DeEsser::pThreshold, -36); p.set (pulse::DeEsser::pRange, 10); }, "shot_deesser.png");
@@ -566,6 +589,7 @@ namespace SelfTest
                 const bool analyser = String (b.type) == pulse::Spectrum::xmlTypeName;
                 if (analyser) { responds = true; moved = "nothing (analyser, passes audio through)"; }
                 if (! responds && String (b.type) == pulse::PitchCorrect::xmlTypeName) { responds = true; moved = "nothing (the test tone is already in tune)"; }
+                if (! responds && String (b.type) == pulse::Reference::xmlTypeName) { responds = true; moved = "nothing (this is a render: the reference song is never part of one, the mix passes through)"; }
                 rep.check (sane && responds, String ("Device works: ") + b.name,
                            "out " + String (base.first, 1) + " dBFS, " + (responds ? "responds to " + moved : "no audible change from any control"));
                 p->deleteFromParent();
@@ -1702,6 +1726,145 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
                        String (notYet ? "" : "too early; ") + (nowOver ? "" : "not noticed; ") + (once ? "" : "asked twice; ") + (cleared ? "" : "not cleared; ") + (again ? "" : "not noticed again; ")
                        + (spikesIgnored ? "" : "spikes counted; ") + (picked ? "" : "wrong track; ") + (froze ? "" : "not frozen (" + frozenName + "); ") + (next ? "" : "frozen track offered again; ") + (kept ? "" : "mode not kept; ") + "ok");
             edit->deleteTrack (ta); edit->deleteTrack (tb); edit->deleteTrack (tc2);
+            edit->getUndoManager().clearUndoHistory();
+        }
+
+        // --- v0.99.31: the reference song (A/B against a finished song, at matched loudness) -----------------
+        {
+            rep.step ("reference");
+            using RF = pulse::Reference;
+            const double sr = 48000.0;
+            auto t = ClipImport::createContentTrack (*edit, "Ref", false);
+            auto rp = edit->getPluginCache().createNewPlugin (RF::xmlTypeName, {});
+            t->pluginList.insertPlugin (rp, 0, nullptr);
+            auto* ref = dynamic_cast<RF*> (rp.get());
+            // the song: three seconds of a 1 kHz tone at half scale, at 44.1 kHz (so it has to be brought to 48)
+            auto songFile = dir.getChildFile ("reference_song.wav");
+            songFile.deleteFile();
+            {
+                AudioBuffer<float> b (2, 44100 * 3);
+                for (int i = 0; i < b.getNumSamples(); ++i) { const float v = 0.5f * (float) std::sin (MathConstants<double>::twoPi * 1000.0 * i / 44100.0); b.setSample (0, i, v); b.setSample (1, i, v); }
+                WavAudioFormat wav;
+                if (auto os = songFile.createOutputStream())
+                    if (std::unique_ptr<AudioFormatWriter> w { wav.createWriterFor (os.release(), 44100.0, 2, 24, {}, 0) }) w->writeFromAudioSampleBuffer (b, 0, b.getNumSamples());
+            }
+            ref->initialise ({ te::TimePosition(), sr, 480 });
+            const bool loaded = ref->loadNow (songFile) && ref->hasSong() && std::abs (ref->songSeconds() - 3.0) < 0.01 && std::abs (ref->songLufs() + 6.7) < 0.6;
+            // the mix: a 300 Hz tone at a tenth of full scale. Runs `seconds` from `from`; returns the peak and the share of 1 kHz in what came out
+            struct Out { float peak = 0.0f, at1k = 0.0f, at300 = 0.0f; };
+            auto run = [&] (double from, double seconds, bool playing, bool rendering) -> Out
+            {
+                const int block = 480, blocks = (int) (seconds * sr / block);
+                AudioBuffer<float> audio (2, block);
+                Out o;
+                double s1 = 0, c1 = 0, s3 = 0, c3 = 0; int counted = 0;
+                for (int k = 0; k < blocks; ++k)
+                {
+                    const double t0 = from + k * block / sr;
+                    for (int i = 0; i < block; ++i) { const float v = 0.1f * (float) std::sin (MathConstants<double>::twoPi * 300.0 * (t0 + i / sr)); audio.setSample (0, i, v); audio.setSample (1, i, v); }
+                    te::MidiMessageArray midi;
+                    te::PluginRenderContext fc (&audio, 0, block, &midi, 0.0, { te::TimePosition::fromSeconds (t0), te::TimePosition::fromSeconds (t0 + block / sr) }, playing, false, rendering, false);
+                    ref->applyToBuffer (fc);
+                    if (k >= blocks / 2)
+                        for (int i = 0; i < block; ++i, ++counted)
+                        {
+                            const double x = audio.getSample (0, i), ph = MathConstants<double>::twoPi * (t0 + i / sr);
+                            o.peak = jmax (o.peak, (float) std::abs (x));
+                            s1 += x * std::sin (1000.0 * ph); c1 += x * std::cos (1000.0 * ph); s3 += x * std::sin (300.0 * ph); c3 += x * std::cos (300.0 * ph);
+                        }
+                }
+                o.at1k = (float) (2.0 * std::sqrt (s1 * s1 + c1 * c1) / jmax (1, counted));
+                o.at300 = (float) (2.0 * std::sqrt (s3 * s3 + c3 * c3) / jmax (1, counted));
+                return o;
+            };
+            // on "Mix" the mix goes through, and is measured
+            const auto mixOut = run (0.0, 2.0, true, false);
+            const float mixLufs = ref->mixLufs.load();
+            const bool passes = std::abs (mixOut.at300 - 0.1f) < 0.002f && mixOut.at1k < 0.001f && std::abs (mixLufs + 21.0f) < 1.0f;
+            // on "Reference" the song is heard instead, brought to the loudness of the mix
+            ref->set (RF::pListen, 1.0f);
+            const auto refOut = run (2.0, 2.0, true, false);
+            const float turned = ref->matchDb.load();
+            const bool matched = refOut.at300 < 0.002f && std::abs (Decibels::gainToDecibels (refOut.at1k) - Decibels::gainToDecibels (0.5f) - turned) < 0.5f && std::abs (turned - (mixLufs - (float) ref->songLufs())) < 0.3f
+                                 && turned < -10.0f;
+            // without matching it plays as it is; the trim is on top
+            ref->set (RF::pMatch, 0.0f);
+            const auto rawOut = run (4.0, 3.0, true, false);
+            ref->set (RF::pTrim, -6.0f);
+            const auto trimOut = run (7.0, 3.0, true, false);
+            ref->set (RF::pTrim, 0.0f);
+            const bool raw = std::abs (rawOut.at1k - 0.5f) < 0.02f && std::abs (trimOut.at1k - 0.25f) < 0.015f;
+            // the song is 3 s long: at 10 s it has come round again with Loop, and is over without
+            const auto looped = run (10.0, 0.5, true, false);
+            ref->set (RF::pLoop, 0.0f);
+            const auto over = run (10.0, 0.5, true, false);
+            ref->set (RF::pLoop, 1.0f);
+            const bool loops = looped.at1k > 0.4f && over.peak < 0.001f;
+            // "start at" moves the place in the song; stopped, nothing plays; in an export the mix goes through untouched
+            ref->set (RF::pOffset, 1.0f);
+            run (0.5, 0.2, true, false);
+            const double posNow = ref->songPosition.load();
+            ref->set (RF::pOffset, 0.0f);
+            const auto stopped = run (1.0, 0.5, false, false);
+            const auto exported = run (1.0, 0.5, true, true);
+            const bool places = posNow > 1.5 && posNow < 1.8 && stopped.peak < 0.001f && std::abs (exported.at300 - 0.1f) < 0.002f && exported.at1k < 0.001f;
+            const bool sums = RF::matchGain (-14.0, -9.0) == -5.0f && RF::matchGain (-200.0, -9.0) == 0.0f && RF::matchGain (-60.0, 0.0) == -24.0f;
+            ref->deinitialise();
+
+            // on the master it goes after the mastering chain and before the meter, and the switch command makes it
+            auto small = te::createEmptyEdit (engine, dir.getChildFile ("reference_test.tracktionedit"));
+            small->getMasterPluginList().insertPlugin (small->getPluginCache().createNewPlugin (te::LevelMeterPlugin::xmlTypeName, {}), -1, nullptr);
+            const bool nowRef = Mastering::toggleReference (*small);
+            Mastering::addChain (*small);
+            StringArray order;
+            for (auto p : small->getMasterPluginList()) order.add (p->getName());
+            const bool placed = nowRef && Mastering::reference (*small, false) != nullptr && order.indexOf ("Limiter") >= 0 && order.indexOf ("Limiter") < order.indexOf ("Reference")
+                                && order.indexOf ("Reference") == order.size() - 2 && ! Mastering::toggleReference (*small);
+            small = nullptr;
+
+            bool windowOk = false;
+            String windowNote;
+            {
+                PulseLookAndFeel laf;
+                LookAndFeel::setDefaultLookAndFeel (&laf);
+                EditViewState evs (*edit, sm);
+                ReferenceUI::ReferenceView view (*ref);
+                view.setSize (1000, 520);
+                Image img (Image::ARGB, 1000, 520, true);
+                { Graphics g (img); view.paint (g); }
+                view.dragHandle (0, 300.0f, 0.0f);
+                const bool handleOk = ref->get (RF::pOffset) > 0.5f && view.getNumHandles() == 1;
+                DeviceEditors::Editor ed (evs, *ref);
+                ed.setSize (1100, 760);
+                std::set<te::AutomatableParameter*> seen;
+                std::function<void (Component&)> walk = [&] (Component& c)
+                {
+                    if (auto* k = dynamic_cast<ParamKnob*> (&c)) seen.insert (&k->getParameter());
+                    if (auto* k = dynamic_cast<ParamToggle*> (&c)) seen.insert (&k->getParameter());
+                    if (auto* k = dynamic_cast<ParamChoice*> (&c)) seen.insert (&k->getParameter());
+                    for (auto* chd : c.getChildren()) walk (*chd);
+                };
+                walk (ed);
+                StringArray missing;
+                for (int i = 0; i < ref->numParams(); ++i) if (! seen.count (&*ref->param (i))) missing.add (ref->param (i)->paramID);
+                windowOk = handleOk && missing.isEmpty() && DeviceEditors::hasFullEditor (*ref);
+                windowNote = missing.isEmpty() ? "start at -> " + ref->param (RF::pOffset)->getCurrentValueAsString() : "no control for " + missing.joinIntoString (", ");
+                auto shot = ed.createComponentSnapshot (ed.getLocalBounds());
+                auto f = dir.getChildFile ("reference.png");
+                f.deleteFile();
+                if (auto os = f.createOutputStream()) { PNGImageFormat png; png.writeImageToStream (shot, *os); }
+                LookAndFeel::setDefaultLookAndFeel (nullptr);
+            }
+            rep.check (loaded && passes && matched && raw && loops && places && sums && placed && windowOk,
+                       "Reference song (the mix passes and is measured, the song is heard instead at the loudness of the mix, trim, loop, start, never in an export, its place on the master, its window)",
+                       String (loaded ? "" : "not loaded (" + String (ref->songSeconds(), 2) + " s, " + String (ref->songLufs(), 1) + " LUFS); ") + (passes ? "" : "mix not passed; ") + (matched ? "" : "not matched; ")
+                       + (raw ? "" : "raw / trim wrong (" + String (rawOut.at1k, 3) + ", " + String (trimOut.at1k, 3) + "); ") + (loops ? "" : "loop wrong (" + String (looped.at1k, 3) + ", " + String (over.peak, 3) + "); ")
+                       + (places ? "" : "start / stop / export wrong (" + String (posNow, 2) + " s, " + String (stopped.peak, 3) + ", " + String (exported.at300, 3) + "); ") + (sums ? "" : "sums; ")
+                       + (placed ? "" : "master order: " + order.joinIntoString (" > ") + "; ") + "mix " + String (mixLufs, 1) + " LUFS, song " + String (ref->songLufs(), 1) + ", turned " + String (turned, 1) + " dB, heard at "
+                       + String (Decibels::gainToDecibels (refOut.at1k), 1) + " dBFS; " + windowNote);
+            songFile.deleteFile();
+            rp = nullptr;
+            edit->deleteTrack (t);
             edit->getUndoManager().clearUndoHistory();
         }
 

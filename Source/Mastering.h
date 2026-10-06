@@ -13,7 +13,31 @@ namespace Mastering
         int index = list.size();
         if (auto meter = list.findFirstPluginOfType<te::LevelMeterPlugin>()) index = jmin (index, list.indexOf (meter));
         if (auto probe = list.findFirstPluginOfType<pulse::LoudnessProbe>()) index = jmin (index, list.indexOf (probe));
+        if (auto ref = list.findFirstPluginOfType<pulse::Reference>()) index = jmin (index, list.indexOf (ref));   // the reference song is not mastered
         return index;
+    }
+
+    /** The reference-song device of the master (made, when asked, after everything that shapes the mix and before
+        the meters, so that they show whichever of the two is heard). */
+    inline pulse::Reference* reference (te::Edit& e, bool create)
+    {
+        auto& list = e.getMasterPluginList();
+        if (auto r = list.findFirstPluginOfType<pulse::Reference>()) return r;
+        if (! create) return nullptr;
+        auto p = e.getPluginCache().createNewPlugin (pulse::Reference::xmlTypeName, {});
+        if (p == nullptr) return nullptr;
+        list.insertPlugin (p, insertIndex (list), nullptr);
+        return dynamic_cast<pulse::Reference*> (p.get());
+    }
+
+    /** Switches between the mix and the reference song. Returns true when the reference is now heard. */
+    inline bool toggleReference (te::Edit& e)
+    {
+        auto* r = reference (e, true);
+        if (r == nullptr) return false;
+        const bool now = r->getInt (pulse::Reference::pListen) == 0;
+        r->set (pulse::Reference::pListen, now ? 1.0f : 0.0f);
+        return now;
     }
 
     /** Puts the mastering chain on the master, in order, leaving alone any of its devices that are already there.

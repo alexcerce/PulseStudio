@@ -600,6 +600,27 @@ private:
         m.addItem ("For streaming (-14 LUFS)", assist (-14.0));
         m.addItem ("For podcasts and Apple (-16 LUFS)", assist (-16.0));
         m.addItem ("Loud, for clubs (-9 LUFS)", assist (-9.0));
+        m.addSectionHeader ("Reference song: compare the mix with a finished song");
+        m.addItem ("Load a reference song...", [this, &edit]
+        {
+            auto* now = Mastering::reference (edit, false);
+            const auto start = now != nullptr && now->getFile().existsAsFile() ? now->getFile() : File::getSpecialLocation (File::userMusicDirectory);
+            refChooser = std::make_shared<FileChooser> ("Choose a reference song", start, "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3", ! About::isCapturing());
+            refChooser->launchAsync (FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles,
+                                     [sp = SafePointer<ChannelStrip> (this)] (const FileChooser& fc)
+                                     {
+                                         if (sp == nullptr || fc.getResult() == File()) return;
+                                         auto& e = sp->evs.edit;
+                                         e.getUndoManager().beginNewTransaction ("Reference song");
+                                         if (auto* r = Mastering::reference (e, true)) r->setFile (fc.getResult());
+                                     });
+        });
+        auto* refNow = Mastering::reference (edit, false);
+        m.addItem ("Listen to the reference (instead of the mix)", refNow != nullptr, refNow != nullptr && refNow->getInt (pulse::Reference::pListen) > 0, [&edit]
+        {
+            edit.getUndoManager().beginNewTransaction ("Reference");
+            Mastering::toggleReference (edit);
+        });
         m.showMenuAsync (PopupMenu::Options().withTargetComponent (&masterBtn));
     }
 
@@ -633,6 +654,7 @@ private:
     DbScale scale { [this] (float v) { return (float) (fader.getY() - scale.getY()) + (float) fader.getPositionOfValue (jlimit (-60.0, 6.0, (double) v)); } };
     std::unique_ptr<LevelMeter> meter;
     TextButton muteBtn { "M" }, soloBtn { "S" }, freezeBtn { "F" }, limiterBtn { "Limiter" }, masterBtn { "Mastering" };
+    std::shared_ptr<FileChooser> refChooser;
     Label latency, loudLbl;
     IconButton devicesBtn { Icons::Type::devices, "Show devices" };
     std::unique_ptr<MiniEQ> miniEQ;

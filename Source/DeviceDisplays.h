@@ -10,6 +10,7 @@
 #include "Dynamics2Display.h"
 #include "ConvolutionDisplay.h"
 #include "MatchEQDisplay.h"
+#include "ReferenceDisplay.h"
 #include "ModFxDisplay.h"
 #include "ColourFxDisplay.h"
 #include "AmpFxDisplay.h"

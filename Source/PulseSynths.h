@@ -2247,6 +2247,7 @@ namespace pulse
 #include "DrumPads.h"
 #include "UtilityDevices.h"
 #include "Loudness.h"
+#include "Reference.h"
 #include "PulseFx2.h"
 #include "FMSynth.h"
 #include "PrismEQ.h"
@@ -2297,6 +2298,7 @@ namespace pulse
         pm.createBuiltInType<BeatRepeat>();
         pm.createBuiltInType<Looper>();
         pm.createBuiltInType<MatchEQ>();
+        pm.createBuiltInType<Reference>();
         pm.createBuiltInType<Spectral>();
         pm.createBuiltInType<Organ>();
         pm.createBuiltInType<EPiano>();

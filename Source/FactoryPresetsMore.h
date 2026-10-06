@@ -466,6 +466,14 @@ namespace FactoryPresetsMore
                 { "Leave the Air Alone", { { "amount", 1.0f }, { "smooth", 0.33f }, { "range", 12 }, { "low", 20 }, { "high", 9000 } } },
                 { "Mastering (gentle)", { { "amount", 0.6f }, { "smooth", 1.0f }, { "range", 4 }, { "low", 30 }, { "high", 18000 } } } } },
 
+            // Reference (the song is not part of a preset; "listen" always starts on the mix)
+            { "pulseReference", {
+                { "Matched Loudness", { { "listen", 0 }, { "match", 1 }, { "trim", 0 }, { "offset", 0 }, { "loop", 1 } } },
+                { "As Released (no matching)", { { "listen", 0 }, { "match", 0 }, { "trim", 0 }, { "offset", 0 }, { "loop", 1 } } },
+                { "Skip the Intro (start at 0:30)", { { "listen", 0 }, { "match", 1 }, { "trim", 0 }, { "offset", 30 }, { "loop", 1 } } },
+                { "From the First Chorus (1:00)", { { "listen", 0 }, { "match", 1 }, { "trim", 0 }, { "offset", 60 }, { "loop", 1 } } },
+                { "Once Through (no loop)", { { "listen", 0 }, { "match", 1 }, { "trim", 0 }, { "offset", 0 }, { "loop", 0 } } } } },
+
             // Looper: length 0 free, 1 1 bar, 2 2 bars, 3 4 bars, 4 8 bars (the state is never stored in a preset: it starts stopped)
             { "pulseLooper", {
                 { "Free Loop", { { "length", 0 }, { "feedback", 1.0f }, { "monitor", 1 } } },

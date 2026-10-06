@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.31 - 2026-10-06
+
+- Reference song: A/B the mix against a finished song at matched loudness (Mastering menu on the master strip, or the Reference device)
+
 ## 0.99.30 - 2026-10-06
 
 - Freeze under load: the CPU readout warns of an overload and freezes the heaviest track on a click, or by itself when playback stops
