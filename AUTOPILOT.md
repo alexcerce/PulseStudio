@@ -170,9 +170,9 @@ well EVERYWHERE." So, besides the list:
    [x] chord track + chord progressions (piano roll and MIDI effects follow it)  [x] step sequencer view for drum clips
 4. Audio editing: [x] warp by dragging transients on the waveform, follow-tempo per clip  [ ] per-note pitch and time
    editing of audio  [x] reverse / crop / consolidate clips  [x] clip launch recorded into the arrangement with quantised punch
-5. Mixing: [ ] VCA faders  [ ] reference track A/B with loudness match  [x] mastering chain preset + assistant
+5. Mixing: [x] VCA faders  [ ] reference track A/B with loudness match  [x] mastering chain preset + assistant
    [ ] match EQ  [ ] linear-phase EQ mode  [x] loudness report on export  [ ] automatic freeze under load
-   [ ] sidechain picker on every device
+   [x] sidechain picker on every device
 6. Workflow: [ ] device racks with parallel chains  [ ] track alternatives  [ ] project and track notes
    [ ] browser preview in time and in key  [ ] macros on the track header  [ ] toolbar / window layouts
    [ ] controller mapping pages  [ ] video track
@@ -527,3 +527,10 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   nothing): the message says so. The loudness report on export existed already (ticked). 305 checks, quick tier.
   Left in group 5: VCA faders, reference track A/B, match EQ, linear-phase EQ mode, automatic freeze under load,
   sidechain picker on every device (check that the Gate's card shows the picker the Compressor's does).
+- 2026-10-06: v0.99.27. VCA faders: Source/Vca.h (model in edit.state "PULSEVCAS"; setLevel moves the members'
+  own volume faders by the same amount and stops where any member's fader ends; Vca::Strip for the mixer),
+  Mixer.h (+ VCA button, strips after the tracks, the name-plate right-click menu, the colour bar). The demo has
+  a "Rhythm" group. The sidechain picker shows on every device that declares a key input (PulseEffect::
+  wantsSidechain adds the two channels the engine's canSidechain() looks for), so that item is ticked.
+  Not done for VCAs: automation of the group fader, and solo. 306 checks, quick tier.
+  Left in group 5: reference track A/B with loudness match, match EQ, linear-phase EQ mode, automatic freeze.

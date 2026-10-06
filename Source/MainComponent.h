@@ -1216,6 +1216,13 @@ private:
             const int roots[4] = { 9, 5, 0, 7 }, kinds[4] = { Chords::minor, Chords::major, Chords::major, Chords::major };   // Am F C G
             for (int bar = 0; bar < 8; ++bar) Chords::add (*edit, bar * 4.0, 4.0, roots[bar % 4], kinds[bar % 4]);
         }
+        // a VCA group for the rhythm section, so the demo shows one
+        if (auto ut = EngineHelpers::getUserTracks (*edit); ut.size() >= 2)
+        {
+            const int rhythm = Vca::add (*edit, "Rhythm");
+            Vca::join (*edit, rhythm, *ut[0]);
+            Vca::join (*edit, rhythm, *ut[1]);
+        }
         Sections::add (*edit, "Intro", 0.0, 8.0);
         Sections::add (*edit, "Build", 8.0, 8.0);
         Sections::add (*edit, "Drop", 16.0, 16.0);

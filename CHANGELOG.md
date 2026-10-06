@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.27 - 2026-10-06
+
+- VCA faders: group faders in the mixer that move their member tracks together
+
 ## 0.99.26 - 2026-10-06
 
 - Mastering: a ready chain for the master and an assistant that sets the loudness (Master button on the mixer's master strip)

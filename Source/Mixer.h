@@ -10,6 +10,7 @@
 #include "Icons.h"
 #include "PluginMenu.h"
 #include "Mastering.h"
+#include "Vca.h"
 #include "About.h"
 
 //==============================================================================
@@ -354,6 +355,12 @@ public:
         auto plate = r.withHeight (24.0f);
         g.setColour (col.withAlpha (selected ? 1.0f : 0.85f));
         g.fillRoundedRectangle (plate, 6.0f);
+        if (track != nullptr)
+            if (const int vca = Vca::groupOf (evs.edit, *track); vca >= 0)   // a member of a VCA group wears its colour
+            {
+                g.setColour (Vca::colourOf (vca));
+                g.fillRect (r.getX() + 6.0f, 27.0f, r.getWidth() - 12.0f, 2.5f);
+            }
         g.fillRect (plate.withTrimmedTop (12.0f));
         name.setColour (Label::textColourId, TrackColours::textOn (col));
         g.setColour (selected ? Colours::white : Theme::line);
@@ -440,6 +447,8 @@ public:
 
     void mouseDown (const MouseEvent& e) override
     {
+        // right-click the name plate of a track: which VCA group it belongs to
+        if (e.mods.isPopupMenu() && e.eventComponent == this && e.position.y < 26.0f && audioTrack() != nullptr) { showVcaMenu(); return; }
         if (e.eventComponent == &peakLbl && meter != nullptr) { meter->resetPeak(); return; }
         if (e.eventComponent == &loudLbl)
         {
@@ -551,6 +560,23 @@ private:
         return nullptr;
     }
 
+    void showVcaMenu()
+    {
+        auto* t = audioTrack();
+        if (t == nullptr) return;
+        auto& edit = evs.edit;
+        const int current = Vca::groupOf (edit, *t);
+        te::Track::Ptr keep (t);
+        PopupMenu m;
+        m.addSectionHeader ("VCA group");
+        m.addItem ("None", true, current < 0, [&edit, keep] { edit.getUndoManager().beginNewTransaction ("Leave VCA"); Vca::leave (edit, *keep); });
+        for (auto& g : Vca::all (edit))
+            m.addItem (g.name, true, g.index == current, [&edit, keep, i = g.index] { edit.getUndoManager().beginNewTransaction ("Join VCA"); Vca::join (edit, i, *keep); });
+        m.addSeparator();
+        m.addItem ("New VCA group with this track", [&edit, keep] { edit.getUndoManager().beginNewTransaction ("New VCA"); Vca::join (edit, Vca::add (edit), *keep); });
+        m.showMenuAsync (PopupMenu::Options().withTargetComponent (this).withMousePosition());
+    }
+
     void showMasteringMenu()
     {
         PopupMenu m;
@@ -647,6 +673,14 @@ public:
             m.showMenuAsync (PopupMenu::Options().withTargetComponent (&addReturnBtn));
         };
         content.addAndMakeVisible (addReturnBtn);
+        vcaBtn.setTooltip ("New VCA group: one fader that moves the faders of the selected tracks together (right-click a track's name to join or leave a group)");
+        vcaBtn.onClick = [this]
+        {
+            evs.edit.getUndoManager().beginNewTransaction ("New VCA");
+            const int g = Vca::add (evs.edit);
+            for (auto t : evs.selectionManager.getItemsOfType<te::AudioTrack>()) Vca::join (evs.edit, g, *t);
+        };
+        content.addAndMakeVisible (vcaBtn);
 
         snapBtn.setTooltip ("Mixer snapshots: store and recall every track's volume, pan, mute, solo and sends");
         snapBtn.onClick = [this] { showSnapshotMenu(); };
@@ -699,6 +733,7 @@ private:
     void rebuild()
     {
         strips.clear();
+        vcaStrips.clear();
         numContentStrips = 0;
 
         // tracks and groups, in arrangement order
@@ -727,6 +762,10 @@ private:
             }
         }
 
+        // the VCA groups, after the tracks they move
+        for (auto& g : Vca::all (evs.edit))
+            content.addAndMakeVisible (vcaStrips.add (new Vca::Strip (evs, g.index)));
+
         for (auto t : Routing::getReturnTracks (evs.edit))
         {
             auto* s = strips.add (new ChannelStrip (evs, t, t->getVolumePlugin(), t->getLevelMeterPlugin()));
@@ -746,13 +785,18 @@ private:
         int x = 8;
         for (int i = 0; i < strips.size(); ++i)
         {
-            if (i == numContentStrips) x += 16;          // gap before returns
+            if (i == numContentStrips)
+            {
+                for (auto* v : vcaStrips) { v->setBounds (x + 8, 6, 78, h - 12); x += 86; }
+                x += 16;          // gap before returns
+            }
             if (i == strips.size() - 1)                    // + Return, then master
             {
                 addReturnBtn.setBounds (x, 6, 80, 28);
                 snapBtn.setBounds (x, 40, 80, 28);
                 sendsBtn.setBounds (x, 74, 80, 28);
                 narrowBtn.setBounds (x, 108, 80, 28);
+                vcaBtn.setBounds (x, 142, 80, 28);
                 x += 92;
             }
             const int w = isNarrow() && i != strips.size() - 1 ? 58 : 92;
@@ -768,7 +812,7 @@ private:
     // Sends are created lazily while a knob is dragged, so they must not trigger a rebuild.
     static bool affectsLayout (const ValueTree& c)
     {
-        return te::TrackList::isTrack (c)
+        return te::TrackList::isTrack (c) || c.hasType (Vca::vcaID)
             || (c.hasType (te::IDs::PLUGIN) && c[te::IDs::type].toString() == te::AuxReturnPlugin::xmlTypeName);
     }
 
@@ -793,7 +837,8 @@ private:
     Viewport viewport;
     Content content;
     OwnedArray<ChannelStrip> strips;
-    TextButton addReturnBtn { "+ Return" }, snapBtn { "Snapshots" }, sendsBtn { "Sends" }, narrowBtn { "Narrow" };
+    OwnedArray<Vca::Strip> vcaStrips;
+    TextButton addReturnBtn { "+ Return" }, snapBtn { "Snapshots" }, sendsBtn { "Sends" }, narrowBtn { "Narrow" }, vcaBtn { "+ VCA" };
 
     void changeListenerCallback (ChangeBroadcaster*) override { markAndUpdate (rebuildFlag); }
 

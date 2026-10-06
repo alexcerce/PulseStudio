@@ -1581,6 +1581,54 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
             small = nullptr;
         }
 
+        // --- v0.99.27: VCA faders ----------------------------------------------------------------------------
+        {
+            rep.step ("vca");
+            auto va = ClipImport::createContentTrack (*edit, "Vca A", false), vb = ClipImport::createContentTrack (*edit, "Vca B", false), vc = ClipImport::createContentTrack (*edit, "Vca C", false);
+            va->getVolumePlugin()->setVolumeDb (-3.0f); vb->getVolumePlugin()->setVolumeDb (-10.0f); vc->getVolumePlugin()->setVolumeDb (-5.0f);
+            const int g = Vca::add (*edit, "Drums");
+            Vca::join (*edit, g, *va); Vca::join (*edit, g, *vb);
+            const bool joined = Vca::groupOf (*edit, *va) == g && Vca::groupOf (*edit, *vb) == g && Vca::groupOf (*edit, *vc) == -1 && Vca::tracksOf (*edit, g).size() == 2;
+            // the group fader moves its members by the same amount, and leaves other tracks alone
+            Vca::setLevel (*edit, g, -6.0f);
+            const bool moved = std::abs (va->getVolumePlugin()->getVolumeDb() + 9.0f) < 0.05f && std::abs (vb->getVolumePlugin()->getVolumeDb() + 16.0f) < 0.05f && std::abs (vc->getVolumePlugin()->getVolumeDb() + 5.0f) < 0.05f;
+            // pushed past what one member's fader can do, the whole group stops there: the balance between them is kept
+            Vca::setLevel (*edit, g, 6.0f);   // +12 from here, but A can only go up 15 dB to +6... and the group's own top is +6
+            const float aTop = va->getVolumePlugin()->getVolumeDb(), bTop = vb->getVolumePlugin()->getVolumeDb();
+            Vca::setLevel (*edit, g, -60.0f);
+            const float aLow = va->getVolumePlugin()->getVolumeDb(), bLow = vb->getVolumePlugin()->getVolumeDb();
+            const bool balance = std::abs ((aTop - bTop) - 7.0f) < 0.1f && std::abs ((aLow - bLow) - 7.0f) < 0.1f && bLow >= -60.05f && aTop <= 6.05f;
+            Vca::setLevel (*edit, g, 0.0f);
+            // a track is in one group only; leaving keeps its fader where it is; mute mutes the members
+            const int g2 = Vca::add (*edit);
+            Vca::join (*edit, g2, *vb);
+            const bool oneOnly = Vca::groupOf (*edit, *vb) == g2 && Vca::tracksOf (*edit, g).size() == 1;
+            Vca::setMuted (*edit, g, true);
+            const bool mutes = va->isMuted (false) && ! vb->isMuted (false);
+            Vca::setMuted (*edit, g, false);
+            const float beforeLeave = va->getVolumePlugin()->getVolumeDb();
+            Vca::leave (*edit, *va);
+            const bool left = Vca::groupOf (*edit, *va) == -1 && std::abs (va->getVolumePlugin()->getVolumeDb() - beforeLeave) < 0.01f;
+            // the strip draws, and removing a group is undone in one step
+            EditViewState vevs (*edit, sm);
+            Vca::Strip vstrip (vevs, g2);
+            vstrip.setSize (78, 420);
+            { PulseLookAndFeel laf; LookAndFeel::setDefaultLookAndFeel (&laf); Image img (Image::ARGB, 78, 420, true); Graphics gr (img); vstrip.paint (gr); LookAndFeel::setDefaultLookAndFeel (nullptr); }
+            edit->getUndoManager().beginNewTransaction ("remove vca");
+            Vca::remove (*edit, g2);
+            const bool removed = Vca::all (*edit).size() == 1 && Vca::groupOf (*edit, *vb) == -1;
+            edit->getUndoManager().undo();
+            const bool back = Vca::all (*edit).size() == 2 && Vca::groupOf (*edit, *vb) == g2;
+            rep.check (joined && moved && balance && oneOnly && mutes && left && removed && back,
+                       "VCA faders (members move together and keep their balance at the ends, one group per track, mute, leave, remove and undo)",
+                       String (joined ? "" : "joining wrong; ") + (moved ? "" : "moving wrong; ") + (balance ? "" : "balance lost (" + String (aTop, 1) + " / " + String (bTop, 1) + ", " + String (aLow, 1) + " / " + String (bLow, 1) + "); ")
+                       + (oneOnly ? "" : "two groups at once; ") + (mutes ? "" : "mute wrong; ") + (left ? "" : "leave wrong; ") + (removed && back ? "" : "remove / undo wrong; ")
+                       + "top " + String (aTop, 1) + " / " + String (bTop, 1) + " dB, bottom " + String (aLow, 1) + " / " + String (bLow, 1) + " dB");
+            while (! Vca::all (*edit).empty()) Vca::remove (*edit, 0);
+            edit->deleteTrack (va); edit->deleteTrack (vb); edit->deleteTrack (vc);
+            edit->getUndoManager().clearUndoHistory();
+        }
+
         // --- sharing: collect all, templates -----------------------------------------------------------
         {
             auto outside = File::getSpecialLocation (File::tempDirectory).getChildFile ("PulseStudioSelfTestOutside");
