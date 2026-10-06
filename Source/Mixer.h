@@ -418,8 +418,9 @@ public:
         }
         else
         {
-            masterBtn.setBounds (bottom.removeFromRight (bottom.getWidth() / 2).reduced (2, 0));
             limiterBtn.setBounds (bottom.reduced (2, 0));
+            r.removeFromBottom (3);
+            masterBtn.setBounds (r.removeFromBottom (bottom.getHeight()).reduced (2, 0));   // (its own row: the strip is too narrow for both side by side)
         }
         if (loudLbl.isVisible()) loudLbl.setBounds (r.removeFromBottom (26));
         latency.setBounds (r.removeFromBottom (13));
@@ -605,7 +606,7 @@ private:
     Rectangle<int> faderArea;
     DbScale scale { [this] (float v) { return (float) (fader.getY() - scale.getY()) + (float) fader.getPositionOfValue (jlimit (-60.0, 6.0, (double) v)); } };
     std::unique_ptr<LevelMeter> meter;
-    TextButton muteBtn { "M" }, soloBtn { "S" }, freezeBtn { "F" }, limiterBtn { "Limiter" }, masterBtn { "Master" };
+    TextButton muteBtn { "M" }, soloBtn { "S" }, freezeBtn { "F" }, limiterBtn { "Limiter" }, masterBtn { "Mastering" };
     Label latency, loudLbl;
     IconButton devicesBtn { Icons::Type::devices, "Show devices" };
     std::unique_ptr<MiniEQ> miniEQ;
