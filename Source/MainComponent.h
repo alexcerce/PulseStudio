@@ -1443,7 +1443,10 @@ private:
         if (! instrument)
         {
             if (auto t = ClipImport::createContentTrack (*edit, "Audio " + String (n), false))
+            {
+                Presets::applyDefaultTrack (*t);   // the effects every new track starts with, when that was asked for
                 selectionManager.selectOnly (t);
+            }
             return;
         }
 
@@ -1455,6 +1458,7 @@ private:
             if (auto t = ClipImport::createContentTrack (*edit, name + " " + String (n), false))
             {
                 if (auto p = make()) PluginMenu::insertPlugin (t, t->pluginList, p, nullptr);
+                Presets::applyDefaultTrack (*t);
                 selectionManager.selectOnly (t);
                 showTab (Tab::devices);
             }

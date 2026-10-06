@@ -391,6 +391,7 @@ private:
             Presets::askForName ("Save " + plugin->getName() + " preset", plugin->getName(),
                                  [p = plugin] (const String& name) { Presets::saveDevice (*p, name); });
         });
+        DeviceDefaults::addToMenu (m, plugin);
         if (auto& factory = FactoryPresets::forType (plugin->getPluginType()); ! factory.empty())
         {
             PopupMenu f;
@@ -1265,6 +1266,10 @@ private:
                     Presets::loadChain (*list, track, f);
                 });
         }
+        m.addSeparator();
+        m.addItem ("Start every new track with these effects", list != nullptr && currentTrack() != nullptr, false, [list, track = currentTrack()] { Presets::saveDefaultTrack (*list, track); });
+        if (Presets::hasDefaultTrack (evs.edit.engine))
+            m.addItem ("New tracks start empty again (forget the default)", [this] { Presets::forgetDefaultTrack (evs.edit.engine); });
         m.addSeparator();
         m.addItem ("Show presets folder", [] { Presets::chainFolder().revealToUser(); });
         SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (&chainBtn));

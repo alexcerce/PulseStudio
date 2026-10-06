@@ -2681,6 +2681,64 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
             edit->getUndoManager().clearUndoHistory();
         }
 
+        // --- v0.99.45: defaults for devices and for new tracks -------------------------------------------------
+        {
+            rep.step ("defaults");
+            auto& st = engine.getPropertyStorage().getPropertiesFile();
+            const auto utilType = String (pulse::Utility::xmlTypeName);
+            const auto oldDevice = st.getValue (DeviceDefaults::keyFor (utilType)), oldTrack = st.getValue (Presets::defaultTrackKey);
+            DeviceDefaults::forget (engine, utilType);
+            Presets::forgetDefaultTrack (engine);
+            auto dt = ClipImport::createContentTrack (*edit, "Defaults", false);
+            auto fresh = [&] { return ClipImport::createPluginFromDescription (*edit, "plugin:builtin:" + utilType); };
+            auto gainOf = [] (te::Plugin::Ptr p) { return dynamic_cast<pulse::PulsePlugin*> (p.get())->get (pulse::Utility::pGain); };
+            // a new device starts as it came, until its kind is given a default
+            auto first = fresh();
+            const bool plain = ! DeviceDefaults::has (engine, utilType) && std::abs (gainOf (first)) < 0.001f;
+            auto* u = dynamic_cast<pulse::PulsePlugin*> (first.get());
+            u->set (pulse::Utility::pGain, -7.5f); u->set (pulse::Utility::pWidth, 1.4f);
+            DeviceDefaults::save (*u);
+            auto second = fresh();
+            const bool fromDefault = DeviceDefaults::has (engine, utilType) && std::abs (gainOf (second) + 7.5f) < 0.001f
+                                     && std::abs (dynamic_cast<pulse::PulsePlugin*> (second.get())->get (pulse::Utility::pWidth) - 1.4f) < 0.001f;
+            // a device that is not made new by hand (from a preset, a copy, a project) is left as it is
+            auto raw = edit->getPluginCache().createNewPlugin (utilType, {});
+            const bool untouched = std::abs (gainOf (raw)) < 0.001f;
+            // other kinds are not affected; forgetting brings the starting values back
+            auto other = ClipImport::createPluginFromDescription (*edit, String ("plugin:builtin:") + pulse::Saturator::xmlTypeName);
+            const bool otherKinds = other != nullptr && ! DeviceDefaults::has (engine, pulse::Saturator::xmlTypeName);
+            PopupMenu menu;
+            DeviceDefaults::addToMenu (menu, second);
+            const bool offered = menu.getNumItems() == 2;
+            DeviceDefaults::forget (engine, utilType);
+            const bool forgotten = std::abs (gainOf (fresh())) < 0.001f;
+
+            // new tracks: the effects of a chain (not its instrument) on every new track
+            auto src = ClipImport::createContentTrack (*edit, "DefaultSource", true);
+            auto fxA = edit->getPluginCache().createNewPlugin (utilType, {});
+            PluginMenu::insertPlugin (src, src->pluginList, fxA, nullptr);
+            dynamic_cast<pulse::PulsePlugin*> (fxA.get())->set (pulse::Utility::pGain, -3.0f);
+            PluginMenu::insertPlugin (src, src->pluginList, edit->getPluginCache().createNewPlugin (pulse::Saturator::xmlTypeName, {}), nullptr);
+            const int kept = Presets::saveDefaultTrack (src->pluginList, src);
+            const int made = Presets::applyDefaultTrack (*dt);
+            StringArray names;
+            float carried = 0.0f;
+            for (auto p : Presets::userChain (dt->pluginList, dt)) { names.add (p->getName()); if (auto pp = dynamic_cast<pulse::PulsePlugin*> (p); pp != nullptr && p->getPluginType() == utilType) carried = pp->get (pulse::Utility::pGain); }
+            const bool trackDefault = kept == 2 && made == 2 && Presets::hasDefaultTrack (engine) && names.joinIntoString (",") == "Utility,Saturator" && std::abs (carried + 3.0f) < 0.001f
+                                      && ! EngineHelpers::trackHasInstrument (*dt);
+            Presets::forgetDefaultTrack (engine);
+            auto dt2 = ClipImport::createContentTrack (*edit, "Defaults2", false);
+            const bool emptyAgain = Presets::applyDefaultTrack (*dt2) == 0 && Presets::userChain (dt2->pluginList, dt2).isEmpty();
+            rep.check (plain && fromDefault && untouched && otherKinds && offered && forgotten && trackDefault && emptyAgain,
+                       "Defaults (a device's settings as the default for its kind, only for devices made new; a chain's effects on every new track; both can be forgotten)",
+                       String (plain ? "" : "no default yet is wrong; ") + (fromDefault ? "" : "default not applied; ") + (untouched ? "" : "applied to a device not made new; ") + (otherKinds && offered ? "" : "menu / other kinds wrong; ")
+                       + (forgotten ? "" : "not forgotten; ") + (trackDefault ? "" : "track default wrong (" + names.joinIntoString (",") + ", " + String (kept) + " kept, " + String (made) + " made); ") + (emptyAgain ? "" : "track default not forgotten; ") + "ok");
+            if (oldDevice.isNotEmpty()) st.setValue (DeviceDefaults::keyFor (utilType), oldDevice);
+            if (oldTrack.isNotEmpty()) st.setValue (Presets::defaultTrackKey, oldTrack);
+            edit->deleteTrack (dt); edit->deleteTrack (dt2); edit->deleteTrack (src);
+            edit->getUndoManager().clearUndoHistory();
+        }
+
         // --- sharing: collect all, templates -----------------------------------------------------------
         {
             auto outside = File::getSpecialLocation (File::tempDirectory).getChildFile ("PulseStudioSelfTestOutside");

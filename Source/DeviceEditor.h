@@ -1999,6 +1999,7 @@ namespace DeviceEditors
                 {
                     Presets::askForName ("Save preset", plugin->getName(), [p = te::Plugin::Ptr (plugin)] (const String& n) { Presets::saveDevice (*p, n); });
                 });
+                DeviceDefaults::addToMenu (m, te::Plugin::Ptr (plugin));
                 SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (&presetBtn));
             };
             addAndMakeVisible (presetBtn);

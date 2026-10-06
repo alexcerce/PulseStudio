@@ -2,6 +2,7 @@
 
 #include "Common.h"
 #include "PulseSynths.h"
+#include "DeviceDefaults.h"
 
 /** Popup menu listing built-in Tracktion devices plus every scanned VST3,
     grouped by manufacturer. Calls back with the newly created plugin. */
@@ -18,7 +19,10 @@ namespace PluginMenu
         m.addItem (TRANS (PluginType::getPluginName()), [&edit, cb]
         {
             if (auto p = edit.getPluginCache().createNewPlugin (PluginType::xmlTypeName, {}))
+            {
+                DeviceDefaults::applyTo (p.get());   // a new one starts the way its kind was told to
                 cb (p);
+            }
         });
     }
 

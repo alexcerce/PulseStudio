@@ -153,7 +153,7 @@ well EVERYWHERE." So, besides the list:
   [x] "what does this do" hover help everywhere, with a status-bar line  [x] search in every menu that has more
   than 20 entries  [ ] drag any device, clip, preset or sample anywhere it could sensibly go
   [ ] consistent modifier keys (fine, snap off, copy-drag) across arrangement, piano roll, automation and devices
-  [x] collect-all-and-save, missing-file finder  [x] undo history list  [ ] default track / device presets
+  [x] collect-all-and-save, missing-file finder  [x] undo history list  [x] default track / device presets
   [ ] zoom to selection / fit, and remembered zoom per view  [ ] crash-safe autosave restore prompt reviewed
   [ ] every list sortable and keyboard-navigable  [ ] nothing blocks the UI for more than 100 ms (progress
   shown instead)  [ ] first-run experience: audio set-up check, demo project, short tour
@@ -691,3 +691,11 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   missing) and from File > Find missing files / the command file.findMissing. The folder dialog itself was
   not driven in a test; relink was, with a clip and a device file. Not covered: files of outside (VST)
   plugins, which keep their own paths. 328 checks, quick tier.
+- 2026-10-06: v0.99.45. Defaults. Source/DeviceDefaults.h: a device's parameters as "name=value" text under
+  "deviceDefault_<type>" in the settings; applied in the two places a device is made new by hand
+  (PluginMenu::addBuiltIn and ClipImport::createPluginFromDescription for plugin:builtin:), and nowhere else.
+  Presets.h: saveDefaultTrack / applyDefaultTrack / forgetDefaultTrack (the chain's effects as "PULSECHAIN" XML
+  under "defaultTrackEffects"); MainComponent::addTrack applies it. Only Pulse's own devices can have a default
+  (an outside plugin keeps its state in its own way); a device's default holds its parameters, not extras
+  such as a loaded sample or a learned Match EQ curve; tracks made by dropping a file or a device do not get
+  the track default. 329 checks, quick tier.

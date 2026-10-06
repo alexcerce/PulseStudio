@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.45 - 2026-10-06
+
+- Defaults: a device's settings as the default for new devices of its kind; a chain's effects on every new track
+
 ## 0.99.44 - 2026-10-06
 
 - Missing files are reported when a project opens and can be found again by folder (File > Find missing files...)

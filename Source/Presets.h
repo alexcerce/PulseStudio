@@ -128,6 +128,42 @@ namespace Presets
     }
 
     //==============================================================================
+    // The default for new tracks: the effects every new track starts with (kept in the settings).
+    inline const char* defaultTrackKey = "defaultTrackEffects";
+    inline bool hasDefaultTrack (te::Engine& e)    { return e.getPropertyStorage().getPropertiesFile().getValue (defaultTrackKey).isNotEmpty(); }
+    inline void forgetDefaultTrack (te::Engine& e) { e.getPropertyStorage().getPropertiesFile().removeValue (defaultTrackKey); }
+
+    /** Makes the effects of this chain what every new track starts with. Instruments and MIDI effects are left out:
+        an instrument track chooses its own instrument. Returns how many effects were kept. */
+    inline int saveDefaultTrack (te::PluginList& list, te::Track* track)
+    {
+        ValueTree chain ("PULSECHAIN");
+        for (auto p : userChain (list, track))
+            if (PluginMenu::kindOf (*p) == PluginMenu::Kind::audioEffect) chain.appendChild (snapshot (*p), nullptr);
+        auto& store = list.getEdit().engine.getPropertyStorage().getPropertiesFile();
+        if (chain.getNumChildren() == 0) { store.removeValue (defaultTrackKey); return 0; }
+        store.setValue (defaultTrackKey, chain.toXmlString());
+        return chain.getNumChildren();
+    }
+
+    /** Puts the default effects on a track that has just been made. Returns how many. */
+    inline int applyDefaultTrack (te::AudioTrack& track)
+    {
+        const auto text = track.edit.engine.getPropertyStorage().getPropertiesFile().getValue (defaultTrackKey);
+        if (text.isEmpty()) return 0;
+        auto chain = ValueTree::fromXml (text);
+        int made = 0;
+        for (auto v : chain)
+        {
+            auto state = v.createCopy();
+            te::EditItemID::remapIDs (state, nullptr, track.edit);
+            if (auto p = track.edit.getPluginCache().createNewPlugin (state))
+                if (PluginMenu::insertPlugin (&track, track.pluginList, p, nullptr)) ++made;
+        }
+        return made;
+    }
+
+    //==============================================================================
     /** Applies a dragged browser item to a track: a device, a drum rack or a chain preset. */
     inline bool applyDescription (te::Track* track, te::PluginList& list, const String& d)
     {

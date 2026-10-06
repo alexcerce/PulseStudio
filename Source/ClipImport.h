@@ -3,6 +3,7 @@
 #include "Common.h"
 #include "DrumRack.h"
 #include "PulseSynths.h"
+#include "DeviceDefaults.h"
 #include "FactoryPresets.h"
 #include "FactorySounds.h"
 
@@ -264,7 +265,11 @@ namespace ClipImport
         }
 
         if (d.startsWith ("plugin:builtin:"))
-            return edit.getPluginCache().createNewPlugin (d.fromFirstOccurrenceOf ("plugin:builtin:", false, false), {});
+        {
+            auto p = edit.getPluginCache().createNewPlugin (d.fromFirstOccurrenceOf ("plugin:builtin:", false, false), {});
+            DeviceDefaults::applyTo (p.get());   // a new one starts the way its kind was told to
+            return p;
+        }
 
         if (d.startsWith ("plugin:ext:"))
             if (auto desc = edit.engine.getPluginManager().knownPluginList.getTypeForIdentifierString (d.fromFirstOccurrenceOf ("plugin:ext:", false, false)))
