@@ -699,3 +699,12 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   (an outside plugin keeps its state in its own way); a device's default holds its parameters, not extras
   such as a loaded sample or a learned Match EQ curve; tracks made by dropping a file or a device do not get
   the track default. 329 checks, quick tier.
+- 2026-10-06: slow tier for v0.99.40 to v0.99.45 (the first eight items of the quality-of-life list), clean:
+  Debug build, Debug self-test 329 / 329, random input 4000 events on the demo project (seed 341) and on the
+  30-track project (seed 342), command fuzz 720 commands (seed 343), installer PulseStudio-0.99.45-Setup.exe.
+  One thing on the way: the Wavetable speed check failed once in the Debug build (heaviest patch 1.9x real
+  time against a floor of 2.0x; the Wavetable's code had not changed). Its floors are for a build made for
+  speed; in a Debug build they are now half (4x and 1x), and the Release floors are as they were.
+  Left on the list: drag anything anywhere, consistent modifier keys, remembered zoom per view, the autosave
+  restore prompt, lists sortable and keyboard-navigable, nothing blocking for over 100 ms, first-run tour.
+  Left in the Programme: per-note pitch and time editing of audio.

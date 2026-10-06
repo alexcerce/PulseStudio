@@ -7299,7 +7299,12 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
                 w->setRoute (1, "cutoff", 0.3f); w->setRoute (2, "pos1", 0.3f); w->setRoute (5, "pos2", 0.4f); w->setRoute (14, "reso", 0.2f);
                 w->set (W::pDrive, 0.3f); w->set (W::pChorusMix, 0.4f); w->set (W::pDelayMix, 0.3f); w->set (W::pReverbMix, 0.3f); w->set (W::pPhaserMix, 0.3f); w->set (W::pEqLow, 3.0f);
             });
-            rep.check (plain > 8.0 && heavy > 2.0, "Wavetable: 8 held notes play many times faster than real time on one core",
+           #if JUCE_DEBUG
+            const double wantPlain = 4.0, wantHeavy = 1.0;   // a build for finding mistakes, not for speed: it only has to keep up
+           #else
+            const double wantPlain = 8.0, wantHeavy = 2.0;
+           #endif
+            rep.check (plain > wantPlain && heavy > wantHeavy, "Wavetable: 8 held notes play many times faster than real time on one core",
                        "default patch " + String (plain, 1) + "x, heaviest patch " + String (heavy, 1) + "x");
         }
 
