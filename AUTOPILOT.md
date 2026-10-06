@@ -171,7 +171,7 @@ well EVERYWHERE." So, besides the list:
 4. Audio editing: [x] warp by dragging transients on the waveform, follow-tempo per clip  [ ] per-note pitch and time
    editing of audio  [x] reverse / crop / consolidate clips  [x] clip launch recorded into the arrangement with quantised punch
 5. Mixing: [x] VCA faders  [ ] reference track A/B with loudness match  [x] mastering chain preset + assistant
-   [ ] match EQ  [x] linear-phase EQ mode  [x] loudness report on export  [ ] automatic freeze under load
+   [x] match EQ  [x] linear-phase EQ mode  [x] loudness report on export  [ ] automatic freeze under load
    [x] sidechain picker on every device
 6. Workflow: [ ] device racks with parallel chains  [ ] track alternatives  [ ] project and track notes
    [ ] browser preview in time and in key  [ ] macros on the track header  [ ] toolbar / window layouts
@@ -544,3 +544,12 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   it reports, the response is a mirror of itself to the last digit. Known: in the linear modes dynamic bands and
   band movement do nothing (said in the band panel); the filter is worked out on the audio thread (a few
   hundred microseconds in Linear, more in Deep, once per block at most). 307 checks, quick tier.
+- 2026-10-06: v0.99.29. Match EQ. Source/MatchEQ.h: pulse::SpectrumLearner (average power, 8192-point frames,
+  121 points at 12 per octave) and pulse::MatchEQ (startLearning / stopLearning for this track or the key input,
+  learnFromFile, the two spectra in the plugin state as "sourceSpectrum" / "referenceSpectrum", makeCurve, a
+  LinearFir of 8192 points); Source/MatchEQDisplay.h (MatchUI::MatchView and MatchPanel). Wired into the menus,
+  the browser list, the big test project, device shots, 7 presets. Measured with noise against the same noise
+  through two shelves (+8 dB highs, -6 dB lows): the curve reads +7.9 / -6.1 dB, and tones through the device
+  come out as the curve says. Not tested: learning from the key input (the offline test rig has no key input);
+  not judged by ear. 310 checks, quick tier.
+  Left in group 5: reference track A/B with loudness match, automatic freeze under load.

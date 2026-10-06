@@ -2253,6 +2253,7 @@ namespace pulse
 #include "Dynamics.h"
 #include "Dynamics2.h"
 #include "Convolution.h"
+#include "MatchEQ.h"
 #include "ModFx.h"
 #include "ColourFx.h"
 #include "AmpFx.h"
@@ -2295,6 +2296,7 @@ namespace pulse
         pm.createBuiltInType<GrainDelay>();
         pm.createBuiltInType<BeatRepeat>();
         pm.createBuiltInType<Looper>();
+        pm.createBuiltInType<MatchEQ>();
         pm.createBuiltInType<Spectral>();
         pm.createBuiltInType<Organ>();
         pm.createBuiltInType<EPiano>();

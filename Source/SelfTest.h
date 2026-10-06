@@ -214,6 +214,35 @@ namespace SelfTest
         shoot (pulse::VelocityFx::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::VelocityFx::pCurve, 0.5f); p.set (pulse::VelocityFx::pOutLow, 40); }, "shot_velocity.png");
         shoot (pulse::RandomFx::xmlTypeName, nullptr, "shot_random.png");
         shoot (pulse::Arpeggiator::xmlTypeName, [] (pulse::PulsePlugin& p) { dynamic_cast<pulse::Arpeggiator&> (p).setPattern ({ 1.0f, 0.4f, 0.7f, 0.0f, 1.0f, 0.4f, 0.0f, 0.6f, 1.0f, 0.3f, 0.7f, 0.0f, 0.9f, 0.5f, 0.7f, 0.3f }); }, "shot_arp.png");
+        shoot (pulse::MatchEQ::xmlTypeName, [] (pulse::PulsePlugin& p)
+        {
+            // two made-up sounds, so that the picture has something in it: a dull one, and a brighter reference
+            auto& m = dynamic_cast<pulse::MatchEQ&> (p);
+            auto f1 = File::getSpecialLocation (File::tempDirectory).getChildFile ("pulse_shot_match_a.wav"), f2 = File::getSpecialLocation (File::tempDirectory).getChildFile ("pulse_shot_match_b.wav");
+            Random rnd (5);
+            AudioBuffer<float> a (2, 96000), b (2, 96000);
+            pulse::Biquad lp, hs, bell;
+            lp.set (pulse::Biquad::Type::highCut, 48000.0, 5000.0, 0.6, 0.0);
+            hs.set (pulse::Biquad::Type::highShelf, 48000.0, 6000.0, 0.7, 5.0);
+            bell.set (pulse::Biquad::Type::bell, 48000.0, 300.0, 1.2, -5.0);
+            float brown = 0.0f;
+            for (int i = 0; i < 96000; ++i)
+            {
+                brown = brown * 0.97f + (rnd.nextFloat() * 2.0f - 1.0f) * 0.1f;
+                const float x = lp.process (brown, 0), y = bell.process (hs.process (brown, 0), 0);
+                a.setSample (0, i, x); a.setSample (1, i, x); b.setSample (0, i, y); b.setSample (1, i, y);
+            }
+            WavAudioFormat wav;
+            for (auto [f, buf] : { std::pair<File, AudioBuffer<float>*> { f1, &a }, std::pair<File, AudioBuffer<float>*> { f2, &b } })
+            {
+                f.deleteFile();
+                if (auto os = f.createOutputStream())
+                    if (std::unique_ptr<AudioFormatWriter> w { wav.createWriterFor (os.release(), 48000.0, 2, 24, {}, 0) }) w->writeFromAudioSampleBuffer (*buf, 0, 96000);
+            }
+            m.learnFromFile (f1, false);
+            m.learnFromFile (f2, true);
+            f1.deleteFile(); f2.deleteFile();
+        }, "shot_matcheq.png");
         shoot (pulse::Gate::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Gate::pThreshold, -22); p.set (pulse::Gate::pRange, 40); p.set (pulse::Gate::pHysteresis, 6); }, "shot_gate.png");
         shoot (pulse::TransientShaper::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::TransientShaper::pAttack, 0.6f); p.set (pulse::TransientShaper::pSustain, -0.4f); }, "shot_transient.png");
         shoot (pulse::DeEsser::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::DeEsser::pThreshold, -36); p.set (pulse::DeEsser::pRange, 10); }, "shot_deesser.png");
@@ -5363,6 +5392,115 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
                     LookAndFeel::setDefaultLookAndFeel (nullptr);
                 }
                 sp5 = nullptr;
+            }
+
+            // Match EQ: learns this track and a reference, and takes the one towards the other
+            {
+                auto mq = edit->getPluginCache().createNewPlugin (pulse::MatchEQ::xmlTypeName, {});
+                t->pluginList.insertPlugin (mq, 0, nullptr);
+                auto* match = dynamic_cast<pulse::MatchEQ*> (mq.get());
+                using MQ = pulse::MatchEQ;
+                // this track: plain noise. The reference: the same noise, 8 dB brighter above 4 kHz and 6 dB thinner under 150 Hz
+                const int len = (int) (sr * 6.0);
+                std::vector<float> noise ((size_t) len);
+                Random rnd (99);
+                for (auto& v : noise) v = (rnd.nextFloat() * 2.0f - 1.0f) * 0.25f;
+                AudioBuffer<float> refBuf (2, len);
+                pulse::Biquad hs, ls;
+                hs.set (pulse::Biquad::Type::highShelf, sr, 4000.0, 0.707, 8.0);
+                ls.set (pulse::Biquad::Type::lowShelf, sr, 150.0, 0.707, -6.0);
+                for (int i = 0; i < len; ++i) { const float v = ls.process (hs.process (noise[(size_t) i], 0), 0); refBuf.setSample (0, i, v); refBuf.setSample (1, i, v); }
+                auto refFile = dir.getChildFile ("match_reference.wav");
+                refFile.deleteFile();
+                {
+                    WavAudioFormat wav;
+                    if (auto os = refFile.createOutputStream())
+                        if (std::unique_ptr<AudioFormatWriter> w { wav.createWriterFor (os.release(), sr, 2, 24, {}, 0) }) w->writeFromAudioSampleBuffer (refBuf, 0, len);
+                }
+                auto noiseSig = [&] (int, double tm) { return noise[(size_t) jlimit (0, len - 1, roundToInt (tm * sr))]; };
+                const bool nothingYet = ! match->hasSource() && ! match->hasReference();
+                match->startLearning (MQ::learningSource);
+                runFx (*match, noiseSig, 5.0);
+                const float heard = match->learnedSeconds.load();
+                edit->getUndoManager().beginNewTransaction ("learn");
+                const bool learned = match->stopLearning() && match->hasSource() && match->isLearning() == MQ::notLearning;
+                edit->getUndoManager().beginNewTransaction ("reference");
+                const bool gotFile = match->learnFromFile (refFile, true) && match->hasReference() && match->referenceName() == "match_reference.wav";
+                MQ::Points curve;
+                match->set (MQ::pSmooth, 0.33f);
+                match->getCurve (curve);
+                const float highs = MQ::curveAt (curve, 12000.0) - MQ::curveAt (curve, 1000.0), lows = MQ::curveAt (curve, 50.0) - MQ::curveAt (curve, 1000.0);
+                // what comes out: tones at 12 kHz and 1 kHz, compared with what the curve says
+                const float a = Decibels::decibelsToGain (-20.0f);
+                const float out12k = runFx (*match, sine (12000, a), 0.8) + 20.0f, out1k = runFx (*match, sine (1000, a), 0.8) + 20.0f, out50 = runFx (*match, sine (50, a), 0.8) + 20.0f;
+                const bool sounds = std::abs ((out12k - out1k) - highs) < 0.5f && std::abs ((out50 - out1k) - lows) < 1.0f && std::abs (out1k - MQ::curveAt (curve, 1000.0)) < 0.3f;
+                // the delay it reports is the delay there is
+                AudioBuffer<float> click;
+                runFx (*match, [&] (int, double tm) { return roundToInt (tm * sr) == 200 ? 1.0f : 0.0f; }, 0.4, &click);
+                int peakAt = 0;
+                for (int i = 0; i < click.getNumSamples(); ++i) if (std::abs (click.getSample (0, i)) > std::abs (click.getSample (0, peakAt))) peakAt = i;
+                const int late = roundToInt (match->getLatencySeconds() * sr);
+                // amount 0 is the sound itself; "most change" holds the curve; From keeps the lows out
+                match->set (MQ::pAmount, 0.0f);
+                const float flat12k = runFx (*match, sine (12000, a), 0.8) + 20.0f;
+                match->set (MQ::pAmount, 1.0f); match->set (MQ::pRange, 3.0f);
+                match->getCurve (curve);
+                float most = 0.0f;
+                for (auto v : curve) most = jmax (most, std::abs (v));
+                match->set (MQ::pRange, 12.0f); match->set (MQ::pLow, 500.0f);
+                match->getCurve (curve);
+                const float lowsOut = MQ::curveAt (curve, 60.0), highsStill = MQ::curveAt (curve, 12000.0);
+                match->set (MQ::pLow, 20.0f);
+                // undo takes the reference away again, and with it the curve
+                edit->getUndoManager().undo();
+                match->refreshFromProject();
+                const bool undone = ! match->hasReference() && match->hasSource();
+                match->getCurve (curve);
+                float mostUndone = 0.0f;
+                for (auto v : curve) mostUndone = jmax (mostUndone, std::abs (v));
+                edit->getUndoManager().redo();
+                match->refreshFromProject();
+                const bool redone = match->hasReference();
+                const bool ok = nothingYet && learned && heard > 3.0f && gotFile && std::abs (highs - 8.0f) < 1.2f && std::abs (lows + 6.0f) < 1.5f && sounds && peakAt == 200 + late && late > 0
+                                && std::abs (flat12k) < 0.1f && most <= 3.001f && most > 2.9f && std::abs (lowsOut) < 0.01f && highsStill > 4.0f && undone && mostUndone < 0.001f && redone;
+                rep.check (ok, "Match EQ (learns this track and a reference file, the curve is their difference, it is what is heard, amount / most change / range, undo)",
+                           "heard " + String (heard, 1) + " s; curve: highs " + String (highs, 1) + " dB (8 wanted), lows " + String (lows, 1) + " (-6 wanted); heard: 12 kHz " + String (out12k, 1) + ", 1 kHz " + String (out1k, 1)
+                             + ", 50 Hz " + String (out50, 1) + "; click " + String (peakAt - 200) + " samples late (says " + String (late) + "); amount 0: " + String (flat12k, 2) + " dB; held to " + String (most, 2)
+                             + " dB; from 500 Hz: " + String (lowsOut, 2) + " at 60 Hz, " + String (highsStill, 1) + " at 12 kHz; undo " + String ((int) undone) + String ((int) redone));
+                {
+                    PulseLookAndFeel laf;
+                    LookAndFeel::setDefaultLookAndFeel (&laf);
+                    EditViewState evs (*edit, sm);
+                    MatchUI::MatchView view (*match);
+                    view.setSize (1000, 520);
+                    Image img (Image::ARGB, 1000, 520, true);
+                    { Graphics g (img); view.paint (g); }
+                    match->set (MQ::pAmount, 0.5f);
+                    view.dragAmount (-40.0f);
+                    view.dragHandle (0, 150.0f, 0.0f);
+                    view.dragHandle (1, -100.0f, 0.0f);
+                    const bool handlesOk = match->get (MQ::pAmount) > 0.6f && match->get (MQ::pLow) > 40.0f && match->get (MQ::pHigh) < 15000.0f && view.getNumHandles() == 3;
+                    DeviceEditors::Editor ed (evs, *match);
+                    ed.setSize (1100, 760);
+                    std::set<te::AutomatableParameter*> seen;
+                    int buttons = 0;
+                    std::function<void (Component&)> walk = [&] (Component& c)
+                    {
+                        if (auto* k = dynamic_cast<ParamKnob*> (&c)) seen.insert (&k->getParameter());
+                        if (auto* b = dynamic_cast<TextButton*> (&c); b != nullptr && (b->getButtonText().startsWith ("Learn") || b->getButtonText().startsWith ("Reference"))) ++buttons;
+                        for (auto* chd : c.getChildren()) walk (*chd);
+                    };
+                    walk (ed);
+                    StringArray missing;
+                    for (int i = 0; i < match->numParams(); ++i) if (! seen.count (&*match->param (i))) missing.add (match->param (i)->paramID);
+                    rep.check (handlesOk && missing.isEmpty() && buttons == 3 && DeviceEditors::hasFullEditor (*match), "Match EQ window: the range and the amount are points on the curve, the learn buttons are there, and every parameter has a control",
+                               missing.isEmpty() ? "amount -> " + match->param (MQ::pAmount)->getCurrentValueAsString() + ", range " + match->param (MQ::pLow)->getCurrentValueAsString() + " - " + match->param (MQ::pHigh)->getCurrentValueAsString()
+                                                   + ", " + String (buttons) + " buttons"
+                                                 : missing.joinIntoString (", "));
+                    LookAndFeel::setDefaultLookAndFeel (nullptr);
+                }
+                refFile.deleteFile();
+                mq = nullptr;
             }
 
             // displays build

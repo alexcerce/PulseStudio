@@ -9,6 +9,7 @@
 #include "SpaceDisplay.h"
 #include "Dynamics2Display.h"
 #include "ConvolutionDisplay.h"
+#include "MatchEQDisplay.h"
 #include "ModFxDisplay.h"
 #include "ColourFxDisplay.h"
 #include "AmpFxDisplay.h"

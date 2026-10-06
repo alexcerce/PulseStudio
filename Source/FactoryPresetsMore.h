@@ -456,6 +456,16 @@ namespace FactoryPresetsMore
                 { "Chopped (gate)", { { "interval", 1 }, { "grid", 2 }, { "gate", 1 }, { "chance", 1.0f }, { "variation", 0.5f }, { "mode", 2 } } } } },
 
             //----------------------------------------------------------------------------------
+            // Match EQ (what it has learned is not part of a preset: these are ways of applying it)
+            { "pulseMatchEQ", {
+                { "Full Match", { { "amount", 1.0f }, { "smooth", 0.33f }, { "range", 12 }, { "low", 20 }, { "high", 20000 } } },
+                { "Half Way There", { { "amount", 0.5f }, { "smooth", 0.5f }, { "range", 9 }, { "low", 20 }, { "high", 20000 } } },
+                { "Broad Strokes", { { "amount", 0.8f }, { "smooth", 1.5f }, { "range", 6 }, { "low", 20 }, { "high", 20000 } } },
+                { "Fine Detail", { { "amount", 1.0f }, { "smooth", 0.12f }, { "range", 12 }, { "low", 20 }, { "high", 20000 } } },
+                { "Mids and Highs Only", { { "amount", 1.0f }, { "smooth", 0.33f }, { "range", 12 }, { "low", 250 }, { "high", 20000 } } },
+                { "Leave the Air Alone", { { "amount", 1.0f }, { "smooth", 0.33f }, { "range", 12 }, { "low", 20 }, { "high", 9000 } } },
+                { "Mastering (gentle)", { { "amount", 0.6f }, { "smooth", 1.0f }, { "range", 4 }, { "low", 30 }, { "high", 18000 } } } } },
+
             // Looper: length 0 free, 1 1 bar, 2 2 bars, 3 4 bars, 4 8 bars (the state is never stored in a preset: it starts stopped)
             { "pulseLooper", {
                 { "Free Loop", { { "length", 0 }, { "feedback", 1.0f }, { "monitor", 1 } } },

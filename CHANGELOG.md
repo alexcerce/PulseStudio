@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.29 - 2026-10-06
+
+- New device: Match EQ (learns this track and a reference, and applies the difference in linear phase)
+
 ## 0.99.28 - 2026-10-06
 
 - Prism EQ: linear-phase modes (Linear and Deep) beside the natural one

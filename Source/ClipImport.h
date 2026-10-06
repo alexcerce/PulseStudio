@@ -93,6 +93,7 @@ namespace ClipImport
             { "Pulse Amp",    pulse::Amp::xmlTypeName,             false },
             { "Auto Filter",  pulse::AutoFilter::xmlTypeName,      false },
             { "Limiter",      pulse::Limiter::xmlTypeName,         false },
+            { "Match EQ",     pulse::MatchEQ::xmlTypeName,         false },
             { "Pulse Gate",   pulse::Gate::xmlTypeName,            false },
             { "Transient Shaper", pulse::TransientShaper::xmlTypeName, false },
             { "De-esser",     pulse::DeEsser::xmlTypeName,         false },
