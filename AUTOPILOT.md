@@ -96,6 +96,36 @@ when you start, touch it after each step, and delete it when you stop.
    - ~~v0.20.0 browser search + favourites, File > Open recent~~ (done)
    - Next ideas: audio quantize (warp markers to transients on the grid), sidechain source picker on compressor cards, MIDI learn for Push encoders.
 
+## Programme (owner, 2026-10-05): "do it all" + "any features Ableton or Logic would have", "done clean and very well"
+
+Work through these groups in order. One feature at a time, finished before the next. A feature is DONE only when it has:
+its own window with a real display in the house style (see DynamicsDisplay.h, SpaceDisplay.h, DeviceEditor.h panels);
+factory presets (4 or more per device); a control for every parameter; self-test coverage (device audit, fuzz, state
+round trip, undo steps where it edits the project); a clean run under the Debug build and of `--monkey` / `--command-fuzz`;
+README and CHANGELOG entries. Prefer fewer features done properly over many done thinly. Tick items here as they land.
+
+1. Effects: [ ] transient shaper  [ ] de-esser  [ ] gate / expander  [ ] convolution reverb (built-in spaces)
+   [ ] shimmer reverb  [ ] spectral (freeze / blur / shift / spectral delay)  [ ] chorus / flanger / phaser
+   [ ] tremolo / auto-pan  [ ] frequency shifter  [ ] bit reduction  [ ] amp + cabinet  [ ] exciter  [ ] beat repeat
+   [ ] grain delay  [ ] looper  [ ] resonators
+2. Instruments: [ ] Wavetable third oscillator + wavetable import from audio  [ ] sampler (slices, per-slice stretch,
+   zones)  [ ] analogue-style subtractive synth  [ ] physical-modelling instrument (string / mallet)
+   [ ] electric piano  [ ] tonewheel organ
+3. MIDI: [ ] note length  [ ] pitch  [ ] random  [ ] velocity  [ ] drawable arpeggiator / note-echo patterns
+   [ ] chord track + chord progressions (piano roll and MIDI effects follow it)  [ ] step sequencer view for drum clips
+4. Audio editing: [ ] warp by dragging transients on the waveform, follow-tempo per clip  [ ] per-note pitch and time
+   editing of audio  [ ] reverse / crop / consolidate clips  [ ] clip launch recorded into the arrangement with quantised punch
+5. Mixing: [ ] VCA faders  [ ] reference track A/B with loudness match  [ ] mastering chain preset + assistant
+   [ ] match EQ  [ ] linear-phase EQ mode  [ ] loudness report on export  [ ] automatic freeze under load
+   [ ] sidechain picker on every device
+6. Workflow: [ ] device racks with parallel chains  [ ] track alternatives  [ ] project and track notes
+   [ ] browser preview in time and in key  [ ] macros on the track header  [ ] toolbar / window layouts
+   [ ] controller mapping pages  [ ] video track
+
+Not attempted (told the owner why): content libraries and AI session players (large downloads / trained models),
+a scripting environment like Max for Live, surround / Atmos, a score editor. Still owed from before: rerun the
+one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session ended).
+
 ## Log
 
 - 2026-10-02: v0.13 UI refresh, v0.14 plugin sandbox / CPU / background export, v0.15 command palette /
