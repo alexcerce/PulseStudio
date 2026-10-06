@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Common.h"
+#include "FirstRun.h"
 #include "Sharing.h"
 
 /** Start screen shown over the project: recent projects, new project (empty, demo, templates)
@@ -14,6 +15,8 @@ public:
         std::function<void (const File& templateFile, bool demo)> newProject;
         std::function<void()> browseProject;
         std::function<void (bool)> setShowAtStartup;
+        std::function<AudioCheck::Status()> audioStatus;   // which sound device is in use, and whether it will do
+        std::function<void()> testSound, audioSettings, tour;
     };
 
     WelcomeScreen (StringArray recentPaths, bool showAtStartup, Callbacks cb, Array<File> templateFiles = {}) : callbacks (std::move (cb))
@@ -50,6 +53,13 @@ public:
             addAndMakeVisible (b);
         }
 
+        testBtn.setTooltip ("Plays a short tone through the sound device, to hear that it works");
+        testBtn.onClick = [this] { if (callbacks.testSound) callbacks.testSound(); };
+        settingsBtn.setTooltip ("Choose the sound device, its outputs and its buffer");
+        settingsBtn.onClick = [this] { if (callbacks.audioSettings) callbacks.audioSettings(); repaint(); };
+        tourBtn.setTooltip ("A walk through the parts of the window: under a minute");
+        tourBtn.onClick = [this] { auto t = callbacks.tour; close(); if (t) t(); };
+        for (auto* b : { &testBtn, &settingsBtn, &tourBtn }) addAndMakeVisible (b);
         showAtStart.setToggleState (showAtStartup, dontSendNotification);
         showAtStart.onClick = [this] { if (callbacks.setShowAtStartup) callbacks.setShowAtStartup (showAtStart.getToggleState()); };
         addAndMakeVisible (showAtStart);
@@ -94,6 +104,25 @@ public:
         col (recentArea, "RECENT PROJECTS");
         col (newArea, "NEW");
         col (tipsArea, "GETTING STARTED");
+        // the sound check: which device, and anything about it worth knowing
+        if (! soundArea.isEmpty())
+        {
+            col (soundArea, "SOUND");
+            const auto st = callbacks.audioStatus ? callbacks.audioStatus() : AudioCheck::Status();
+            auto s = soundArea.withTrimmedTop (20);
+            auto line = s.removeFromTop (18);
+            g.setColour (! st.ok ? Theme::red : st.warning ? Theme::orange : Theme::green);
+            g.fillEllipse ((float) line.getX(), (float) line.getCentreY() - 4.0f, 8.0f, 8.0f);
+            g.setColour (Theme::text);
+            g.setFont (FontOptions (12.5f, Font::bold));
+            g.drawText (st.line, line.withTrimmedLeft (14), Justification::centredLeft, true);
+            if (st.advice.isNotEmpty())
+            {
+                g.setColour (Theme::text.withAlpha (0.75f));
+                g.setFont (FontOptions (11.5f));
+                g.drawFittedText (st.advice, s.removeFromTop (44), Justification::topLeft, 3);
+            }
+        }
         if (recent.isEmpty())
         {
             g.setColour (Theme::muted);
@@ -123,6 +152,8 @@ public:
         p.removeFromTop (60);
         auto bottom = p.removeFromBottom (28);
         closeBtn.setBounds (bottom.removeFromRight (90));
+        bottom.removeFromRight (8);
+        tourBtn.setBounds (bottom.removeFromRight (118));
         showAtStart.setBounds (bottom.removeFromLeft (220));
         p.removeFromBottom (10);
 
@@ -131,6 +162,17 @@ public:
         newArea = p.removeFromLeft (p.getWidth() / 2);
         p.removeFromLeft (24);
         tipsArea = p;
+        // under the tips: the sound check and its buttons, and the tour
+        soundArea = tipsArea.removeFromBottom (jmin (124, tipsArea.getHeight() - 170));
+        if (soundArea.getHeight() < 90) soundArea = {};
+        else
+        {
+            auto row = soundArea.removeFromBottom (26);
+            testBtn.setBounds (row.removeFromLeft (84));
+            row.removeFromLeft (6);
+            settingsBtn.setBounds (row.removeFromLeft (jmin (118, row.getWidth())));
+        }
+        for (auto* b : { &testBtn, &settingsBtn }) b->setVisible (! soundArea.isEmpty());
 
         auto r = recentArea.withTrimmedTop (22);
         for (auto* b : recentBtns) b->setBounds (r.removeFromTop (38).withTrimmedBottom (4));
@@ -193,13 +235,15 @@ private:
         File file;
     };
 
-    Rectangle<int> panel() const { return getLocalBounds().withSizeKeepingCentre (jmin (900, getWidth() - 60), jmin (430, getHeight() - 60)); }
+    Rectangle<int> panel() const { return getLocalBounds().withSizeKeepingCentre (jmin (900, getWidth() - 60), jmin (520, getHeight() - 60)); }
 
     Callbacks callbacks;
     Array<File> recent;
     OwnedArray<RecentRow> recentBtns;
     OwnedArray<TextButton> templateBtns;
     TextButton emptyBtn { "Empty project" }, demoBtn { "Demo song" }, openBtn { "Open project..." }, closeBtn { "Close" };
+    TextButton testBtn { "Test sound" }, settingsBtn { "Audio settings..." }, tourBtn { "Take the tour" };
+    Rectangle<int> soundArea;
     ToggleButton showAtStart { "Show this at startup" };
     Rectangle<int> recentArea, newArea, tipsArea;
     int templatesLabelY = 0;

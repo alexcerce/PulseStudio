@@ -25,6 +25,7 @@
 #include "MidiMapView.h"
 #include "Video.h"
 #include "HelpLine.h"
+#include "FirstRun.h"
 #include "SessionView.h"
 #include "Browser.h"
 #include "PluginWindow.h"
@@ -2798,6 +2799,66 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
             rep.check (ok, "Piano roll zoom (fit all the notes, taller and flatter rows around the mouse, each clip's view remembered and kept with the project)", note + "ok");
             edit->deleteTrack (zt);
             edit->getUndoManager().clearUndoHistory();
+        }
+
+        // --- v0.99.47: the sound check and the tour -------------------------------------------------------------
+        {
+            rep.step ("first run");
+            const auto none = AudioCheck::describe ({}, 0.0, 0, 0, 0);
+            const auto noOuts = AudioCheck::describe ("Speakers", 48000.0, 480, 0, 0);
+            const auto good = AudioCheck::describe ("Speakers (Realtek)", 48000.0, 480, 2, 0);
+            const auto late = AudioCheck::describe ("Speakers", 44100.0, 2048, 2, 512);
+            const auto mono = AudioCheck::describe ("Headset", 48000.0, 256, 1, 0);
+            const bool checks = ! none.ok && none.line.contains ("No sound device") && none.advice.isNotEmpty()
+                                && ! noOuts.ok && noOuts.advice.contains ("outputs")
+                                && good.ok && ! good.warning && good.advice.isEmpty() && good.line.contains ("Speakers (Realtek)") && good.line.contains ("48 kHz") && good.line.contains ("10 ms")
+                                && late.ok && late.warning && late.line.contains ("44.1 kHz") && late.line.contains ("58 ms") && late.advice.contains ("58 ms")
+                                && mono.ok && mono.warning && mono.advice.contains ("mono");
+            // the tour: every step lights a part inside the window and puts its words beside it, not over it
+            bool tourOk = false;
+            String tourNote;
+            {
+                PulseLookAndFeel laf;
+                LookAndFeel::setDefaultLookAndFeel (&laf);
+                std::vector<Tour::Step> steps;
+                const Rectangle<int> parts[] = { { 0, 0, 1200, 52 }, { 0, 52, 1200, 400 }, { 0, 52, 330, 400 }, { 0, 460, 1200, 340 }, { 320, 464, 700, 22 }, { 1100, 463, 84, 24 }, { 0, 0, 1200, 800 }, { 5000, 5000, 10, 10 } };
+                for (auto& r : parts) steps.push_back ({ "Part", "What it is for.", [r] { return r; } });
+                auto* tour = new Tour (steps);
+                tour->setSize (1200, 800);
+                bool placed = tour->numSteps() == 8 && tour->currentStep() == 0;
+                for (int i = 0; i < tour->numSteps(); ++i)
+                {
+                    tour->go (i);
+                    const auto lit = tour->litArea(), bub = tour->bubbleArea();
+                    const bool inside = Rectangle<int> (0, 0, 1200, 800).contains (bub) && bub.getWidth() > 300 && bub.getHeight() > 120;
+                    const bool clear = i >= 6 || ! bub.intersects (lit);   // (the last two are the whole window, and a part that is not there)
+                    if (! inside || ! clear) { placed = false; tourNote << "step " << (i + 1) << " badly placed; "; }
+                }
+                tour->go (99);
+                const bool clamps = tour->currentStep() == 7;
+                tour->go (2);
+                auto img = tour->createComponentSnapshot (tour->getLocalBounds());
+                auto f = dir.getChildFile ("tour.png");
+                f.deleteFile();
+                if (auto os = f.createOutputStream()) { PNGImageFormat png; png.writeImageToStream (img, *os); }
+                bool closed = false;
+                tour->onClose = [&closed] { closed = true; };
+                tour->keyPressed (KeyPress (KeyPress::escapeKey));
+                delete tour;
+                tourOk = placed && clamps && closed;
+                // the welcome screen with its sound check (a picture to look at)
+                WelcomeScreen::Callbacks wcb;
+                wcb.audioStatus = [late] { return late; };
+                WelcomeScreen welcome ({}, true, wcb);
+                welcome.setSize (1200, 800);
+                auto wimg = welcome.createComponentSnapshot (welcome.getLocalBounds());
+                auto wf = dir.getChildFile ("welcome.png");
+                wf.deleteFile();
+                if (auto os = wf.createOutputStream()) { PNGImageFormat png; png.writeImageToStream (wimg, *os); }
+                LookAndFeel::setDefaultLookAndFeel (nullptr);
+            }
+            rep.check (checks && tourOk, "First run (the sound check says what is wrong or worth knowing; the tour lights each part with its words beside it)",
+                       String (checks ? "" : "sound check wrong (" + good.line + " | " + late.line + "); ") + (tourOk ? "" : "tour wrong: " + tourNote) + "ok");
         }
 
         // --- sharing: collect all, templates -----------------------------------------------------------

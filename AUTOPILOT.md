@@ -156,7 +156,7 @@ well EVERYWHERE." So, besides the list:
   [x] collect-all-and-save, missing-file finder  [x] undo history list  [x] default track / device presets
   [x] zoom to selection / fit, and remembered zoom per view  [ ] crash-safe autosave restore prompt reviewed
   [ ] every list sortable and keyboard-navigable  [ ] nothing blocks the UI for more than 100 ms (progress
-  shown instead)  [ ] first-run experience: audio set-up check, demo project, short tour
+  shown instead)  [x] first-run experience: audio set-up check, demo project, short tour
 - Nothing that already works is taken away, and a rough edge found on the way is fixed then, or written here.
 
 1. Effects: [x] transient shaper  [x] de-esser  [x] gate / expander  [x] convolution reverb (built-in spaces)
@@ -715,3 +715,10 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   Shift+Z go to the piano roll when it is in front, has a clip and has the keyboard; commands view.rollFit and
   view.rollFitSelection. The arrangement's zoom and the mixer's narrow strips were remembered already; the
   session view has no zoom. 330 checks, quick tier.
+- 2026-10-06: v0.99.47. First run. Source/FirstRun.h: AudioCheck::describe (the plain facts of a device in, one
+  line and one sentence of advice out; status() reads them from the device in use) and Tour (steps with a part
+  of the window each; the part is lit and the words go where there is room beside it). WelcomeScreen: a SOUND
+  block with Test sound and Audio settings, and Take the tour beside Close; the panel is 90 px taller for it.
+  MainComponent: startTour / tourSteps (six steps), command app.tour. The demo song and the welcome screen
+  were there already. The tour was drawn and stepped in a test with made-up parts; it has not been seen over
+  the real window (the automated runs skip it). 331 checks, quick tier.

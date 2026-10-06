@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.47 - 2026-10-06
+
+- Welcome screen: a sound check (device, rate, delay, and what to do when something is wrong) and a tour of the window
+
 ## 0.99.46 - 2026-10-06
 
 - Piano roll: fit the selection or the whole clip (Z / Shift+Z), taller and flatter rows (Alt + wheel), each clip's view remembered

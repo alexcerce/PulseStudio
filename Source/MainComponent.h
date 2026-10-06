@@ -350,6 +350,7 @@ public:
         c.add ("app.about", "About Pulse Studio", "App", {}, [this] { About::show (this); });
         c.add ("edit.undoHistory", "Undo history...", "Edit", key ('H', ctrl | shiftM), [this] { if (edit) UndoHistory::showWindow (*edit); });
         c.add ("app.welcome", "Welcome screen", "App", {}, [this] { showWelcome(); });
+        c.add ("app.tour", "Take the tour (the parts of the window, one at a time)", "App", {}, [this] { startTour(); });
         c.add ("midi.humanize", "MIDI: humanize notes", "MIDI", key ('H', ctrl | altM), [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("humanize"); } });
         c.add ("midi.legato", "MIDI: legato", "MIDI", key ('L', ctrl | altM), [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("legato"); } });
         c.add ("midi.fitScale", "MIDI: fit to scale", "MIDI", key ('F', ctrl | altM), [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("fit"); } });
@@ -949,6 +950,35 @@ private:
     }
 
 public:
+    /** The tour: the parts of the window, one at a time. */
+    void startTour()
+    {
+        if (About::isCapturing()) return;
+        auto* t = new Tour (tourSteps());
+        addAndMakeVisible (t);
+        t->setBounds (getLocalBounds());
+        t->toFront (true);
+        t->grabKeyboardFocus();
+    }
+
+    std::vector<Tour::Step> tourSteps()
+    {
+        std::vector<Tour::Step> s;
+        s.push_back ({ "The top bar", "Play, stop and record, the loop and the metronome, the song's position, tempo and metre. Space plays and stops. On the right: new tracks, the browser, the session view, File, and the audio settings.",
+                       [this] { return transport.getBounds(); } });
+        s.push_back ({ "The arrangement", "Tracks down the side, time across. Double-click an empty lane of an instrument track to make a clip of notes; drag audio in from the browser or from Windows. A track's header has its mute, solo, record and level; drag its bottom edge to make it taller.",
+                       [this] { return arrangement != nullptr && arrangement->isVisible() ? arrangement->getBounds() : (session != nullptr ? session->getBounds() : Rectangle<int>()); } });
+        s.push_back ({ "The browser", "Your sounds, samples and devices. Click a sound to hear it (in time with the song when it is playing); drag it onto a track, or onto the empty space under the tracks for a track of its own. B shows and hides the browser.",
+                       [this] { return browser != nullptr && browser->isVisible() ? browser->getBounds() : transport.getBounds().removeFromRight (transport.getWidth() / 2); } });
+        s.push_back ({ "Devices, mixer, piano roll", "The lower panel shows one of three things: the devices of the selected track (its instrument and effects), the mixer, or the notes of a clip. The tabs choose, and so do the keys 1, 2 and 3. Drag the line above the panel to make it bigger.",
+                       [this] { return getLocalBounds().withTop (tabBar.getY()); } });
+        s.push_back ({ "What does this do?", "Point at anything: this line says what it does, at once. Right-click almost anything for a menu of what can be done with it, and click the number under a knob to type a value.",
+                       [this] { return helpLine.getBounds().expanded (4, 2); } });
+        s.push_back ({ "Finding everything else", "Ctrl+P opens the command palette: type a few letters of any action to find and run it, and to see its key. Layout (at the right of the tab bar) rearranges the window for arranging, mixing or editing. File has save, export, the video and the notes. That is the tour.",
+                       [this] { return layoutBtn.getBounds().expanded (4); } });
+        return s;
+    }
+
     /** The start screen: recent projects, new project, tips. */
     void showWelcome()
     {
@@ -957,6 +987,10 @@ public:
         cb.newProject = [this] (const File& t, bool demo) { createProject (t, demo); };
         cb.browseProject = [this] { openProject(); };
         cb.setShowAtStartup = [this] (bool on) { settings().setValue ("showWelcome", on); };
+        cb.audioStatus = [this] { return AudioCheck::status (engine.getDeviceManager().deviceManager); };
+        cb.testSound = [this] { engine.getDeviceManager().deviceManager.playTestSound(); };
+        cb.audioSettings = [this] { if (auto a = makeActions().audioSettings) a(); };
+        cb.tour = [this] { startTour(); };
         auto templates = FactoryContent::templates (engine);
         templates.addArray (Sharing::templates());
         auto* w = new WelcomeScreen (StringArray::fromLines (settings().getValue ("recentProjects")), settings().getBoolValue ("showWelcome", true), cb, templates);
