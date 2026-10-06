@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.35 - 2026-10-06
+
+- Window layouts: five ready-made ones and your own (Layout button on the lower tab bar)
+
 ## 0.99.34 - 2026-10-06
 
 - A track's mapped macros appear as dials on its header when the track is made taller

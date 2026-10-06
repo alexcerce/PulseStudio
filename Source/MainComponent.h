@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Mastering.h"
+#include "Layouts.h"
 #include "About.h"
 #include "UndoSync.h"
 #include "Common.h"
@@ -50,6 +51,10 @@ public:
         addAndMakeVisible (transport);
         addAndMakeVisible (resizer);
         resizer.onDrag = [this] (int dy) { bottomHeight = jlimit (120, getHeight() - 220, bottomHeight - dy); resized(); };
+
+        layoutBtn.setTooltip ("Window layouts: ready-made arrangements of the window for arranging, mixing, editing and playing clips, and your own");
+        layoutBtn.onClick = [this] { showLayoutMenu(); };
+        addAndMakeVisible (layoutBtn);
 
         for (auto* b : { &devicesTab, &mixerTab, &pianoTab })
         {
@@ -131,6 +136,7 @@ public:
 
         tabBar = bottom.removeFromTop (30);
         auto tb = tabBar.reduced (8, 3);
+        layoutBtn.setBounds (tb.removeFromRight (84));
         for (auto* b : { &devicesTab, &mixerTab, &pianoTab })
         {
             b->setBounds (tb.removeFromLeft (100));
@@ -326,6 +332,10 @@ public:
         c.add ("midi.humanize", "MIDI: humanize notes", "MIDI", key ('H', ctrl | altM), [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("humanize"); } });
         c.add ("midi.legato", "MIDI: legato", "MIDI", key ('L', ctrl | altM), [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("legato"); } });
         c.add ("midi.fitScale", "MIDI: fit to scale", "MIDI", key ('F', ctrl | altM), [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("fit"); } });
+        for (int i = 0; i < (int) Layouts::builtIn().size(); ++i)
+            c.add ("view.layout" + String (i + 1), "Window layout: " + Layouts::builtIn()[(size_t) i].name, "View", {}, [this, i] { applyBuiltInLayout (i); });
+        for (int i = 0; i < 4; ++i)
+            c.add ("view.myLayout" + String (i + 1), "Window layout: your own, number " + String (i + 1), "View", {}, [this, i] { applySavedLayout (i); });
         c.add ("view.notes", "Notes for the project and its tracks", "View", {}, [this] { if (edit != nullptr && ! About::isCapturing()) Notes::show (*edit); });
         c.add ("view.steps", "Piano roll: step grid on / off", "View", {}, [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->showSteps (! pianoRoll->stepGrid().isVisible()); } });
         c.add ("midi.fitChords", "MIDI: fit to the chord track", "MIDI", {}, [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("fitchords"); } });
@@ -578,6 +588,76 @@ private:
     {
         showSession = ! showSession;
         resized();
+    }
+
+    //==============================================================================
+    /** The window as it is now, as a layout. */
+    Layouts::Layout currentLayout (const String& name = {}) const
+    {
+        return { name, showBrowser, showSession, (int) currentTab, getHeight() > 0 ? (double) bottomHeight / getHeight() : 0.3 };
+    }
+
+    void applyLayout (const Layouts::Layout& l)
+    {
+        showBrowser = l.browser;
+        settings().setValue ("showBrowser", showBrowser);
+        showSession = l.session;
+        bottomHeight = Layouts::bottomHeightFor (l.bottomShare, getHeight());
+        showTab ((Tab) jlimit (0, 2, l.tab));
+        resized();
+        if (evs != nullptr) evs->layoutChanged.sendChangeMessage();
+    }
+
+    void applyBuiltInLayout (int index)
+    {
+        if (isPositiveAndBelow (index, (int) Layouts::builtIn().size())) applyLayout (Layouts::builtIn()[(size_t) index]);
+    }
+
+    void applySavedLayout (int index)
+    {
+        const auto all = Layouts::saved (settings());
+        if (isPositiveAndBelow (index, (int) all.size())) applyLayout (all[(size_t) index]);
+    }
+
+    void saveLayoutAs (const String& name)
+    {
+        if (name.trim().isNotEmpty()) Layouts::save (settings(), currentLayout (name.trim()));
+    }
+
+    void showLayoutMenu()
+    {
+        PopupMenu m;
+        const auto now = currentLayout();
+        m.addSectionHeader ("Ready-made");
+        for (int i = 0; i < (int) Layouts::builtIn().size(); ++i)
+            m.addItem (Layouts::builtIn()[(size_t) i].name, true, Layouts::builtIn()[(size_t) i].sameViewAs (now), [this, i] { applyBuiltInLayout (i); });
+        const auto mine = Layouts::saved (settings());
+        if (! mine.empty())
+        {
+            m.addSectionHeader ("Yours");
+            for (int i = 0; i < (int) mine.size(); ++i)
+                m.addItem (mine[(size_t) i].name, true, mine[(size_t) i].sameViewAs (now), [this, i] { applySavedLayout (i); });
+        }
+        m.addSeparator();
+        m.addItem ("Save the window as it is now...", [this]
+        {
+            if (About::isCapturing()) return;
+            auto* w = new AlertWindow ("Save this layout", "It will be there in every project, in this menu and in the command palette.", MessageBoxIconType::NoIcon);
+            w->addTextEditor ("name", Layouts::freeName (settings()), "Name");
+            w->addButton ("Save", 1, KeyPress (KeyPress::returnKey));
+            w->addButton ("Cancel", 0, KeyPress (KeyPress::escapeKey));
+            w->enterModalState (true, ModalCallbackFunction::create ([this, w, sp = SafePointer<MainComponent> (this)] (int r)
+            {
+                if (sp != nullptr && r == 1) saveLayoutAs (w->getTextEditorContents ("name"));
+            }), true);
+        });
+        if (! mine.empty())
+        {
+            PopupMenu rm;
+            for (auto& l : mine) rm.addItem (l.name, [this, n = l.name] { Layouts::remove (settings(), n); });
+            m.addSubMenu ("Remove one of yours", rm);
+        }
+        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&layoutBtn));
     }
 
     void showTab (Tab t)
@@ -1583,7 +1663,7 @@ private:
     std::unique_ptr<PianoRoll> pianoRoll;
     Resizer resizer;
 
-    TextButton devicesTab { "Devices" }, mixerTab { "Mixer" }, pianoTab { "Piano Roll" };
+    TextButton devicesTab { "Devices" }, mixerTab { "Mixer" }, pianoTab { "Piano Roll" }, layoutBtn { "Layout" };
     Rectangle<int> tabBar;
     Tab currentTab = Tab::devices;
     int bottomHeight = 330;

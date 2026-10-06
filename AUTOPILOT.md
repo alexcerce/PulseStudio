@@ -174,7 +174,7 @@ well EVERYWHERE." So, besides the list:
    [x] match EQ  [x] linear-phase EQ mode  [x] loudness report on export  [x] automatic freeze under load
    [x] sidechain picker on every device
 6. Workflow: [ ] device racks with parallel chains  [ ] track alternatives  [x] project and track notes
-   [x] browser preview in time and in key  [x] macros on the track header  [ ] toolbar / window layouts
+   [x] browser preview in time and in key  [x] macros on the track header  [x] toolbar / window layouts
    [ ] controller mapping pages  [ ] video track
 
 Not attempted (told the owner why): content libraries and AI session players (large downloads / trained models),
@@ -590,3 +590,8 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   one target; Dial; Row, which rebuilds itself when the mapped set or a name changes). TrackHeader lays the
   row out under the volume when 40 px are left (a track about 120 px tall), and hides it otherwise. Folder
   (group) headers do not have it. 316 checks, quick tier.
+- 2026-10-06: v0.99.35. Window layouts. Source/Layouts.h (Layout = browser, session, lower tab, the lower
+  panel's share of the window height; builtIn(); your own as lines of text under "windowLayouts" in the
+  settings). MainComponent: currentLayout / applyLayout, the Layout button and its menu, commands
+  view.layout1..5 and view.myLayout1..4 (no keys by default). A layout does not hold the toolbar's contents
+  (the toolbar cannot be rearranged), track heights or zoom. 317 checks, quick tier.

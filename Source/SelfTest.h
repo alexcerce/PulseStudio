@@ -5,6 +5,9 @@
 #include "ClipImport.h"
 #include "EditingOps.h"
 #include "AutoFreeze.h"
+#include "Layouts.h"
+#include "SongKey.h"
+#include "Notes.h"
 #include "DrumRack.h"
 #include "Presets.h"
 #include "Macros.h"
@@ -2012,6 +2015,40 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
             rep.check (ok, "Macros on the track header (a dial for each mapped macro when the track is tall enough; it turns the macro)", note);
             edit->deleteTrack (mt);
             edit->getUndoManager().clearUndoHistory();
+        }
+
+        // --- v0.99.35: window layouts ------------------------------------------------------------------------
+        {
+            rep.step ("layouts");
+            using Layouts::Layout;
+            // a layout survives being written down and read again, whatever its name holds
+            Layout a { "Vocal | comping\nday", false, true, 2, 0.456 }, back;
+            const bool round = Layouts::fromText (Layouts::toText (a), back) && back.name == "Vocal / comping day" && ! back.browser && back.session && back.tab == 2 && std::abs (back.bottomShare - 0.456) < 0.001;
+            Layout junk;
+            const bool rejects = ! Layouts::fromText ("nonsense", junk) && ! Layouts::fromText ("|1|0|1|0.3", junk);
+            // the lower panel keeps room for itself and for the top, on any window
+            const bool heights = Layouts::bottomHeightFor (0.5, 1000) == 500 && Layouts::bottomHeightFor (0.05, 1000) == 120 && Layouts::bottomHeightFor (0.9, 1000) == 780 && Layouts::bottomHeightFor (0.5, 300) == 120;
+            // the ready-made ones are all different, and each is recognised as itself
+            bool distinct = Layouts::builtIn().size() == 5;
+            for (size_t i = 0; i < Layouts::builtIn().size(); ++i)
+                for (size_t k = 0; k < Layouts::builtIn().size(); ++k)
+                    distinct = distinct && (Layouts::builtIn()[i].sameViewAs (Layouts::builtIn()[k]) == (i == k));
+            // your own: kept in the settings, replaced by name, removed
+            auto& st = engine.getPropertyStorage().getPropertiesFile();
+            const auto before = st.getValue ("windowLayouts");
+            st.setValue ("windowLayouts", String());
+            const bool firstName = Layouts::freeName (st) == "My layout 1";
+            Layouts::save (st, { "My layout 1", true, false, 1, 0.5 });
+            Layouts::save (st, { "Tracking", false, false, 0, 0.2 });
+            Layouts::save (st, { "my LAYOUT 1", false, false, 1, 0.7 });   // the same name: replaced, not added
+            auto all = Layouts::saved (st);
+            const bool kept = all.size() == 2 && all[0].name == "my LAYOUT 1" && ! all[0].browser && std::abs (all[0].bottomShare - 0.7) < 0.001 && all[1].name == "Tracking" && Layouts::freeName (st) == "My layout 2";
+            Layouts::remove (st, "tracking");
+            const bool removed = Layouts::saved (st).size() == 1;
+            st.setValue ("windowLayouts", before);
+            rep.check (round && rejects && heights && distinct && firstName && kept && removed, "Window layouts (written and read back, the lower panel always fits, five different ready-made ones, your own kept by name)",
+                       String (round ? "" : "round trip wrong; ") + (rejects ? "" : "junk accepted; ") + (heights ? "" : "heights wrong; ") + (distinct ? "" : "ready-made ones not distinct; ")
+                       + (firstName && kept ? "" : "saving wrong; ") + (removed ? "" : "removing wrong; ") + "ok");
         }
 
         // --- sharing: collect all, templates -----------------------------------------------------------
