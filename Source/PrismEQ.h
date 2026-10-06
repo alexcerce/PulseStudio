@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PulseDevices.h"
+#include "LinearPhase.h"
 
 /** Prism EQ: a six-band precision EQ.
 
@@ -12,10 +13,16 @@
       - modulation: an LFO (free or tempo-synced, five shapes) or the band's own envelope moves its
         frequency (+/- octaves) and gain (+/- dB).
     A band can be soloed (you hear just that region). Auto gain keeps the loudness steady, and a
-    pre / post analyser feeds the display. */
+    pre / post analyser feeds the display.
+
+    Phase: "Natural" is the ordinary EQ (no delay; each band turns the phase around its frequency, as analogue
+    EQs do). "Linear" changes the level of each frequency and nothing else, at the price of a delay that the
+    engine makes up for (and, on sharp sounds, a little ringing before them rather than after). "Linear, deep"
+    is four times as long, for narrow bands in the bass. In the linear modes the bands stand still: the dynamic
+    and movement settings wait until the phase is Natural again. */
 namespace pulse
 {
-    class PrismEQ : public PulseEffect
+    class PrismEQ : public PulseEffect, private Timer
     {
     public:
         static constexpr int numBands = 6, maxStages = 9;
@@ -36,7 +43,9 @@ namespace pulse
         static inline const double syncBeats[] = { 0.0, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0 };
         static inline const StringArray analyserNames { "Off", "Post", "Pre + post" };
 
-        enum Global { gOutput, gAutoGain, gMix, gAnalyser, gRange, numGlobals };
+        static inline const StringArray phaseNames { "Natural", "Linear", "Linear, deep" };
+
+        enum Global { gOutput, gAutoGain, gMix, gAnalyser, gRange, gPhase, numGlobals };
 
         explicit PrismEQ (te::PluginCreationInfo info) : PulseEffect (info)
         {
@@ -71,10 +80,53 @@ namespace pulse
             add ("mix", "Dry/Wet", { 0.0f, 1.0f }, 1.0f, fmt::pct);
             add ("analyser", "Analyser", steps (analyserNames.size()), 2.0f, fmt::choice (analyserNames));
             add ("range", "Display Range", steps (4), 2.0f, fmt::choice ({ "3 dB", "6 dB", "12 dB", "30 dB" }));
+            add ("phase", "Phase", steps (phaseNames.size()), 0.0f, fmt::choice (phaseNames));
+            startTimerHz (8);
             for (int b = 0; b < numBands; ++b) { effFreq[(size_t) b].store (get (idx (b, pFreq))); effGain[(size_t) b].store (get (idx (b, pGain))); }
         }
 
+        ~PrismEQ() override { stopTimer(); }
+
         String getName() const override      { return "Prism EQ"; }
+        double getLatencySeconds() override  { return latencySamples.load() / jmax (1.0, sampleRate); }
+
+        /** 0 = natural, 1 = linear, 2 = linear with four times the length. */
+        int phaseMode() const                { return getInt (g (gPhase)); }
+        bool isLinear() const                { return phaseMode() > 0; }
+
+        /** Gets the linear-phase filter ready for the mode chosen (it is built away from the audio, and swapped
+            in). Returns true when the delay through the EQ has changed. The EQ calls this itself a few times a
+            second; a test calls it after changing the mode. */
+        bool syncPhaseMode()
+        {
+            const ScopedLock syncing (syncLock);
+            const int mode = phaseMode();
+            const int order = mode == 0 ? 0 : (mode == 1 ? 13 : 15) + (sampleRate > 60000.0 ? 1 : 0) + (sampleRate > 120000.0 ? 1 : 0);
+            if (order == firOrder) return false;
+            std::unique_ptr<LinearFir> made;
+            StepDelay delay;
+            std::vector<float> cosines;
+            if (order > 0)
+            {
+                made = std::make_unique<LinearFir>();
+                made->prepare (order);
+                delay.prepare (made->latency());
+                cosines.resize ((size_t) made->bins());
+                for (int k = 0; k < made->bins(); ++k) cosines[(size_t) k] = (float) std::cos (MathConstants<double>::pi * k / (made->bins() - 1));
+            }
+            {
+                const ScopedLock sl (firLock);
+                fir = std::move (made);
+                dryDelay = std::move (delay);
+                cosTable = std::move (cosines);
+                for (auto& v : groups) v.assign (fir != nullptr ? (size_t) fir->bins() : 0, 1.0);
+                for (auto& v : shapes) v.assign (fir != nullptr ? (size_t) fir->bins() : 0, 1.0f);
+                firOrder = order;
+                firHash = -1.0;
+                latencySamples = fir != nullptr ? fir->latency() : 0;
+            }
+            return true;
+        }
         String getPluginType() override      { return xmlTypeName; }
         int getDisplayWidth() const override  { return 560; }
 
@@ -90,7 +142,7 @@ namespace pulse
                 for (int k = 0; k < perBand; ++k) ps.push_back (idx (b, k));
                 s.push_back ({ "Band " + String (b + 1), ps });
             }
-            s.push_back ({ "Output", { g (gOutput), g (gAutoGain), g (gMix), g (gAnalyser), g (gRange) } });
+            s.push_back ({ "Output", { g (gOutput), g (gAutoGain), g (gMix), g (gAnalyser), g (gRange), g (gPhase) } });
             return s;
         }
 
@@ -131,6 +183,21 @@ namespace pulse
                 std::complex<double> h (scale, 0.0);
                 for (int i = 0; i < n; ++i) h *= st[(size_t) i].response (f, sr);
                 return std::abs (h);
+            }
+            /** The same, squared, from the cosine of the frequency's angle alone (quick enough to do for every
+                point of a linear-phase filter). */
+            double magnitudeSquared (double c1) const
+            {
+                const double c2 = 2.0 * c1 * c1 - 1.0;
+                double m = scale * scale;
+                for (int i = 0; i < n; ++i)
+                {
+                    auto& s = st[(size_t) i];
+                    const double num = s.b0 * s.b0 + s.b1 * s.b1 + s.b2 * s.b2 + 2.0 * (s.b0 * s.b1 + s.b1 * s.b2) * c1 + 2.0 * s.b0 * s.b2 * c2;
+                    const double den = 1.0 + s.a1 * s.a1 + s.a2 * s.a2 + 2.0 * (s.a1 + s.a1 * s.a2) * c1 + 2.0 * s.a2 * c2;
+                    m *= jmax (0.0, num) / jmax (1.0e-30, den);
+                }
+                return m;
             }
         };
 
@@ -267,7 +334,7 @@ namespace pulse
                 if (isBandOn (b))
                 {
                     const int pl = getInt (idx (b, pPlace));
-                    const double bd = bandDb (b, f, live && bandMoves (b) && isProcessing());
+                    const double bd = bandDb (b, f, live && bandMoves (b) && isProcessing() && ! isLinear());
                     db += (pl == left || pl == right || pl == side) ? bd * 0.5 : bd;   // drawn as its share of the stereo sum
                 }
             return db + get (g (gOutput)) + (getInt (g (gAutoGain)) > 0 ? autoGainDb.load() : 0.0);
@@ -295,6 +362,85 @@ namespace pulse
             for (auto& bs : bands) { for (auto& s : bs.d.st) s.reset(); bs.env = 0.0; bs.phase = 0.0; bs.detector.reset(); bs.random = 0.0; bs.lastHash = -1; }
             soloStage.reset();
             lastAutoHash = -1;
+            { const ScopedLock syncing (syncLock); const ScopedLock sl (firLock); firOrder = -1; }   // (the sample rate may have changed)
+            syncPhaseMode();
+        }
+
+        void timerCallback() override
+        {
+            if (syncPhaseMode()) edit.restartPlayback();   // the delay to make up for is different now
+        }
+
+        /** The linear-phase way: the bands' own settings (no movement) become one filter. */
+        void processLinear (float* l, float* r, int n, float outGain, float mix)
+        {
+            for (int b = 0; b < numBands; ++b)
+            {
+                effFreq[(size_t) b].store (get (idx (b, pFreq)));
+                effGain[(size_t) b].store (get (idx (b, pGain)));
+                dynGain[(size_t) b].store (0.0f);
+                bandLevel[(size_t) b].store (-100.0f);
+            }
+            constexpr int chunk = 64;
+            float dl[chunk], dr[chunk];
+            for (int start = 0; start < n; start += chunk)
+            {
+                const int len = jmin (chunk, n - start);
+                for (int i = 0; i < len; ++i) { dl[i] = l[start + i]; dr[i] = r[start + i]; dryDelay.process (dl[i], dr[i]); }
+                fir->process (l + start, r + start, len, [this] { designLinear(); });
+                for (int i = 0; i < len; ++i)
+                {
+                    l[start + i] = dl[i] + (l[start + i] * outGain - dl[i]) * mix;
+                    r[start + i] = dr[i] + (r[start + i] * outGain - dr[i]) * mix;
+                }
+            }
+        }
+
+        /** Works the filter out again when a band has changed (looked at once per block of the filter). */
+        void designLinear()
+        {
+            const int solo = soloBand();
+            double hash = solo * 31.7;
+            for (int b = 0; b < numBands; ++b)
+                for (int k : { pOn, pType, pFreq, pGain, pQ, pSlope, pPlace })
+                    hash = hash * 1.000171 + get (idx (b, k)) * (k + 3) * (b + 1);
+            if (hash == firHash) return;
+            firHash = hash;
+            const int bins = fir->bins();
+            enum { all, onlyLeft, onlyRight, onlyMid, onlySide };
+            for (auto& v : groups) std::fill (v.begin(), v.end(), 1.0);
+            bool anyLR = false, anyMS = false;
+            for (int b = 0; b < numBands; ++b)
+            {
+                if (solo >= 0 ? b != solo : ! isBandOn (b)) continue;
+                const int type = bandType (b);
+                Design d;
+                if (solo >= 0)
+                {
+                    const bool cut = type == lowCut || type == highCut;
+                    design (d, cut ? type : bandPass, sampleRate, get (idx (b, pFreq)), 0.0, cut ? get (idx (b, pQ)) : jmax (0.3f, get (idx (b, pQ))), cut ? getInt (idx (b, pSlope)) : 1);
+                }
+                else
+                    design (d, type, sampleRate, get (idx (b, pFreq)), get (idx (b, pGain)), get (idx (b, pQ)), getInt (idx (b, pSlope)));
+                const int place = solo >= 0 ? (int) stereo : getInt (idx (b, pPlace));
+                const int grp = place == left ? onlyLeft : place == right ? onlyRight : place == mid ? onlyMid : place == side ? onlySide : all;
+                anyLR = anyLR || grp == onlyLeft || grp == onlyRight;
+                anyMS = anyMS || grp == onlyMid || grp == onlySide;
+                auto& into = groups[(size_t) grp];
+                for (int k = 0; k < bins; ++k) into[(size_t) k] *= d.magnitudeSquared (cosTable[(size_t) k]);
+            }
+            for (int k = 0; k < bins; ++k)
+            {
+                const size_t i = (size_t) k;
+                const double st = std::sqrt (groups[all][i]), lh = std::sqrt (groups[onlyLeft][i]), rh = std::sqrt (groups[onlyRight][i]);
+                const double mh = std::sqrt (groups[onlyMid][i]), sh = std::sqrt (groups[onlySide][i]);
+                const double a = 0.5 * (mh + sh), bx = 0.5 * (mh - sh);
+                shapes[0][i] = (float) jmin (64.0, a * st * lh);
+                shapes[1][i] = (float) jmin (64.0, a * st * rh);
+                shapes[2][i] = (float) jlimit (-64.0, 64.0, bx * st * rh);   // what of the right goes to the left
+                shapes[3][i] = (float) jlimit (-64.0, 64.0, bx * st * lh);
+            }
+            fir->setResponse (shapes[0].data(), anyLR ? shapes[1].data() : shapes[0].data(), anyMS ? shapes[2].data() : nullptr, anyMS ? shapes[3].data() : nullptr);
         }
 
         void process (float* l, float* r, int n, const te::PluginRenderContext&) override
@@ -309,6 +455,17 @@ namespace pulse
             const float mix = get (g (gMix));
             const float outGain = Decibels::decibelsToGain (get (g (gOutput)) + (getInt (g (gAutoGain)) > 0 ? autoGainDb.load() : 0.0f));
             constexpr int sub = 32;
+
+            if (isLinear())
+            {
+                const ScopedTryLock sl (firLock);
+                if (sl.isLocked() && fir != nullptr && firOrder > 0)
+                {
+                    processLinear (l, r, n, outGain, mix);
+                    if (analyser >= 1) post.push (l, r, n);
+                    return;
+                }
+            }
 
             for (int start = 0; start < n; start += sub)
             {
@@ -483,5 +640,16 @@ namespace pulse
         Stage soloStage;
         Random rng;
         double lastAutoHash = -1;
+
+        // linear phase
+        CriticalSection firLock, syncLock;
+        std::unique_ptr<LinearFir> fir;
+        StepDelay dryDelay;
+        std::vector<float> cosTable;
+        std::array<std::vector<double>, 5> groups;
+        std::array<std::vector<float>, 4> shapes;
+        int firOrder = -1;
+        double firHash = -1.0;
+        std::atomic<int> latencySamples { 0 };
     };
 }

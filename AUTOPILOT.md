@@ -171,7 +171,7 @@ well EVERYWHERE." So, besides the list:
 4. Audio editing: [x] warp by dragging transients on the waveform, follow-tempo per clip  [ ] per-note pitch and time
    editing of audio  [x] reverse / crop / consolidate clips  [x] clip launch recorded into the arrangement with quantised punch
 5. Mixing: [x] VCA faders  [ ] reference track A/B with loudness match  [x] mastering chain preset + assistant
-   [ ] match EQ  [ ] linear-phase EQ mode  [x] loudness report on export  [ ] automatic freeze under load
+   [ ] match EQ  [x] linear-phase EQ mode  [x] loudness report on export  [ ] automatic freeze under load
    [x] sidechain picker on every device
 6. Workflow: [ ] device racks with parallel chains  [ ] track alternatives  [ ] project and track notes
    [ ] browser preview in time and in key  [ ] macros on the track header  [ ] toolbar / window layouts
@@ -534,3 +534,13 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   wantsSidechain adds the two channels the engine's canSidechain() looks for), so that item is ticked.
   Not done for VCAs: automation of the group fader, and solo. 306 checks, quick tier.
   Left in group 5: reference track A/B with loudness match, match EQ, linear-phase EQ mode, automatic freeze.
+- 2026-10-06: v0.99.28. Linear-phase EQ. Source/LinearPhase.h: pulse::LinearFir (the wanted response, one real
+  number per frequency, becomes a windowed filter half a transform long; the sound goes through in blocks of that
+  half, and a new response is faded in over one block; four responses, so mid / side works) and StepDelay.
+  PrismEQ: parameter "phase" (Natural / Linear = 8192-point transform / Linear, deep = 32768), syncPhaseMode()
+  builds the filter away from the audio (a timer calls it and restarts playback when the delay changes), the
+  filter is designed from the bands' own settings once per block when they have changed. Measured: within
+  0.35 dB of the natural EQ on a 24 dB/oct cut one octave down (0.02 dB in Deep), the delay is the 6144 samples
+  it reports, the response is a mirror of itself to the last digit. Known: in the linear modes dynamic bands and
+  band movement do nothing (said in the band panel); the filter is worked out on the audio thread (a few
+  hundred microseconds in Linear, more in Deep, once per block at most). 307 checks, quick tier.

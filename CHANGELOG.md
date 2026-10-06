@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.28 - 2026-10-06
+
+- Prism EQ: linear-phase modes (Linear and Deep) beside the natural one
+
 ## 0.99.27 - 2026-10-06
 
 - VCA faders: group faders in the mixer that move their member tracks together

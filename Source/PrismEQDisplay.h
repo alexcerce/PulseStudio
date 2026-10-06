@@ -525,6 +525,10 @@ namespace PrismUI
             for (int i = 0; i < 4; ++i) rg.addItem (ranges[i], true, eq.getInt (eq.g (EQ::gRange)) == i, [this, i] { eq.set (eq.g (EQ::gRange), (float) i); });
             m.addSubMenu ("Analyser", an);
             m.addSubMenu ("Display range", rg);
+            PopupMenu ph;
+            for (int i = 0; i < EQ::phaseNames.size(); ++i)
+                ph.addItem (EQ::phaseNames[i], true, eq.phaseMode() == i, [this, i] { eq.edit.getUndoManager().beginNewTransaction ("EQ phase"); eq.set (eq.g (EQ::gPhase), (float) i); });
+            m.addSubMenu ("Phase", ph);
             m.addItem ("Auto gain", true, eq.getInt (eq.g (EQ::gAutoGain)) > 0, [this] { eq.set (eq.g (EQ::gAutoGain), eq.getInt (eq.g (EQ::gAutoGain)) > 0 ? 0.0f : 1.0f); });
             m.addSeparator();
             m.addItem ("Turn all bands off", [this]
@@ -601,6 +605,7 @@ namespace PrismUI
             const int w = r.getWidth() / jmax (1, buttons.size());
             for (auto* b : buttons) b->setBounds (r.removeFromLeft (w));
         }
+        void setTooltip (const String& t) { for (auto* b : buttons) b->setTooltip (t); }
     private:
         void timerCallback() override
         {
@@ -684,7 +689,9 @@ namespace PrismUI
                 analyser = std::make_unique<Choice> (*eq.param (eq.g (EQ::gAnalyser)), StringArray { "Analyser off", "Post", "Pre + post" }, Theme::accent);
                 rangeChoice = std::make_unique<Choice> (*eq.param (eq.g (EQ::gRange)), StringArray { "3 dB", "6 dB", "12 dB", "30 dB" }, Theme::accent);
                 autoToggle = std::make_unique<ParamToggle> (*eq.param (eq.g (EQ::gAutoGain)), "Auto gain");
-                for (auto* c : std::initializer_list<Component*> { analyser.get(), rangeChoice.get(), autoToggle.get() }) addAndMakeVisible (c);
+                phaseChoice = std::make_unique<Choice> (*eq.param (eq.g (EQ::gPhase)), StringArray { "Natural", "Linear", "Deep" }, Theme::accent);
+                phaseChoice->setTooltip ("Phase. Natural: no delay, each band turns the phase as an analogue EQ does. Linear: only the levels change, at the price of a delay (made up for) and no moving bands. Deep: the same, four times as long, for narrow bands in the bass");
+                for (auto* c : std::initializer_list<Component*> { analyser.get(), rangeChoice.get(), autoToggle.get(), phaseChoice.get() }) addAndMakeVisible (c);
                 addAndMakeVisible (panel);
                 panel.onClose = [this] { panel.setVisible (false); };
                 for (auto* l : { &dynTitle, &moveTitle, &bandTitle }) panel.addAndMakeVisible (l);
@@ -783,10 +790,12 @@ namespace PrismUI
                 for (int i = outKnobs.size(); --i >= 0;) { outKnobs[i]->setBounds (bar.removeFromRight (58)); bar.removeFromRight (4); }
                 autoToggle->setBounds (bar.removeFromRight (86).withSizeKeepingCentre (86, 26));
                 bar.removeFromRight (10);
-                rangeChoice->setBounds (bar.removeFromRight (180).withSizeKeepingCentre (180, 26));
+                phaseChoice->setBounds (bar.removeFromRight (168).withSizeKeepingCentre (168, 26));
                 bar.removeFromRight (10);
-                analyser->setBounds (bar.removeFromRight (240).withSizeKeepingCentre (240, 26));
-                bar.removeFromRight (14);
+                rangeChoice->setBounds (bar.removeFromRight (150).withSizeKeepingCentre (150, 26));
+                bar.removeFromRight (10);
+                analyser->setBounds (bar.removeFromRight (200).withSizeKeepingCentre (200, 26));
+                bar.removeFromRight (12);
                 layoutChips (bar.withSizeKeepingCentre (bar.getWidth(), 26));
             }
             layoutPanel();
@@ -871,14 +880,14 @@ namespace PrismUI
             auto dr = r.removeFromTop (24);
             dyn->setBounds (dr.removeFromLeft (190));
             dynTitle.setBounds (dr.reduced (8, 0));
-            dynTitle.setText (showDyn ? "gain moves with the level around the band" : "", dontSendNotification);
+            dynTitle.setText (eq.isLinear() ? "bands stand still while the phase is linear" : showDyn ? "gain moves with the level around the band" : "", dontSendNotification);
             for (auto* k : dynKnobs) k->setVisible (showDyn);
             if (showDyn) { r.removeFromTop (4); auto row = r.removeFromTop (kh); for (auto* k : dynKnobs) k->setBounds (row.removeFromLeft (kw + 10)); }
             r.removeFromTop (6);
             auto mr = r.removeFromTop (24);
             modSrc->setBounds (mr.removeFromLeft (260));
             moveTitle.setBounds (mr.reduced (8, 0));
-            moveTitle.setText (showMod ? "moves frequency / gain" : "", dontSendNotification);
+            moveTitle.setText (showMod ? (eq.isLinear() ? "waits for the natural phase" : "moves frequency / gain") : "", dontSendNotification);
             for (auto* k : modKnobs) k->setVisible (showMod);
             if (showMod) { r.removeFromTop (4); auto row = r.removeFromTop (kh); for (auto* k : modKnobs) k->setBounds (row.removeFromLeft (kw + 10)); }
             panelSig = panelSignature();
@@ -888,7 +897,7 @@ namespace PrismUI
         {
             const auto n = graph.nodePos (band);
             return String (roundToInt (n.x)) + "," + String (roundToInt (n.y)) + "," + String (eq.getInt (EQ::idx (band, EQ::pDyn)))
-                   + "," + String (eq.getInt (EQ::idx (band, EQ::pModSrc))) + "," + String (eq.bandType (band));
+                   + "," + String (eq.getInt (EQ::idx (band, EQ::pModSrc))) + "," + String (eq.bandType (band)) + "," + String (eq.phaseMode());
         }
 
         /** The floating card the band controls sit on. */
@@ -919,7 +928,7 @@ namespace PrismUI
         FloatingPanel panel;
         static constexpr int barHeight = 64;
         String panelSig;
-        std::unique_ptr<Choice> analyser, rangeChoice;
+        std::unique_ptr<Choice> analyser, rangeChoice, phaseChoice;
         std::unique_ptr<ParamToggle> autoToggle;
 
         void layoutChips (Rectangle<int> row)

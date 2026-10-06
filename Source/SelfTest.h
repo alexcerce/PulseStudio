@@ -3983,6 +3983,70 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
                          + ", left " + String (lr.first, 1) + "/" + String (lr.second, 1) + ", LFO " + String (roundToInt (fMin)) + "-" + String (roundToInt (fMax))
                          + " Hz, solo " + String (soloed, 1) + ", auto gain " + String (autoG, 1));
 
+            // linear phase: the same levels as the natural EQ, a response that is the same forwards and backwards,
+            // and a delay that is what the EQ says it is
+            {
+                for (int b = 0; b < EQ::numBands; ++b) setB (b, EQ::pOn, 0);
+                eq->set (eq->g (EQ::gAutoGain), 0.0f);
+                setB (0, EQ::pOn, 1); setB (0, EQ::pType, EQ::lowCut); setB (0, EQ::pFreq, 200); setB (0, EQ::pSlope, 3); setB (0, EQ::pQ, 0.7071f); setB (0, EQ::pPlace, EQ::stereo);
+                setB (2, EQ::pOn, 1); setB (2, EQ::pType, EQ::bell); setB (2, EQ::pFreq, 1000); setB (2, EQ::pGain, 6); setB (2, EQ::pQ, 1.0f); setB (2, EQ::pPlace, EQ::stereo);
+                setB (4, EQ::pOn, 1); setB (4, EQ::pType, EQ::highShelf); setB (4, EQ::pFreq, 6000); setB (4, EQ::pGain, -9); setB (4, EQ::pSlope, 1); setB (4, EQ::pPlace, EQ::stereo);
+                const double freqs[] = { 100.0, 200.0, 1000.0, 3000.0, 12000.0 };
+                float worst = 0.0f, worstDeep = 0.0f;
+                String levels;
+                for (int mode = 1; mode <= 2; ++mode)
+                    for (double f : freqs)
+                    {
+                        eq->set (eq->g (EQ::gPhase), 0.0f);
+                        const float natural = run (f, f, 0.5f, 0.5f, 0.4).first;
+                        eq->set (eq->g (EQ::gPhase), (float) mode);
+                        const float linear = run (f, f, 0.5f, 0.5f, mode == 1 ? 0.6 : 1.4).first;
+                        (mode == 1 ? worst : worstDeep) = jmax (mode == 1 ? worst : worstDeep, std::abs (natural - linear));
+                        if (mode == 1) levels << String (roundToInt (f)) << " Hz " << String (natural - Decibels::gainToDecibels (0.5f), 1) << " / " << String (linear - Decibels::gainToDecibels (0.5f), 1) << "; ";
+                    }
+                // a click: the response around its middle is a mirror of itself, and the middle is where the EQ says
+                eq->set (eq->g (EQ::gPhase), 1.0f);
+                const int block = 480, blocks = 40;
+                eq->initialise ({ te::TimePosition(), sr, block });
+                const int late = roundToInt (eq->getLatencySeconds() * sr);
+                std::vector<float> got ((size_t) (block * blocks));
+                AudioBuffer<float> audio (2, block);
+                for (int k = 0; k < blocks; ++k)
+                {
+                    audio.clear();
+                    if (k == 0) { audio.setSample (0, 100, 1.0f); audio.setSample (1, 100, 1.0f); }
+                    te::MidiMessageArray midi;
+                    te::PluginRenderContext fc (&audio, 0, block, &midi, 0.0, { te::TimePosition::fromSeconds (k * block / sr), te::TimePosition::fromSeconds ((k + 1) * block / sr) }, true, false, true, false);
+                    eq->applyToBuffer (fc);
+                    for (int i = 0; i < block; ++i) got[(size_t) (k * block + i)] = audio.getSample (0, i);
+                }
+                eq->deinitialise();
+                int peakAt = 0;
+                for (int i = 0; i < (int) got.size(); ++i) if (std::abs (got[(size_t) i]) > std::abs (got[(size_t) peakAt])) peakAt = i;
+                float mirror = 0.0f;
+                for (int i = 1; i < 2000; ++i) mirror = jmax (mirror, std::abs (got[(size_t) (peakAt + i)] - got[(size_t) (peakAt - i)]));
+                // left only, and side only, in linear phase
+                for (int b = 0; b < EQ::numBands; ++b) setB (b, EQ::pOn, 0);
+                setB (2, EQ::pOn, 1); setB (2, EQ::pGain, 9); setB (2, EQ::pPlace, EQ::left);
+                const auto linLR = run (1000, 1000, 0.5f, 0.5f, 0.6);
+                setB (2, EQ::pPlace, EQ::side);
+                const float linMonoSide = run (1000, 1000, 0.5f, 0.5f, 0.6).first - Decibels::gainToDecibels (0.5f);
+                setB (2, EQ::pPlace, EQ::stereo); setB (2, EQ::pGain, 0);
+                // half wet: the untreated sound is kept in step, so a flat EQ at 50% is still the sound itself
+                eq->set (eq->g (EQ::gMix), 0.5f);
+                const float halfWet = run (1000, 1000, 0.5f, 0.5f, 0.6).first - Decibels::gainToDecibels (0.5f);
+                eq->set (eq->g (EQ::gMix), 1.0f);
+                eq->set (eq->g (EQ::gPhase), 0.0f);
+                eq->syncPhaseMode();
+                setB (0, EQ::pOn, 1);   // (as the checks after this one found it)
+                const bool noDelayNatural = eq->getLatencySeconds() == 0.0;
+                const bool linOk = worst < 1.0f && worstDeep < 0.4f &&peakAt == 100 + late && late == 6144 && mirror < 1.0e-4f && linLR.first > 8.0f - 6.03f && near (linLR.second, -6.02, 0.2)
+                                   && near (linMonoSide, 0.0, 0.2) && near (halfWet, 0.0, 0.1) && noDelayNatural;
+                rep.check (linOk, "Prism EQ in linear phase (same levels as natural, a mirrored response, the delay it reports, left and side bands, dry/wet in step)",
+                           "natural / linear: " + levels + "worst difference " + String (worst, 2) + " dB (deep: " + String (worstDeep, 2) + "); click comes out " + String (peakAt - 100) + " samples late (says " + String (late) + "), mirror error " + String (mirror, 6)
+                             + "; left " + String (linLR.first, 1) + "/" + String (linLR.second, 1) + ", side on mono " + String (linMonoSide, 2) + ", half wet " + String (halfWet, 2));
+            }
+
             // the editor and its display build (snapshot: prism_eq.png)
             {
                 PulseLookAndFeel laf;
