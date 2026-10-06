@@ -79,7 +79,7 @@ namespace DeviceEditors
     {
     public:
         using W = pulse::WavetableSynth;
-        FramesView (W& s, int oscIndex) : holder (&s), synth (&s), osc (oscIndex), colour (oscIndex == 0 ? Theme::accent : Theme::orange)
+        FramesView (W& s, int oscIndex) : holder (&s), synth (&s), osc (oscIndex), colour (oscIndex == 0 ? Theme::accent : oscIndex == 1 ? Theme::orange : Theme::green)
         {
             setMouseCursor (MouseCursor::UpDownResizeCursor);
             startTimerHz (15);
@@ -98,9 +98,10 @@ namespace DeviceEditors
                 g.drawRoundedRectangle (b, 6.0f, 1.0f);
             }
             else Graphs::panel (g, b);
-            const int set = synth->getInt (osc == 0 ? W::pSet1 : W::pSet2);
+            const int set = synth->getInt (osc == 0 ? W::pSet1 : osc == 1 ? W::pSet2 : W::pSet3);
             const float pos = posParam()->getCurrentValue();
             const auto user = synth->getUserTable();
+            const auto imported = synth->getImportTable();
             auto a = b.reduced (14.0f, flat ? 14.0f : 22.0f);
             const int frames = pulse::WavetableBank::numFrames;
             const float depthX = a.getWidth() * 0.22f, depthY = a.getHeight() * 0.52f;
@@ -110,7 +111,7 @@ namespace DeviceEditors
             {
                 const float t01 = f / (float) (frames - 1);
                 const float ox = a.getX() + depthX * (1.0f - t01), oy = a.getY() + depthY * (1.0f - t01);
-                const float* t = synth->tableFor (set, f, 0, user.get());
+                const float* t = synth->tableFor (set, f, 0, user.get(), imported.get());
                 for (int i = 0; i <= 96; ++i)
                 {
                     const float v = t[jmin (pulse::WavetableBank::tableSize - 1, i * pulse::WavetableBank::tableSize / 96)];
@@ -162,11 +163,12 @@ namespace DeviceEditors
         }
 
     private:
-        Graphs::Param posParam() const { return synth->param (osc == 0 ? W::pPos1 : W::pPos2); }
+        Graphs::Param posParam() const { return synth->param (osc == 0 ? W::pPos1 : osc == 1 ? W::pPos2 : W::pPos3); }
         void timerCallback() override
         {
             const double sig = synth->get (W::pSet1) * 3 + synth->param (W::pPos1)->getCurrentValue() * 7 + synth->get (W::pSet2) * 11 + synth->param (W::pPos2)->getCurrentValue() * 13
-                               + (double) (pointer_sized_int) synth->getUserTable().get();
+                               + synth->get (W::pSet3) * 17 + synth->param (W::pPos3)->getCurrentValue() * 19
+                               + (double) (pointer_sized_int) synth->getUserTable().get() + (double) (pointer_sized_int) synth->getImportTable().get() * 0.5;
             if (sig != last) { last = sig; repaint(); }
         }
         te::Plugin::Ptr holder;
@@ -685,7 +687,7 @@ namespace DeviceEditors
 
         WavetablePanel (EditViewState& e, W& w) : evs (e), synth (w), holder (&w), scope (w)
         {
-            const auto oscA = Colour (0xff4dabf7), oscB = Colour (0xffffa94d), filt = Colour (0xffff6b6b), env = Colour (0xff69db7c),
+            const auto oscA = Colour (0xff4dabf7), oscB = Colour (0xffffa94d), oscC = Colour (0xff8ce99a), filt = Colour (0xffff6b6b), env = Colour (0xff69db7c),
                        lfo = Colour (0xffda77f2), voice = Colour (0xff748ffc), sub = Colour (0xff63e6be);
             using L = std::initializer_list<std::pair<int, const char*>>;
 
@@ -700,7 +702,7 @@ namespace DeviceEditors
             auto card = [this] (int page, const String& t, Colour c) { auto* k = cards.add (new Card (t, c)); pages[page]->addAndMakeVisible (k); return k; };
 
             // ---- synth page
-            cOscA = card (0, "OSC A", oscA); cOscB = card (0, "OSC B", oscB); cMix = card (0, "SUB  /  NOISE  /  UNISON", sub);
+            cOscA = card (0, "OSC A", oscA); cOscB = card (0, "OSC B", oscB); cOscC = card (0, "OSC C", oscC); cMix = card (0, "SUB  /  NOISE  /  UNISON", sub);
             cF1 = card (0, "FILTER 1", filt); cF2 = card (0, "FILTER 2", filt.withRotatedHue (0.05f)); cVoice = card (0, "VOICE", voice);
             cEnv = card (0, "ENVELOPES", env); cLfo = card (0, "LFO", lfo);
 
@@ -712,6 +714,20 @@ namespace DeviceEditors
             for (auto [pi, l] : L { { W::pPos2, "Position" }, { W::pWarpAmt2, "Warp" }, { W::pLevel2, "Level" }, { W::pPan2, "Pan" } }) knobsB.add (knob (*cOscB, pi, l, oscB));
             for (auto [pi, l] : L { { W::pOct1, "Oct" }, { W::pSemi1, "Semi" }, { W::pFine1, "Fine" } }) boxesA.add (box (*cOscA, pi, l, oscA));
             for (auto [pi, l] : L { { W::pOct2, "Oct" }, { W::pSemi2, "Semi" }, { W::pFine2, "Fine" } }) boxesB.add (box (*cOscB, pi, l, oscB));
+            // the third oscillator has the same place as the second: the B / C tabs in the card's header choose which is shown
+            framesC = std::make_unique<FramesView> (w, 2); framesC->flat = true; framesC->colour = oscC; cOscC->addAndMakeVisible (*framesC);
+            tableC = combo (*cOscC, W::pSet3); warpC = combo (*cOscC, W::pWarp3);
+            for (auto [pi, l] : L { { W::pPos3, "Position" }, { W::pWarpAmt3, "Warp" }, { W::pLevel3, "Level" }, { W::pPan3, "Pan" } }) knobsC.add (knob (*cOscC, pi, l, oscC));
+            for (auto [pi, l] : L { { W::pOct3, "Oct" }, { W::pSemi3, "Semi" }, { W::pFine3, "Fine" } }) boxesC.add (box (*cOscC, pi, l, oscC));
+            for (auto* c : { cOscB, cOscC })
+                for (int i = 0; i < 2; ++i)
+                {
+                    auto* b = oscTabs.add (new LineTab (i == 0 ? "B" : "C"));
+                    b->colour = i == 0 ? oscB : oscC;
+                    b->setTooltip (i == 0 ? "Show oscillator B" : "Show oscillator C (silent until its Level is turned up)");
+                    b->onClick = [this, i] { showOsc (i); };
+                    c->addAndMakeVisible (b);
+                }
 
             subKnob = knob (*cMix, W::pSub, "Level", sub);
             subShape = combo (*cMix, W::pSubShape);
@@ -784,6 +800,14 @@ namespace DeviceEditors
             cUser = card (3, "YOUR OWN WAVETABLE", oscA);
             drawEditor = std::make_unique<DeviceDisplays::WaveDrawEditor> (w);
             cUser->addAndMakeVisible (*drawEditor);
+            importBtn.setButtonText ("Import from audio...");
+            importBtn.setTooltip ("Make a wavetable from any audio file: sixteen single cycles from across it become the \"Imported\" table (choose it in an oscillator's table menu)");
+            importBtn.onClick = [this] { chooseImport(); };
+            cUser->addAndMakeVisible (importBtn);
+            importName.setFont (FontOptions (12.0f));
+            importName.setColour (Label::textColourId, Theme::muted);
+            importName.setJustificationType (Justification::centredRight);
+            cUser->addAndMakeVisible (importName);
 
             // ---- the bottom bar
             for (int m = 0; m < W::numMacros; ++m)
@@ -808,8 +832,32 @@ namespace DeviceEditors
             addAndMakeVisible (scope);
             showEnv (0);
             showLfo (0);
+            showOsc (shownOsc);
             showTab (startTab);
             startTimerHz (8);
+        }
+
+        static inline int shownOsc = 0;   // 0 = oscillator B, 1 = oscillator C in the shared place
+        void showOsc (int which)
+        {
+            shownOsc = jlimit (0, 1, which);
+            cOscB->setVisible (shownOsc == 0);
+            cOscC->setVisible (shownOsc == 1);
+            for (int i = 0; i < oscTabs.size(); ++i) oscTabs[i]->setToggleState (i % 2 == shownOsc, dontSendNotification);
+        }
+
+        /** Asks for an audio file and makes the Imported wavetable from it. */
+        void chooseImport()
+        {
+            chooser = std::make_shared<FileChooser> ("Make a wavetable from audio", File::getSpecialLocation (File::userMusicDirectory), "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3", ! About::isCapturing());
+            chooser->launchAsync (FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles,
+                                  [sp = SafePointer<WavetablePanel> (this)] (const FileChooser& fc)
+                                  {
+                                      if (sp == nullptr || fc.getResult() == File()) return;
+                                      sp->synth.edit.getUndoManager().beginNewTransaction ("Import wavetable");
+                                      if (sp->synth.importWavetable (fc.getResult()))
+                                          sp->synth.set (W::pSet1, (float) pulse::WavetableBank::importSet);   // hear it at once, on oscillator A
+                                  });
         }
 
         int currentTab() const { return tab; }
@@ -901,6 +949,10 @@ namespace DeviceEditors
                 cMix->setBounds (col1);
                 layoutOsc (*cOscA, *framesA, *tableA, *warpA, knobsA, boxesA);
                 layoutOsc (*cOscB, *framesB, *tableB, *warpB, knobsB, boxesB);
+                cOscC->setBounds (cOscB->getBounds());
+                layoutOsc (*cOscC, *framesC, *tableC, *warpC, knobsC, boxesC);
+                for (int i = 0; i < oscTabs.size(); ++i)
+                    oscTabs[i]->setBounds ((i < 2 ? cOscB : cOscC)->header().removeFromLeft (68).removeFromLeft ((i % 2 + 1) * 34).removeFromRight (34));
                 {
                     auto c = cMix->content();
                     cMix->wells.clear();
@@ -1007,6 +1059,10 @@ namespace DeviceEditors
             {
                 cUser->setBounds (area);
                 drawEditor->setBounds (cUser->content());
+                auto head = cUser->header();
+                importBtn.setBounds (head.removeFromRight (150));
+                head.removeFromRight (8);
+                importName.setBounds (head);
             }
         }
 
@@ -1019,7 +1075,12 @@ namespace DeviceEditors
             Array<ParamKnob*> knobs;
         };
 
-        void timerCallback() override { repaint (getLocalBounds().removeFromBottom (barH).removeFromTop (18)); }
+        void timerCallback() override
+        {
+            repaint (getLocalBounds().removeFromBottom (barH).removeFromTop (18));
+            const auto name = synth.getImportName();
+            importName.setText (name.isEmpty() ? String ("Nothing imported yet") : "Imported: " + name, dontSendNotification);
+        }
 
         ParamKnob* knob (Card& c, int pi, const char* label, Colour col)
         {
@@ -1101,9 +1162,16 @@ namespace DeviceEditors
         OwnedArray<ParamKnob> macroKnobs;
         std::unique_ptr<ParamKnob> levelKnob, outputKnob;
         OwnedArray<FxSlot> fx;
-        Card *cOscA = nullptr, *cOscB = nullptr, *cMix = nullptr, *cF1 = nullptr, *cF2 = nullptr, *cEnv = nullptr, *cLfo = nullptr,
+        Card *cOscA = nullptr, *cOscB = nullptr, *cOscC = nullptr, *cMix = nullptr, *cF1 = nullptr, *cF2 = nullptr, *cEnv = nullptr, *cLfo = nullptr,
              *cMatrix = nullptr, *cSources = nullptr, *cVoice = nullptr, *cUser = nullptr;
-        std::unique_ptr<FramesView> framesA, framesB;
+        std::unique_ptr<FramesView> framesA, framesB, framesC;
+        OwnedArray<LineTab> oscTabs;
+        TextButton importBtn;
+        Label importName;
+        std::shared_ptr<FileChooser> chooser;
+        ParamCombo *tableC = nullptr, *warpC = nullptr;
+        Array<ParamKnob*> knobsC;
+        Array<ParamValueBox*> boxesC;
         ParamCombo *tableA = nullptr, *warpA = nullptr, *tableB = nullptr, *warpB = nullptr, *typeF1 = nullptr, *typeF2 = nullptr, *routing = nullptr, *subShape = nullptr;
         ParamChoice *subOct = nullptr, *voiceMode = nullptr;
         ParamKnob* subKnob = nullptr;

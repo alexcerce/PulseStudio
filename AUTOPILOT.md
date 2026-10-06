@@ -163,7 +163,7 @@ well EVERYWHERE." So, besides the list:
    [x] shimmer reverb  [x] spectral (freeze / blur / shift / spectral delay)  [x] chorus / flanger / phaser
    [x] tremolo / auto-pan  [x] frequency shifter  [x] bit reduction  [x] amp + cabinet  [x] exciter  [x] beat repeat
    [x] grain delay  [x] looper  [x] resonators
-2. Instruments: [ ] Wavetable third oscillator + wavetable import from audio  [ ] sampler (slices, per-slice stretch,
+2. Instruments: [x] Wavetable third oscillator + wavetable import from audio  [ ] sampler (slices, per-slice stretch,
    zones)  [ ] analogue-style subtractive synth  [ ] physical-modelling instrument (string / mallet)
    [ ] electric piano  [ ] tonewheel organ
 3. MIDI: [ ] note length  [ ] pitch  [ ] random  [ ] velocity  [ ] drawable arpeggiator / note-echo patterns
@@ -443,3 +443,9 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   monkey seeds 1401 / 1402 on the demo project and 1403 / 1404 on a 30-track project (--big 30) that now holds
   every effect (so every new window is opened and clicked at random), command fuzz seed 1401: all clean, no crash
   report. Installer built. Nothing owed. Next: group 2 (instruments), first item the Wavetable's third oscillator.
+- 2026-10-06: v0.99.15. Wavetable: third oscillator (9 parameters appended after pOutput; level3 defaults to 0 so
+  old sounds are unchanged; it shares OSC B's card through B / C tabs; in Split routing it goes with osc 1) and
+  "Imported" as an 18th table: WavetableSynth::importWavetable / cyclesFrom / periodAt (autocorrelation, period
+  to a fraction of a sample), stored in the project as base64 ("importWave"), so the audio file is not needed
+  again. WavetableBank::build() now makes any per-instance table. 3 new presets. 287 checks, quick tier.
+  README: the Wavetable row starts with the two additions; the rest of that row is older text.

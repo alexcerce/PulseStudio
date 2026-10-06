@@ -27,6 +27,16 @@ namespace FactoryPresetsMore
             // LFO shape 0 sine .. 5 random, 6 drawn; sync 1 1/16 .. 7 4 bars; routes "mod:<source>:<param id>"
             // v0.55: sets 6 resonant saw, 7 organ, 8 FM bell, 9 FM bright, 10 wavefold, 11 phase reso, 12 digital steps, 13 hollow to full,
             // 14 comb sweep, 15 growl, 16 glass; sources 14..17 = macros 1..4; drivetype 0 soft, 1 hard, 2 fold, 3 crush
+            // v0.99.15: the third oscillator (set3, pos3, oct3, semi3, fine3, level3, pan3, warp3, warpamt3); it is silent unless level3 is set
+                { "Three-Osc Supersaw Stack", { { "set1", 0 }, { "pos1", 0.66f }, { "set2", 0 }, { "pos2", 0.66f }, { "fine2", 9 }, { "mix", 0.5f }, { "set3", 0 }, { "pos3", 0.66f }, { "oct3", 1 },
+                                                { "fine3", -7 }, { "level3", 0.7f }, { "pan1", -0.4f }, { "pan2", 0.4f }, { "voices", 5 }, { "detune", 0.3f }, { "ftype", 1 }, { "cutoff", 5000 },
+                                                { "fenv", 0.25f }, { "a", 5 }, { "s", 0.85f }, { "r", 350 }, { "reverbmix", 0.2f }, { "level", -14 } } },
+                { "Fifth Organ Pad (osc 3 = the fifth)", { { "set1", 7 }, { "pos1", 0.5f }, { "set2", 13 }, { "pos2", 0.4f }, { "mix", 0.4f }, { "set3", 2 }, { "pos3", 0.3f }, { "semi3", 7 }, { "level3", 0.5f },
+                                                           { "voices", 3 }, { "detune", 0.15f }, { "ftype", 0 }, { "cutoff", 3500 }, { "fenv", 0.1f }, { "a", 400 }, { "s", 1 }, { "r", 900 },
+                                                           { "mod:1:pos3", 0.3f }, { "chorusmix", 0.3f }, { "reverbmix", 0.4f }, { "level", -12 } } },
+                { "Glass Over Sub Bass", { { "set1", 0 }, { "pos1", 0.0f }, { "oct1", -1 }, { "mix", 0 }, { "set3", 16 }, { "pos3", 0.5f }, { "oct3", 2 }, { "level3", 0.35f }, { "pan3", 0.2f },
+                                           { "warp3", 1 }, { "warpamt3", 0.3f }, { "mod:5:pos3", 0.5f }, { "voices", 1 }, { "ftype", 0 }, { "cutoff", 8000 }, { "fenv", 0 }, { "a", 2 }, { "d", 600 },
+                                           { "s", 0.6f }, { "r", 300 }, { "md", 500 }, { "ms", 0 }, { "level", -10 } } },
                 { "Acid Reso (macro 1 = squelch)", { { "set1", 6 }, { "pos1", 0.25f }, { "mix", 0 }, { "voices", 1 }, { "mode", 1 }, { "glide", 60 }, { "ftype", 1 }, { "cutoff", 500 },
                                                      { "reso", 0.65f }, { "fenv", 0.55f }, { "fd", 220 }, { "fs", 0.05f }, { "fdrive", 0.5f }, { "mod:14:pos1", 0.6f }, { "mod:14:cutoff", 0.3f },
                                                      { "drive", 0.35f }, { "drivetype", 1 }, { "s", 0.8f }, { "r", 90 }, { "level", -13 }, { "output", -8 } } },

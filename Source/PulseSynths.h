@@ -110,8 +110,8 @@ namespace pulse
         static constexpr int order = 11, tableSize = 1 << order, numFrames = 16, numLevels = 11;
         static inline const StringArray setNames { "Basic shapes", "Pulse width", "Harmonics", "Vowels", "Sync saw", "User (drawn)",
                                                    "Resonant saw", "Organ", "FM bell", "FM bright", "Wavefold", "Phase reso", "Digital steps",
-                                                   "Hollow to full", "Comb sweep", "Growl", "Glass" };
-        static constexpr int userSet = 5;
+                                                   "Hollow to full", "Comb sweep", "Growl", "Glass", "Imported" };
+        static constexpr int userSet = 5, importSet = 17;
 
         /** Band-limited frames morphing between two drawn single cycles (one per Wavetable instance). */
         struct UserTable
@@ -128,17 +128,38 @@ namespace pulse
         /** Turns two drawn cycles (any number of points, -1..1) into band-limited morph frames. */
         static std::shared_ptr<UserTable> buildUser (const std::vector<float>& a, const std::vector<float>& b)
         {
+            return build ([&] (float t, float ph) { return cycleAt (a, ph) * (1.0f - t) + cycleAt (b, ph) * t; });
+        }
+
+        /** Turns a row of single cycles (taken from an audio file) into band-limited frames; the Position sweeps through them. */
+        static std::shared_ptr<UserTable> buildFromCycles (const std::vector<std::vector<float>>& cycles)
+        {
+            if (cycles.empty()) return {};
+            return build ([&] (float t, float ph)
+            {
+                const float at = t * (float) (cycles.size() - 1);
+                const size_t i = (size_t) at, j = jmin (cycles.size() - 1, i + 1);
+                const float f = at - (float) i;
+                return cycleAt (cycles[i], ph) * (1.0f - f) + cycleAt (cycles[j], ph) * f;
+            });
+        }
+
+        /** A drawn or sampled cycle read at a phase of 0..1 (a sine if it is empty). */
+        static float cycleAt (const std::vector<float>& w, float ph)
+        {
+            if (w.empty()) return std::sin (MathConstants<float>::twoPi * ph);
+            const float x = ph * (float) w.size();
+            const int i = (int) x;
+            const float f = x - (float) i;
+            return w[(size_t) (i % (int) w.size())] * (1.0f - f) + w[(size_t) ((i + 1) % (int) w.size())] * f;
+        }
+
+        /** Band-limited frames from a wave given as a function of the position (0..1) and the phase (0..1). */
+        static std::shared_ptr<UserTable> build (const std::function<float (float position, float phase)>& wave)
+        {
             auto u = std::make_shared<UserTable>();
             u->data.resize ((size_t) numFrames * numLevels * (tableSize + 1));
             dsp::FFT fft (order);
-            auto sampleAt = [] (const std::vector<float>& w, float ph)
-            {
-                if (w.empty()) return std::sin (MathConstants<float>::twoPi * ph);
-                const float x = ph * (float) w.size();
-                const int i = (int) x;
-                const float f = x - (float) i;
-                return w[(size_t) (i % (int) w.size())] * (1.0f - f) + w[(size_t) ((i + 1) % (int) w.size())] * f;
-            };
             for (int frame = 0; frame < numFrames; ++frame)
             {
                 const float t = frame / (float) (numFrames - 1);
@@ -147,7 +168,7 @@ namespace pulse
                 for (int i = 0; i < tableSize; ++i)
                 {
                     const float ph = (float) i / tableSize;
-                    time[(size_t) i] = sampleAt (a, ph) * (1.0f - t) + sampleAt (b, ph) * t;
+                    time[(size_t) i] = wave (t, ph);
                     mean += time[(size_t) i];
                 }
                 mean /= tableSize;
@@ -222,7 +243,7 @@ namespace pulse
             for (int set = 0; set < numSets(); ++set)
                 for (int frame = 0; frame < numFrames; ++frame)
                 {
-                    if (set == userSet) continue;   // drawn per instance (see UserTable)
+                    if (set == userSet || set == importSet) continue;   // made per instance (see UserTable)
                     auto spectrum = makeSpectrum (fft, set, frame / (float) (numFrames - 1));
                     float scale = 0.0f;
                     for (int level = 0; level < numLevels; ++level)
@@ -435,6 +456,7 @@ namespace pulse
                pFDrive, pKeyTrack, pMode, pMacro1, pMacro2, pMacro3, pMacro4,
                pDriveType, pPhaserMix, pPhaserRate, pPhaserDepth, pEqLow, pEqHigh,
                pOutput,   // v0.92: after the effects (Level is before them)
+               pSet3, pPos3, pOct3, pSemi3, pFine3, pLevel3, pPan3, pWarp3, pWarpAmt3,   // v0.99.15: the third oscillator
                numParamsTotal };
         static inline const char* xmlTypeName = "pulseWavetable";
         static const char* getPluginName() { return "Wavetable"; }
@@ -551,6 +573,16 @@ namespace pulse
             add ("eqlow", "EQ Low", { -12.0f, 12.0f }, 0.0f, fmt::db);
             add ("eqhigh", "EQ High", { -12.0f, 12.0f }, 0.0f, fmt::db);
             add ("output", "Output", { -24.0f, 12.0f }, 0.0f, fmt::db);
+            // the third oscillator starts silent, so sounds made before it existed are unchanged
+            add ("set3", "Osc 3 Table", steps (WavetableBank::numSets()), 2.0f, setChoice);
+            add ("pos3", "Osc 3 Position", { 0.0f, 1.0f }, 0.5f, fmt::pct);
+            add ("oct3", "Osc 3 Octave", { -3.0f, 3.0f, 1.0f }, 0.0f, octText);
+            add ("semi3", "Osc 3 Semitones", { -24.0f, 24.0f, 1.0f }, 0.0f, fmt::st);
+            add ("fine3", "Osc 3 Fine", { -50.0f, 50.0f }, 0.0f, fmt::ct);
+            add ("level3", "Osc 3 Level", { 0.0f, 1.0f }, 0.0f, fmt::pct);
+            add ("pan3", "Osc 3 Pan", { -1.0f, 1.0f }, 0.0f, panText);
+            add ("warp3", "Osc 3 Warp", steps (warpNames.size() - 1), 0.0f, fmt::choice ([] { auto s = warpNames; s.remove (s.size() - 1); return s; }()));
+            add ("warpamt3", "Osc 3 Warp Amount", { 0.0f, 1.0f }, 0.0f, fmt::pct);
             jassert (numParams() == numParamsTotal);
 
             WavetableBank::get();   // build the tables now rather than on the audio thread
@@ -562,6 +594,7 @@ namespace pulse
             userWatcher.owner = this;
             state.addListener (&userWatcher);
             rebuildUserTable();
+            rebuildImportTable();
             rebuildRoutes();
             rebuildLfoShapes();
         }
@@ -603,11 +636,146 @@ namespace pulse
             return userTable;
         }
 
-        /** Table for a set / frame / level (the drawn set comes from this instance). */
-        const float* tableFor (int set, int frame, int level, const WavetableBank::UserTable* user) const
+        /** Table for a set / frame / level (the drawn and the imported set come from this instance). */
+        const float* tableFor (int set, int frame, int level, const WavetableBank::UserTable* user, const WavetableBank::UserTable* imported = nullptr) const
         {
             if (set == WavetableBank::userSet && user != nullptr) return user->table (frame, level);
-            return WavetableBank::get().table (set == WavetableBank::userSet ? 0 : set, frame, level);
+            if (set == WavetableBank::importSet && imported != nullptr) return imported->table (frame, level);
+            return WavetableBank::get().table (set == WavetableBank::userSet || set == WavetableBank::importSet ? 0 : set, frame, level);
+        }
+
+        //==============================================================================
+        // The "Imported" table: cycles taken from an audio file, stored in the project (so the file is not needed again).
+        static inline const Identifier importID { "importWave" }, importNameID { "importName" };
+        static constexpr int importPoints = 256;
+
+        std::shared_ptr<const WavetableBank::UserTable> getImportTable() const
+        {
+            const SpinLock::ScopedLockType sl (userLock);
+            return importTable;
+        }
+        String getImportName() const { return state[importNameID].toString(); }
+
+        /** Stores a row of cycles (each any length, -1..1) as the Imported table. Undoable. */
+        void setImportCycles (const std::vector<std::vector<float>>& cycles, const String& name)
+        {
+            MemoryBlock mb;
+            for (auto& c : cycles)
+                for (int i = 0; i < importPoints; ++i)
+                {
+                    const int16 v = (int16) roundToInt (jlimit (-1.0f, 1.0f, WavetableBank::cycleAt (c, (float) i / importPoints)) * 32767.0f);
+                    mb.append (&v, sizeof (v));
+                }
+            state.setProperty (importNameID, name, getUndoManager());
+            state.setProperty (importID, mb.toBase64Encoding(), getUndoManager());
+        }
+
+        std::vector<std::vector<float>> getImportCycles() const
+        {
+            MemoryBlock mb;
+            std::vector<std::vector<float>> cycles;
+            if (! mb.fromBase64Encoding (state[importID].toString())) return cycles;
+            const auto* v = static_cast<const int16*> (mb.getData());
+            const size_t count = mb.getSize() / sizeof (int16) / (size_t) importPoints;
+            for (size_t c = 0; c < count; ++c)
+            {
+                std::vector<float> w ((size_t) importPoints);
+                for (int i = 0; i < importPoints; ++i) w[(size_t) i] = v[c * (size_t) importPoints + (size_t) i] / 32767.0f;
+                cycles.push_back (std::move (w));
+            }
+            return cycles;
+        }
+
+        /** Takes sixteen single cycles from across an audio file (or reads a wavetable file made of 2048-sample cycles) as the
+            Imported table. False if the file could not be read. */
+        bool importWavetable (const File& file)
+        {
+            std::unique_ptr<AudioFormatReader> reader { engine.getAudioFileFormatManager().readFormatManager.createReaderFor (file) };
+            if (reader == nullptr || reader->lengthInSamples < 64) return false;
+            const int len = (int) jmin ((int64) (reader->sampleRate * 30.0), reader->lengthInSamples);
+            AudioBuffer<float> buf ((int) jmax (1u, reader->numChannels), len);
+            reader->read (&buf, 0, len, 0, true, true);
+            std::vector<float> x ((size_t) len);
+            for (int i = 0; i < len; ++i)
+            {
+                float v = 0.0f;
+                for (int ch = 0; ch < buf.getNumChannels(); ++ch) v += buf.getSample (ch, i);
+                x[(size_t) i] = v / (float) buf.getNumChannels();
+            }
+            setImportCycles (cyclesFrom (x, reader->sampleRate), file.getFileNameWithoutExtension());
+            return true;
+        }
+
+        /** Sixteen single cycles from across a recording. Where it has a clear pitch, a cycle is one period of it, starting where
+            the wave crosses zero going up; where it has none, 2048 samples. A file that is already a wavetable (a whole number of
+            2048-sample cycles) is read as it is. */
+        static std::vector<std::vector<float>> cyclesFrom (const std::vector<float>& x, double sr)
+        {
+            const int len = (int) x.size(), frames = WavetableBank::numFrames;
+            std::vector<std::vector<float>> cycles;
+            const bool isTable = len % 2048 == 0 && len / 2048 <= 256;
+            for (int fr = 0; fr < frames; ++fr)
+            {
+                int start = 0;
+                double period = jmin (2048, len);
+                if (isTable) start = roundToInt ((float) fr / (float) (frames - 1) * (float) (len / 2048 - 1)) * 2048;
+                else
+                {
+                    const int centre = (int) ((int64) len * (2 * fr + 1) / (2 * frames));
+                    if (const double p = periodAt (x, centre, sr); p > 0.0) period = p;
+                    const int whole = (int) std::ceil (period);
+                    start = jlimit (0, jmax (0, len - whole - 2), centre - whole / 2);
+                    for (int i = start; i < jmin (len - whole - 2, start + whole); ++i)   // the next upward zero crossing
+                        if (x[(size_t) i] <= 0.0f && x[(size_t) i + 1] > 0.0f) { start = i + 1; break; }
+                }
+                std::vector<float> c ((size_t) importPoints);
+                double mean = 0.0;
+                for (int i = 0; i < importPoints; ++i)
+                {
+                    const double at = start + (double) i / importPoints * period;
+                    const int a = jlimit (0, len - 1, (int) at), b = jmin (len - 1, a + 1);
+                    c[(size_t) i] = x[(size_t) a] + (x[(size_t) b] - x[(size_t) a]) * (float) (at - (double) a);
+                    mean += c[(size_t) i];
+                }
+                // the two ends of the cycle are made to meet (a slope is taken out), so that the loop has no step in it
+                const double endAt = start + period;
+                const int ea = jlimit (0, len - 1, (int) endAt), eb = jmin (len - 1, ea + 1);
+                const float step = x[(size_t) ea] + (x[(size_t) eb] - x[(size_t) ea]) * (float) (endAt - (double) ea) - c[0];
+                for (int i = 0; i < importPoints; ++i) c[(size_t) i] -= (float) (mean / importPoints) + step * ((float) i / importPoints - 0.5f);
+                cycles.push_back (std::move (c));
+            }
+            float peak = 1.0e-6f;
+            for (auto& c : cycles) for (auto v : c) peak = jmax (peak, std::abs (v));
+            for (auto& c : cycles) for (auto& v : c) v *= 0.95f / peak;
+            return cycles;
+        }
+
+        /** The length in samples (to a fraction) of one period of the sound around `centre`, or 0 where it has no clear pitch (40 Hz to 1.5 kHz). */
+        static double periodAt (const std::vector<float>& x, int centre, double sr)
+        {
+            const int window = 2048, minLag = jmax (8, (int) (sr / 1500.0)), maxLag = (int) (sr / 40.0);
+            const int from = jlimit (0, jmax (0, (int) x.size() - window - maxLag - 1), centre - window / 2);
+            if ((int) x.size() < from + window + maxLag + 1) return 0;
+            double energy = 1.0e-12;
+            for (int i = 0; i < window; ++i) energy += x[(size_t) (from + i)] * x[(size_t) (from + i)];
+            std::vector<float> r ((size_t) maxLag + 1, 0.0f);
+            float best = 0.0f;
+            for (int lag = minLag; lag <= maxLag; ++lag)
+            {
+                double sum = 0.0, e2 = 1.0e-12;
+                for (int i = 0; i < window; i += 2) { sum += x[(size_t) (from + i)] * x[(size_t) (from + i + lag)]; e2 += x[(size_t) (from + i + lag)] * x[(size_t) (from + i + lag)]; }
+                r[(size_t) lag] = (float) (sum / std::sqrt (energy * 0.5 * e2));
+                best = jmax (best, r[(size_t) lag]);
+            }
+            if (best < 0.6f) return 0;
+            for (int lag = minLag + 1; lag < maxLag; ++lag)   // the shortest lag that matches nearly as well as the best: one period, not two
+                if (r[(size_t) lag] > 0.92f * best && r[(size_t) lag] >= r[(size_t) lag - 1] && r[(size_t) lag] >= r[(size_t) lag + 1])
+                {
+                    // the true peak lies between whole samples: a curve through the three values around it finds where
+                    const double a = r[(size_t) lag - 1], b = r[(size_t) lag], c = r[(size_t) lag + 1], bend = a - 2.0 * b + c;
+                    return lag + (std::abs (bend) > 1.0e-9 ? jlimit (-0.5, 0.5, 0.5 * (a - c) / bend) : 0.0);
+                }
+            return 0;
         }
 
         //==============================================================================
@@ -681,11 +849,11 @@ namespace pulse
             if (i < 0 || i >= numParams()) return false;
             switch (i)
             {
-                case pSet1: case pSet2: case pVoices: case pFilterType: case pF2Type: case pRouting: case pWarp1: case pWarp2:
+                case pSet1: case pSet2: case pSet3: case pVoices: case pFilterType: case pF2Type: case pRouting: case pWarp1: case pWarp2: case pWarp3:
                 case pL1Sync: case pL1Shape: case pL1Retrig: case pL2Sync: case pL2Shape: case pL2Retrig:
                 case pL3Sync: case pL3Shape: case pL3Retrig: case pL4Sync: case pL4Shape: case pL4Retrig:
                 case pDelayTime: case pBendRange: case pGlide:
-                case pOct1: case pOct2: case pSubShape: case pSubOct: case pMode: case pDriveType:
+                case pOct1: case pOct2: case pOct3: case pSubShape: case pSubOct: case pMode: case pDriveType:
                     return false;
                 default: return true;
             }
@@ -761,6 +929,7 @@ namespace pulse
         {
             return { { "Osc 1", { pSet1, pPos1, pOct1, pSemi1, pFine1, pLevel1, pPan1, pWarp1, pWarpAmt1 } },
                      { "Osc 2", { pSet2, pPos2, pOct2, pSemi2, pFine2, pLevel2, pPan2, pWarp2, pWarpAmt2 } },
+                     { "Osc 3", { pSet3, pPos3, pOct3, pSemi3, pFine3, pLevel3, pPan3, pWarp3, pWarpAmt3 } },
                      { "Unison / Sub", { pMix, pVoices, pDetune, pSpread, pSub, pSubShape, pSubOct, pNoise, pNoiseColour } },
                      { "Filter", { pFilterType, pCutoff, pReso, pFilterEnv, pFDrive, pKeyTrack } },
                      { "Filter 2", { pF2Type, pF2Cutoff, pF2Reso, pF2Env, pRouting } },
@@ -789,6 +958,7 @@ namespace pulse
             void valueTreePropertyChanged (ValueTree& v, const Identifier& id) override
             {
                 if (v == owner->state && (id == userAID || id == userBID)) owner->rebuildUserTable();
+                if (v == owner->state && id == importID) owner->rebuildImportTable();
                 if (v == owner->state && id.toString().startsWith ("lfo") && id.toString().endsWith ("Points")) owner->rebuildLfoShapes();
                 if (v.hasType (routeID)) owner->rebuildRoutes();
             }
@@ -801,6 +971,13 @@ namespace pulse
             auto t = WavetableBank::buildUser (getUserWave (0), getUserWave (1));
             const SpinLock::ScopedLockType sl (userLock);
             userTable = t;
+        }
+
+        void rebuildImportTable()
+        {
+            auto t = WavetableBank::buildFromCycles (getImportCycles());
+            const SpinLock::ScopedLockType sl (userLock);
+            importTable = t;
         }
 
         void rebuildRoutes()
@@ -824,7 +1001,7 @@ namespace pulse
         {
             {
                 const SpinLock::ScopedTryLockType sl (userLock);
-                if (sl.isLocked()) { audioUserTable = userTable; audioRoutes = routes; }
+                if (sl.isLocked()) { audioUserTable = userTable; audioImportTable = importTable; audioRoutes = routes; }
             }
             bpm.store (edit.tempoSequence.getInternalSequence().getBeatsPerSecondAt (te::TimePosition()).v * 60.0);
             // free-running LFO clocks (one block ahead; voices read them)
@@ -886,7 +1063,7 @@ namespace pulse
         float outGain = -1.0f;
 
         mutable SpinLock userLock;
-        std::shared_ptr<const WavetableBank::UserTable> userTable, audioUserTable;
+        std::shared_ptr<const WavetableBank::UserTable> userTable, audioUserTable, importTable, audioImportTable;
         std::shared_ptr<const std::vector<Route>> routes, audioRoutes;
         std::array<std::array<std::atomic<float>, lfoPoints>, numLfos> drawnLfo {};
         std::array<std::atomic<double>, numLfos> lfoClock {};
@@ -1133,8 +1310,8 @@ namespace pulse
                 menv.setParameters (adsrFrom (o.get (pMA), o.get (pMD), o.get (pMS), o.get (pMR)));
                 auto routes = o.audioRoutes;
 
-                const int set[2] = { o.getInt (pSet1), o.getInt (pSet2) };
-                const int warp[2] = { o.getInt (pWarp1), o.getInt (pWarp2) };
+                const int set[3] = { o.getInt (pSet1), o.getInt (pSet2), o.getInt (pSet3) };
+                const int warp[3] = { o.getInt (pWarp1), o.getInt (pWarp2), o.getInt (pWarp3) };
                 const int voices = jlimit (1, 7, o.getInt (pVoices));
                 const int ftype = o.getInt (pFilterType), f2type = o.getInt (pF2Type), routing = o.getInt (pRouting);
                 const float pressureAmt = o.get (pPressure), slideAmt = o.get (pSlide);
@@ -1182,15 +1359,17 @@ namespace pulse
                                 offsets[(size_t) r.dest] += r.amount * src[r.source];
 
                     const float slideOffset = (slide - 0.5f) * 2.0f * slideAmt;
-                    const float basePos[2] = { jlimit (0.0f, 1.0f, mv (pPos1) + slideOffset), jlimit (0.0f, 1.0f, mv (pPos2) + slideOffset) };
+                    const float basePos[3] = { jlimit (0.0f, 1.0f, mv (pPos1) + slideOffset), jlimit (0.0f, 1.0f, mv (pPos2) + slideOffset), jlimit (0.0f, 1.0f, mv (pPos3) + slideOffset) };
                     const float mixV = mv (pMix);
-                    const float oscGain[2] = { (1.0f - mixV) * mv (pLevel1), mixV * mv (pLevel2) };
-                    const double osc2Ratio = std::pow (2.0, o.getInt (pOct2) + (mv (pSemi2) + mv (pFine2) / 100.0) / 12.0);
-                    const double osc1Ratio = std::pow (2.0, o.getInt (pOct1) + (mv (pSemi1) + mv (pFine1) / 100.0) / 12.0);
-                    float oscPanL[2], oscPanR[2];
-                    for (int k = 0; k < 2; ++k)
+                    // the A / B balance is between the first two; the third has only its own level
+                    const float oscGain[3] = { (1.0f - mixV) * mv (pLevel1), mixV * mv (pLevel2), 0.5f * mv (pLevel3) };
+                    const double oscRatio[3] = { std::pow (2.0, o.getInt (pOct1) + (mv (pSemi1) + mv (pFine1) / 100.0) / 12.0),
+                                                 std::pow (2.0, o.getInt (pOct2) + (mv (pSemi2) + mv (pFine2) / 100.0) / 12.0),
+                                                 std::pow (2.0, o.getInt (pOct3) + (mv (pSemi3) + mv (pFine3) / 100.0) / 12.0) };
+                    float oscPanL[3], oscPanR[3];
+                    for (int k = 0; k < 3; ++k)
                     {
-                        const float ang = (jlimit (-1.0f, 1.0f, mv (k == 0 ? pPan1 : pPan2)) + 1.0f) * MathConstants<float>::pi * 0.25f;
+                        const float ang = (jlimit (-1.0f, 1.0f, mv (k == 0 ? pPan1 : k == 1 ? pPan2 : pPan3)) + 1.0f) * MathConstants<float>::pi * 0.25f;
                         oscPanL[k] = std::cos (ang) * 1.41421f;
                         oscPanR[k] = std::sin (ang) * 1.41421f;
                     }
@@ -1198,7 +1377,7 @@ namespace pulse
                     const float fdrive = mv (pFDrive), fdg = 1.0f + fdrive * 6.0f, fdc = 1.0f / (1.0f + fdrive * 1.5f);
                     const float keyTrack = std::pow (2.0f, (noteNumber - 60) / 12.0f * mv (pKeyTrack));
                     const float detune = mv (pDetune), sub = mv (pSub);
-                    const float warpAmt[2] = { mv (pWarpAmt1), mv (pWarpAmt2) };
+                    const float warpAmt[3] = { mv (pWarpAmt1), mv (pWarpAmt2), mv (pWarpAmt3) };
                     const float level = Decibels::decibelsToGain (mv (pLevel)) * (0.3f + 0.7f * velocity) * (1.0f + pressure * pressureAmt * 0.6f);
                     const float lfoPos = o.get (pLfoPos), lfoCut = o.get (pLfoCut);
 
@@ -1213,18 +1392,18 @@ namespace pulse
                     }
 
                     const double f = freq * std::pow (2.0, bend / 12.0);
-                    const float* t0[2]; const float* t1[2]; float frameFrac[2]; double inc[2][7];
-                    for (int osc = 0; osc < 2; ++osc)
+                    const float* t0[3]; const float* t1[3]; float frameFrac[3]; double inc[3][7];
+                    for (int osc = 0; osc < 3; ++osc)
                     {
-                        const double of = osc == 0 ? f * osc1Ratio : f * osc2Ratio;
+                        const double of = f * oscRatio[osc];
                         const float pos = jlimit (0.0f, 1.0f, basePos[osc] + lfo[0] * lfoPos * 0.5f) * (WavetableBank::numFrames - 1);
                         const int fr = jmin (WavetableBank::numFrames - 2, (int) pos);
                         frameFrac[osc] = pos - (float) fr;
                         // sync / quantize add harmonics: take a darker table so they stay clean
                         const double syncMul = (warp[osc] == 3) ? 1.0 + warpAmt[osc] * 7.0 : 1.0;
                         const int lev = WavetableBank::levelFor (of * syncMul * std::pow (2.0, detune * 50.0 / 1200.0), sr);
-                        t0[osc] = o.tableFor (set[osc], fr, lev, o.audioUserTable.get());
-                        t1[osc] = o.tableFor (set[osc], fr + 1, lev, o.audioUserTable.get());
+                        t0[osc] = o.tableFor (set[osc], fr, lev, o.audioUserTable.get(), o.audioImportTable.get());
+                        t1[osc] = o.tableFor (set[osc], fr + 1, lev, o.audioUserTable.get(), o.audioImportTable.get());
                         for (int u = 0; u < voices; ++u)
                             inc[osc][u] = of * std::pow (2.0, cents[u] / 1200.0) / sr * WavetableBank::tableSize;
                     }
@@ -1248,9 +1427,9 @@ namespace pulse
 
                     for (int i = 0; i < n; ++i)
                     {
-                        float oL[2] = { 0, 0 }, oR[2] = { 0, 0 };
+                        float oL[3] = { 0, 0, 0 }, oR[3] = { 0, 0, 0 };
                         float osc2Mono = 0.0f;
-                        for (int osc = 1; osc >= 0; --osc)   // osc 2 first (it can modulate osc 1)
+                        for (int osc = 2; osc >= 0; --osc)   // osc 2 before osc 1 (it can modulate it)
                         {
                             const bool silent = oscGain[osc] < 0.001f && ! (osc == 1 && fmAmt > 0.0f);
                             for (int u = 0; u < voices; ++u)
@@ -1279,7 +1458,7 @@ namespace pulse
                             oL[osc] *= oscPanL[osc];
                             oR[osc] *= oscPanR[osc];
                         }
-                        float l = oL[0] + oL[1], r = oR[0] + oR[1];
+                        float l = oL[0] + oL[1] + oL[2], r = oR[0] + oR[1] + oR[2];
                         if (noiseLvl > 0.001f)
                         {
                             float nz[2];
@@ -1317,7 +1496,7 @@ namespace pulse
                         };
                         if (f2type == 0 || routing == 0)      { l = f2 (f1 (l, 0), 0); r = f2 (f1 (r, 1), 1); }
                         else if (routing == 1)                { l = 0.5f * (f1 (l, 0) + f2 (l, 0)) * 1.4f; r = 0.5f * (f1 (r, 1) + f2 (r, 1)) * 1.4f; }
-                        else                                  { l = f1 (oL[0], 0) + f2 (oL[1], 0); r = f1 (oR[0], 1) + f2 (oR[1], 1); }
+                        else                                  { l = f1 (oL[0] + oL[2], 0) + f2 (oL[1], 0); r = f1 (oR[0] + oR[2], 1) + f2 (oR[1], 1); }   // (osc 3 goes with osc 1)
 
                         lastAmp = amp.getNextSample();
                         const float e = lastAmp * level;
@@ -1341,7 +1520,7 @@ namespace pulse
             }
 
             WavetableSynth& o;
-            double phases[2][7] {};
+            double phases[3][7] {};
             double subPhase = 0, lfoPhase[numLfos] {};
             float lfoRandom[numLfos] {};
             float noiseLp[2] {};

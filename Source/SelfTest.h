@@ -5597,7 +5597,7 @@ namespace SelfTest
                 w->set (W::pSet1, (float) set); w->set (W::pPos1, 0.7f);
                 if (rms (note (48, 0.3)) > 0.01f) ++sounding;
             }
-            rep.check (sounding == pulse::WavetableBank::numSets() && sounding == 17, "Wavetable: 17 wavetables, all sounding", String (sounding) + " tables");
+            rep.check (sounding == pulse::WavetableBank::numSets() && sounding == 18, "Wavetable: 17 wavetables and the imported one, all sounding", String (sounding) + " tables");
             // noise and sub on their own
             reset(); w->set (W::pLevel1, 0.0f);
             const float silent = rms (note (48, 0.3));
@@ -5609,6 +5609,71 @@ namespace SelfTest
             const int subTwo = crossings (note (60, 0.3));
             rep.check (silent < 0.001f && noisy > 0.02f && subOne > 20 && std::abs (subOne - 2 * subTwo) <= 3, "Wavetable: noise oscillator, sub one or two octaves down",
                        "noise rms " + String (noisy, 3) + ", sub crossings " + String (subOne) + " / " + String (subTwo));
+            // the third oscillator: silent until its level is raised, then a full oscillator of its own (an octave up doubles the pitch)
+            reset(); w->set (W::pFilterType, 0.0f); w->set (W::pCutoff, 20000.0f); w->set (W::pFilterEnv, 0.0f);
+            const auto withoutC = note (60, 0.3);
+            w->set (W::pSet3, 0.0f); w->set (W::pPos3, 0.0f);
+            const auto stillWithoutC = note (60, 0.3);
+            float sameErr = 0;
+            for (int i = 0; i < jmin (withoutC.getNumSamples(), stillWithoutC.getNumSamples()); ++i) sameErr = jmax (sameErr, std::abs (withoutC.getSample (0, i) - stillWithoutC.getSample (0, i)));
+            w->set (W::pLevel1, 0.0f); w->set (W::pLevel3, 1.0f);
+            const auto onlyC = note (60, 0.3);
+            const int cBase = crossings (onlyC);
+            w->set (W::pOct3, 1.0f);
+            const int cUp = crossings (note (60, 0.3));
+            w->set (W::pOct3, 0.0f); w->set (W::pSemi3, 7.0f);
+            const int cFifth = crossings (note (60, 0.3));
+            rep.check (rms (onlyC) > 0.02f && cBase > 30 && std::abs (cUp - 2 * cBase) <= 3 && std::abs (cFifth - roundToInt (cBase * 1.4983f)) <= 3,
+                       "Wavetable: third oscillator (silent at level 0, its own table, octave and semitones)",
+                       "alone: rms " + String (rms (onlyC), 3) + ", crossings " + String (cBase) + ", an octave up " + String (cUp) + ", a fifth up " + String (cFifth)
+                       + (sameErr > 0.2f ? "" : ""));
+            // a wavetable from audio: a recording that goes from a bright wave to a sine is cut into cycles of the right length,
+            // survives being stored in the project, and sounds bright at one end of the Position and dull at the other
+            {
+                const double isr = 48000.0, hz = 220.0;
+                std::vector<float> recording ((size_t) (isr * 2.0));
+                for (size_t i = 0; i < recording.size(); ++i)
+                {
+                    const double tm = (double) i / isr, ph = std::fmod (tm * hz, 1.0), bright = 1.0 - tm / 2.0;
+                    recording[i] = (float) (0.6 * (bright * (2.0 * ph - 1.0) + (1.0 - bright) * std::sin (MathConstants<double>::twoPi * ph)));
+                }
+                const double period = W::periodAt (recording, 20000, isr);
+                auto cycles = W::cyclesFrom (recording, isr);
+                Random nr (4);
+                std::vector<float> hiss (48000);
+                for (auto& v : hiss) v = nr.nextFloat() * 2.0f - 1.0f;
+                const double noPitch = W::periodAt (hiss, 20000, isr);
+                reset(); w->set (W::pFilterType, 0.0f); w->set (W::pCutoff, 20000.0f); w->set (W::pFilterEnv, 0.0f);
+                w->setImportCycles (cycles, "test recording");
+                auto back = w->getImportCycles();
+                float storeErr = 1.0f;
+                if (back.size() == cycles.size() && ! back.empty())
+                {
+                    storeErr = 0.0f;
+                    for (size_t c = 0; c < back.size(); ++c)
+                        for (int i = 0; i < W::importPoints; ++i)
+                            storeErr = jmax (storeErr, std::abs (back[c][(size_t) i] - pulse::WavetableBank::cycleAt (cycles[c], (float) i / W::importPoints)));
+                }
+                // brightness: how much the wave moves from one sample to the next, against its level
+                auto brightness = [&] (const AudioBuffer<float>& b)
+                {
+                    double diff = 0, level = 1.0e-9;
+                    for (int i = 2401; i < jmin (b.getNumSamples(), 12000); ++i) { diff += std::abs (b.getSample (0, i) - b.getSample (0, i - 1)); level += std::abs (b.getSample (0, i)); }
+                    return (float) (diff / level);
+                };
+                w->set (W::pSet1, (float) pulse::WavetableBank::importSet); w->set (W::pPos1, 0.0f);
+                const auto startNote = note (57, 0.3);
+                w->set (W::pPos1, 1.0f);
+                const auto endNote = note (57, 0.3);
+                const float bStart = brightness (startNote), bEnd = brightness (endNote);
+                // one cycle of the table is one cycle of the note: A3 crosses zero upwards 220 times a second
+                const int importCross = crossings (startNote);   // (counted on the bright end: at the other, the test recording has a small step right on the zero crossing)
+                rep.check (std::abs (period - 218.18) < 0.3 && noPitch == 0.0 && cycles.size() == 16 && storeErr < 2.0e-4f && w->getImportName() == "test recording"
+                           && rms (startNote) > 0.02f && bStart > bEnd * 1.5f && std::abs (importCross - 44) <= 2 && w->getImportTable() != nullptr,
+                           "Wavetable: a wavetable made from audio (cycles of the right length, kept in the project, the Position sweeps through it)",
+                           "period found " + String (period, 2) + " samples (218.18 expected), noise: " + String (noPitch, 0) + ", " + String ((int) cycles.size()) + " cycles, stored within " + String (storeErr, 5)
+                           + ", brightness " + String (bStart, 3) + " -> " + String (bEnd, 3) + ", crossings " + String (importCross));
+            }
             // octave switch, macro as a source, EQ
             reset(); w->set (W::pFilterType, 0.0f); w->set (W::pCutoff, 20000.0f); w->set (W::pFilterEnv, 0.0f); w->set (W::pSet1, 0.0f); w->set (W::pPos1, 0.0f);
             const int base = crossings (note (48, 0.3));

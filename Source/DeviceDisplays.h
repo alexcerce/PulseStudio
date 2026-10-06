@@ -263,8 +263,9 @@ namespace DeviceDisplays
                 const float fpos = pos[osc] * (pulse::WavetableBank::numFrames - 1);
                 const int f0 = jmin (pulse::WavetableBank::numFrames - 2, (int) fpos);
                 const float frac = fpos - (float) f0;
-                auto* a = synth.tableFor (sets[osc], f0, 0, user.get());
-                auto* b = synth.tableFor (sets[osc], f0 + 1, 0, user.get());
+                const auto imported = synth.getImportTable();
+                auto* a = synth.tableFor (sets[osc], f0, 0, user.get(), imported.get());
+                auto* b = synth.tableFor (sets[osc], f0 + 1, 0, user.get(), imported.get());
 
                 Path p;
                 const int points = jmax (2, (int) area.getWidth());

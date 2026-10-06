@@ -2,6 +2,11 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.15 - 2026-10-06
+
+- Wavetable: a third oscillator (the B / C tabs on the second oscillator's card show it; it is silent until its Level is turned up, so existing sounds are unchanged)
+- Wavetable: make a wavetable from any audio file (DRAW WAVE tab, "Import from audio..."): sixteen single cycles from across the file become the "Imported" table, which is stored in the project
+
 ## 0.99.14 - 2026-10-06
 
 - New effect: Pulse Spectral (freeze, blur, pitch shift and a delay per frequency)
