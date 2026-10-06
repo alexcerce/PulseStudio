@@ -322,6 +322,44 @@ namespace FactoryPresetsMore
                 { "Send (100% wet hall)", { { "space", 6 }, { "predelay", 20 }, { "lowcut", 150 }, { "mix", 1.0f } } } } },
 
             //----------------------------------------------------------------------------------
+            // Pulse Chorus: mode 0 chorus, 1 ensemble, 2 vibrato
+            { "pulseChorus", {
+                { "Classic Chorus", { { "mode", 0 }, { "rate", 0.8f }, { "amount", 0.5f }, { "delay", 7 }, { "mix", 0.5f } } },
+                { "Wide Clean Guitar", { { "mode", 0 }, { "rate", 0.45f }, { "amount", 0.6f }, { "delay", 12 }, { "lowcut", 150 }, { "mix", 0.4f } } },
+                { "String Ensemble", { { "mode", 1 }, { "rate", 0.6f }, { "amount", 0.7f }, { "delay", 9 }, { "highcut", 9000 }, { "mix", 0.5f } } },
+                { "Thick Pad", { { "mode", 1 }, { "rate", 0.3f }, { "amount", 0.9f }, { "delay", 14 }, { "mix", 0.6f } } },
+                { "Bass Chorus (lows stay put)", { { "mode", 0 }, { "rate", 0.7f }, { "amount", 0.5f }, { "delay", 8 }, { "lowcut", 250 }, { "mix", 0.4f } } },
+                { "Slow Detune", { { "mode", 0 }, { "rate", 0.12f }, { "amount", 1.0f }, { "delay", 18 }, { "mix", 0.5f } } },
+                { "Jet Feedback", { { "mode", 0 }, { "rate", 0.2f }, { "amount", 0.9f }, { "delay", 2 }, { "feedback", 0.7f }, { "mix", 0.5f } } },
+                { "Tape Wobble", { { "mode", 2 }, { "rate", 0.9f }, { "amount", 0.25f }, { "delay", 6 } } },
+                { "Deep Vibrato", { { "mode", 2 }, { "rate", 5.5f }, { "amount", 0.5f }, { "delay", 4 } } } } },
+
+            //----------------------------------------------------------------------------------
+            // Phaser-Flanger: mode 0 phaser, 1 flanger; stages 0..4 = 2, 4, 6, 8, 12; sync 0 free, 1 1/16 ... 7 4 bars
+            { "pulsePhaser", {
+                { "Classic Phaser", { { "mode", 0 }, { "rate", 0.4f }, { "amount", 0.6f }, { "centre", 700 }, { "feedback", 0.4f }, { "stages", 1 } } },
+                { "Slow Deep Sweep", { { "mode", 0 }, { "rate", 0.08f }, { "amount", 0.9f }, { "centre", 500 }, { "feedback", 0.6f }, { "stages", 3 } } },
+                { "Funky Clav (1/8)", { { "mode", 0 }, { "sync", 2 }, { "amount", 0.7f }, { "centre", 900 }, { "feedback", 0.5f }, { "stages", 1 } } },
+                { "Twelve-Stage Swirl", { { "mode", 0 }, { "rate", 0.25f }, { "amount", 0.8f }, { "centre", 800 }, { "feedback", 0.7f }, { "stages", 4 }, { "spread", 180 } } },
+                { "Subtle Shimmer", { { "mode", 0 }, { "rate", 0.6f }, { "amount", 0.3f }, { "centre", 2500 }, { "feedback", 0.2f }, { "stages", 0 }, { "mix", 0.35f } } },
+                { "Classic Flanger", { { "mode", 1 }, { "rate", 0.25f }, { "amount", 0.6f }, { "centre", 400 }, { "feedback", 0.6f } } },
+                { "Jet Plane (2 bars)", { { "mode", 1 }, { "sync", 6 }, { "amount", 1.0f }, { "centre", 600 }, { "feedback", 0.85f } } },
+                { "Through-Zero-ish", { { "mode", 1 }, { "rate", 0.15f }, { "amount", 0.9f }, { "centre", 1500 }, { "feedback", -0.7f } } },
+                { "Metallic Drone", { { "mode", 1 }, { "amount", 0 }, { "centre", 220 }, { "feedback", 0.9f }, { "mix", 0.6f } } } } },
+
+            //----------------------------------------------------------------------------------
+            // Auto Pan: shape 0 sine, 1 triangle, 2 saw up, 3 saw down, 4 square, 5 random; phase 180 = auto-pan, 0 = tremolo
+            { "pulseAutoPan", {
+                { "Slow Pan", { { "amount", 0.7f }, { "rate", 0.4f }, { "phase", 180 } } },
+                { "Pan in 1/4", { { "amount", 0.8f }, { "sync", 3 }, { "phase", 180 } } },
+                { "Classic Tremolo", { { "amount", 0.6f }, { "rate", 5.5f }, { "phase", 0 } } },
+                { "Vintage Amp Tremolo", { { "amount", 0.5f }, { "rate", 4.2f }, { "shape", 1 }, { "phase", 0 } } },
+                { "Helicopter (1/16 square)", { { "amount", 1.0f }, { "sync", 1 }, { "shape", 4 }, { "phase", 0 }, { "smooth", 0.25f } } },
+                { "Sidechain Pump (1/4)", { { "amount", 0.8f }, { "sync", 3 }, { "shape", 2 }, { "phase", 0 }, { "smooth", 0.3f } } },
+                { "Random Flicker", { { "amount", 0.7f }, { "sync", 1 }, { "shape", 5 }, { "phase", 90 }, { "smooth", 0.2f } } },
+                { "Wide Rotary", { { "amount", 0.5f }, { "rate", 6.5f }, { "phase", 90 } } } } },
+
+            //----------------------------------------------------------------------------------
             // Pulse Gate: mode 0 gate, 1 expander, 2 ducker
             { "pulseGate", {
                 { "Tight Drum Gate", { { "threshold", -30 }, { "range", 80 }, { "hysteresis", 4 }, { "attack", 0.05f }, { "hold", 20 }, { "release", 60 }, { "lookahead", 1.5f } } },

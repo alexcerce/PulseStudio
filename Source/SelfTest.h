@@ -193,6 +193,9 @@ namespace SelfTest
         }, "shot_multiband.png");
         shoot (pulse::Limiter::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Limiter::pGain, 8); p.set (pulse::Limiter::pCeiling, -1); }, "shot_limiter.png");
         shoot (pulse::ConvolutionReverb::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::ConvolutionReverb::pPredelay, 40); p.set (pulse::ConvolutionReverb::pLowCut, 180); p.set (pulse::ConvolutionReverb::pHighCut, 9000); }, "shot_space.png");
+        shoot (pulse::Chorus::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Chorus::pMode, 1); p.set (pulse::Chorus::pAmount, 0.7f); }, "shot_chorus.png");
+        shoot (pulse::PhaserFlanger::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::PhaserFlanger::pStages, 2); p.set (pulse::PhaserFlanger::pFeedback, 0.6f); }, "shot_phaser.png");
+        shoot (pulse::AutoPan::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::AutoPan::pAmount, 0.8f); p.set (pulse::AutoPan::pPhase, 120); }, "shot_autopan.png");
         shoot (pulse::Gate::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Gate::pThreshold, -22); p.set (pulse::Gate::pRange, 40); p.set (pulse::Gate::pHysteresis, 6); }, "shot_gate.png");
         shoot (pulse::TransientShaper::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::TransientShaper::pAttack, 0.6f); p.set (pulse::TransientShaper::pSustain, -0.4f); }, "shot_transient.png");
         shoot (pulse::DeEsser::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::DeEsser::pThreshold, -36); p.set (pulse::DeEsser::pRange, 10); }, "shot_deesser.png");
@@ -4006,6 +4009,138 @@ namespace SelfTest
                     LookAndFeel::setDefaultLookAndFeel (nullptr);
                 }
                 sp2 = nullptr;
+            }
+
+            // --- chorus, phaser-flanger, auto pan ---------------------------------------------------------
+            {
+                auto mk = [&] (const char* type) { auto pl = edit->getPluginCache().createNewPlugin (type, {}); t->pluginList.insertPlugin (pl, 0, nullptr); return pl; };
+                auto cp2 = mk (pulse::Chorus::xmlTypeName), pp2 = mk (pulse::PhaserFlanger::xmlTypeName), ap2 = mk (pulse::AutoPan::xmlTypeName);
+                auto* chorus = dynamic_cast<pulse::Chorus*> (cp2.get());
+                auto* phaser = dynamic_cast<pulse::PhaserFlanger*> (pp2.get());
+                auto* autoPan = dynamic_cast<pulse::AutoPan*> (ap2.get());
+                using CH = pulse::Chorus;
+                using PF = pulse::PhaserFlanger;
+                using AP = pulse::AutoPan;
+                AudioBuffer<float> out;
+                auto tone = sine (440, 0.25f);
+                auto maxDiff = [&] (const AudioBuffer<float>& b, int chA, int chB, bool againstTone)
+                {
+                    float d = 0;
+                    for (int i = 0; i < b.getNumSamples(); ++i) d = jmax (d, std::abs (b.getSample (chA, i) - (againstTone ? tone (0, i / sr) : b.getSample (chB, i))));
+                    return d;
+                };
+
+                // chorus: dry/wet at zero is the input; the wet copy moves (it differs from the input); width opens the sides; feedback stays stable
+                chorus->set (CH::pMix, 0.0f);
+                runFx (*chorus, tone, 0.5, &out);
+                const float chDry = maxDiff (out, 0, 0, true);
+                chorus->set (CH::pMix, 0.5f);
+                runFx (*chorus, tone, 1.0, &out);
+                const float chWet = maxDiff (out, 0, 0, true), chSides = maxDiff (out, 0, 1, false);
+                chorus->set (CH::pWidth, 0.0f);
+                runFx (*chorus, tone, 1.0, &out);
+                const float chMono = maxDiff (out, 0, 1, false);
+                chorus->set (CH::pWidth, 1.0f); chorus->set (CH::pMode, 1); chorus->set (CH::pFeedback, 0.9f); chorus->set (CH::pAmount, 1.0f);
+                const float chLoud = runFx (*chorus, tone, 3.0);
+                // vibrato: only the moving copy, so the pitch really wobbles: the level stays, the waveform no longer lines up
+                chorus->set (CH::pMode, 2); chorus->set (CH::pFeedback, 0.0f); chorus->set (CH::pRate, 5.0f);
+                const float vibLevel = runFx (*chorus, tone, 1.0, &out) - Decibels::gainToDecibels (0.25f);
+                chorus->set (CH::pMode, 0); chorus->set (CH::pRate, 0.8f); chorus->set (CH::pAmount, 0.5f);
+                const bool chorusOk = chDry < 1.0e-6f && chWet > 0.02f && chSides > 0.01f && chMono < 1.0e-6f && chLoud < 12.0f && chLoud > -40.0f && std::abs (vibLevel) < 0.5f && chorus->voices() == 1;
+                rep.check (chorusOk, "Pulse Chorus (dry at 0%, moving copy, width, stable feedback, vibrato)",
+                           "differs from the input by " + String (chWet, 3) + ", sides differ by " + String (chSides, 3) + " (width 0: " + String (chMono, 6) + "), ensemble with 90% feedback peaks at "
+                           + String (chLoud, 1) + " dB, vibrato level " + String (vibLevel, 2) + " dB");
+
+                // phaser, standing still: two stages cancel the centre frequency and leave the lows; more feedback keeps it stable
+                phaser->set (PF::pAmount, 0.0f); phaser->set (PF::pCentre, 1000.0f); phaser->set (PF::pFeedback, 0.0f); phaser->set (PF::pStages, 0); phaser->set (PF::pMix, 0.5f);
+                const float a10c = Decibels::decibelsToGain (-10.0f);
+                const float phNotch = runFx (*phaser, sine (1000, a10c), 0.5) + 10.0f, phLow = runFx (*phaser, sine (60, a10c), 0.5) + 10.0f;
+                const float phShown = Decibels::gainToDecibels (phaser->responseAt (1000.0, 1000.0), -100.0f);
+                // flanger: a comb: halfway between the multiples of the centre is cancelled, the multiples pass
+                phaser->set (PF::pMode, 1);
+                const float flNotch = runFx (*phaser, sine (500, a10c), 0.5) + 10.0f, flPeak = runFx (*phaser, sine (1000, a10c), 0.5) + 10.0f;
+                phaser->set (PF::pFeedback, 0.95f); phaser->set (PF::pAmount, 1.0f); phaser->set (PF::pRate, 3.0f);
+                Random prng (3);
+                const float flLoud = runFx (*phaser, [&prng] (int, double) { return (prng.nextFloat() * 2.0f - 1.0f) * 0.1f; }, 3.0);
+                phaser->set (PF::pMode, 0); phaser->set (PF::pFeedback, 0.4f); phaser->set (PF::pAmount, 0.6f); phaser->set (PF::pRate, 0.4f); phaser->set (PF::pCentre, 700.0f); phaser->set (PF::pStages, 1);
+                const bool phaserOk = phNotch < -30.0f && std::abs (phLow) < 1.0f && phShown < -30.0f && flNotch < -25.0f && std::abs (flPeak) < 0.5f && flLoud < 12.0f;
+                rep.check (phaserOk, "Phaser-Flanger (phaser notch at the centre, flanger comb, stable at full feedback, the display agrees)",
+                           "phaser 1 kHz " + String (phNotch, 1) + " dB (drawn " + String (phShown, 1) + "), 60 Hz " + String (phLow, 2) + "; flanger 500 Hz " + String (flNotch, 1) + ", 1 kHz " + String (flPeak, 2)
+                           + "; noise at 95% feedback peaks at " + String (flLoud, 1) + " dB");
+
+                // auto pan: the two sides take turns and always add up to the same; phase 0 is a tremolo; amount 0 does nothing
+                autoPan->set (AP::pAmount, 1.0f); autoPan->set (AP::pRate, 4.0f); autoPan->set (AP::pPhase, 180.0f); autoPan->set (AP::pSmooth, 0.0f);
+                auto dc = [] (int, double) { return 0.5f; };
+                runFx (*autoPan, dc, 1.0, &out);
+                float sumErr = 0, lMin = 1, lMax = 0;
+                for (int i = 4800; i < out.getNumSamples(); ++i)
+                {
+                    sumErr = jmax (sumErr, std::abs (out.getSample (0, i) + out.getSample (1, i) - 0.5f));
+                    lMin = jmin (lMin, out.getSample (0, i)); lMax = jmax (lMax, out.getSample (0, i));
+                }
+                autoPan->set (AP::pPhase, 0.0f);
+                runFx (*autoPan, dc, 1.0, &out);
+                const float tremSides = maxDiff (out, 0, 1, false);
+                autoPan->set (AP::pShape, 4);   // square: the steps are rounded off, never a jump from one sample to the next
+                runFx (*autoPan, dc, 1.0, &out);
+                float jump = 0;
+                for (int i = 4801; i < out.getNumSamples(); ++i) jump = jmax (jump, std::abs (out.getSample (0, i) - out.getSample (0, i - 1)));
+                autoPan->set (AP::pShape, 0); autoPan->set (AP::pAmount, 0.0f);
+                runFx (*autoPan, tone, 0.3, &out);
+                const float panOff = maxDiff (out, 0, 0, true);
+                autoPan->set (AP::pAmount, 0.6f); autoPan->set (AP::pPhase, 180.0f); autoPan->set (AP::pSmooth, 0.1f); autoPan->set (AP::pRate, 2.0f);
+                const double syncedHz = autoPan->rateNow (2.0f, 3), bpmNow = edit->tempoSequence.getTempo (0)->getBpm();
+                const bool panOk = sumErr < 0.01f && lMin < 0.02f && lMax > 0.48f && tremSides < 1.0e-6f && jump < 0.05f && panOff < 1.0e-6f && std::abs (syncedHz - bpmNow / 60.0) < 0.01;
+                rep.check (panOk, "Auto Pan (sides take turns and add up, tremolo at phase 0, no clicks on a square, tempo sync)",
+                           "left swings " + String (lMin, 2) + " to " + String (lMax, 2) + " of 0.50, sum off by " + String (sumErr, 4) + ", biggest step on a square " + String (jump, 3)
+                           + ", 1/4 at " + String (bpmNow, 0) + " bpm = " + String (syncedHz, 2) + " Hz");
+
+                // their windows
+                {
+                    PulseLookAndFeel laf;
+                    LookAndFeel::setDefaultLookAndFeel (&laf);
+                    EditViewState evs (*edit, sm);
+                    ModUI::ChorusView cv (*chorus);
+                    ModUI::PhaserView pv (*phaser);
+                    ModUI::AutoPanView av (*autoPan);
+                    Image img (Image::ARGB, 1000, 520, true);
+                    for (Component* c : { (Component*) &cv, (Component*) &pv, (Component*) &av }) { c->setSize (1000, 520); Graphics g (img); c->paint (g); }
+                    const float d0 = chorus->get (CH::pDelay), am0 = chorus->get (CH::pAmount), r0 = chorus->get (CH::pRate), c0 = phaser->get (PF::pCentre), f0 = phaser->get (PF::pFeedback), pa0 = phaser->get (PF::pAmount);
+                    const float aa0 = autoPan->get (AP::pAmount), ar0 = autoPan->get (AP::pRate), ap0 = autoPan->get (AP::pPhase);
+                    cv.dragHandle (0, 0.0f, -40.0f);
+                    cv.dragAmountRate (-80.0f, -30.0f);
+                    pv.dragHandle (0, 80.0f, -40.0f);
+                    pv.dragHandle (1, -60.0f, 0.0f);
+                    av.dragAmountRate (-80.0f, 60.0f);
+                    av.dragHandle (1, -100.0f, 0.0f);
+                    const bool handlesOk = chorus->get (CH::pDelay) > d0 + 1.0f && chorus->get (CH::pAmount) != am0 && chorus->get (CH::pRate) > r0 * 1.5f
+                                           && phaser->get (PF::pCentre) > c0 * 1.2f && phaser->get (PF::pFeedback) > f0 + 0.05f && phaser->get (PF::pAmount) < pa0 - 0.02f
+                                           && autoPan->get (AP::pAmount) > aa0 + 0.05f && autoPan->get (AP::pRate) > ar0 * 1.5f && autoPan->get (AP::pPhase) < ap0 - 10.0f;
+                    StringArray missing;
+                    for (auto* pp : std::initializer_list<pulse::PulsePlugin*> { chorus, phaser, autoPan })
+                    {
+                        DeviceEditors::Editor ed (evs, *pp);
+                        ed.setSize (1100, 760);
+                        std::set<te::AutomatableParameter*> seen;
+                        std::function<void (Component&)> walk = [&] (Component& c)
+                        {
+                            if (auto* k = dynamic_cast<ParamKnob*> (&c)) seen.insert (&k->getParameter());
+                            if (auto* k = dynamic_cast<ParamChoice*> (&c)) seen.insert (&k->getParameter());
+                            if (auto* k = dynamic_cast<ParamCombo*> (&c)) seen.insert (&k->getParameter());
+                            if (auto* k = dynamic_cast<ParamToggle*> (&c)) seen.insert (&k->getParameter());
+                            for (auto* chd : c.getChildren()) walk (*chd);
+                        };
+                        walk (ed);
+                        for (int i = 0; i < pp->numParams(); ++i) if (! seen.count (&*pp->param (i))) missing.add (pp->getName() + ": " + pp->param (i)->paramID);
+                        if (! DeviceEditors::hasFullEditor (*pp)) missing.add (pp->getName() + ": no full window");
+                    }
+                    rep.check (handlesOk && missing.isEmpty(), "Chorus, Phaser-Flanger and Auto Pan windows: points on the graph, and a control for every parameter",
+                               missing.isEmpty() ? "chorus rate " + String (r0, 2) + " -> " + String (chorus->get (CH::pRate), 2) + " Hz, phaser centre " + String (roundToInt (c0)) + " -> "
+                                                   + String (roundToInt (phaser->get (PF::pCentre))) + " Hz, pan phase " + String (roundToInt (ap0)) + " -> " + String (roundToInt (autoPan->get (AP::pPhase)))
+                                                 : missing.joinIntoString ("; "));
+                    LookAndFeel::setDefaultLookAndFeel (nullptr);
+                }
+                cp2 = nullptr; pp2 = nullptr; ap2 = nullptr;
             }
 
             // displays build

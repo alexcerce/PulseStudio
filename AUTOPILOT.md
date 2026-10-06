@@ -144,8 +144,8 @@ well EVERYWHERE." So, besides the list:
 - Nothing that already works is taken away, and a rough edge found on the way is fixed then, or written here.
 
 1. Effects: [x] transient shaper  [x] de-esser  [x] gate / expander  [x] convolution reverb (built-in spaces)
-   [ ] shimmer reverb  [ ] spectral (freeze / blur / shift / spectral delay)  [ ] chorus / flanger / phaser
-   [ ] tremolo / auto-pan  [ ] frequency shifter  [ ] bit reduction  [ ] amp + cabinet  [ ] exciter  [ ] beat repeat
+   [ ] shimmer reverb  [ ] spectral (freeze / blur / shift / spectral delay)  [x] chorus / flanger / phaser
+   [x] tremolo / auto-pan  [ ] frequency shifter  [ ] bit reduction  [ ] amp + cabinet  [ ] exciter  [ ] beat repeat
    [ ] grain delay  [ ] looper  [ ] resonators
 2. Instruments: [ ] Wavetable third oscillator + wavetable import from audio  [ ] sampler (slices, per-slice stretch,
    zones)  [ ] analogue-style subtractive synth  [ ] physical-modelling instrument (string / mallet)
@@ -396,3 +396,6 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   space / size / decay / reverse / file change, and synchronously in prepare() so renders are right from the first
   block), ConvolutionDisplay.h (five handles). A file as the space is the state property "irFile". 15 presets.
   253 checks. Ideas left: a live spectrum behind the De-esser band; drag a file onto the Pulse Space window.
+- 2026-10-06: v0.99.9. Pulse Chorus, Phaser-Flanger, Auto Pan: Source/ModFx.h (ModEffect base: free / tempo-synced
+  LFO, Smooth for settings changed while playing), ModFxDisplay.h (ModUI views and panels). 9 / 9 / 8 presets.
+  260 checks. The device fuzz caught the ensemble's feedback loop gaining with three voices (now the average).
