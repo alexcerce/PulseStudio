@@ -568,3 +568,7 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   the Mastering menu of the master strip, command mixer.referenceToggle, 5 presets. Measured: a -6.1 LUFS song
   against a -20.8 LUFS mix is turned by -14.7 dB and heard at the mix's level. The song is held in memory
   (15 minutes at most). Not judged by ear. 313 checks, quick tier. Group 5 is complete: slow tier next.
+- 2026-10-06: slow tier for group 5 (v0.99.23 to v0.99.31), all clean: Debug build, Debug self-test 313 / 313,
+  random input 4000 events on the demo project (seed 311) and on the 30-track project (seed 312), command fuzz
+  504 commands (seed 313), installer PulseStudio-0.99.31-Setup.exe. Group 5 is done. Next: group 6 (workflow);
+  group 4's per-note pitch and time editing of audio is still owed and wants a run of its own.
