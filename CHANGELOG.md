@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.23 - 2026-10-06
+
+- Clips: crop to the loop range, and consolidate several clips into one (Ctrl+Shift+J)
+
 ## 0.99.22 - 2026-10-06
 
 - Step grid: the piano roll can show a drum clip as a grid of steps, a row per drum pad

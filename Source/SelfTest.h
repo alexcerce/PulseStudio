@@ -1379,6 +1379,90 @@ namespace SelfTest
             edit->getUndoManager().clearUndoHistory();
         }
 
+        // --- v0.99.23: crop and consolidate ------------------------------------------------------------------
+        {
+            rep.step ("crop and consolidate");
+            auto ct2 = ClipImport::createContentTrack (*edit, "Join test", false);
+            auto beat = [&] (double b) { return EngineHelpers::beatToTime (*edit, b); };
+            // two MIDI clips become one, with every note where it sounded before; undo brings the two back
+            auto m1 = te::insertMIDIClip (*ct2, "a", { beat (0.0), beat (4.0) });
+            auto m2 = te::insertMIDIClip (*ct2, "b", { beat (8.0), beat (12.0) });
+            m1->getSequence().addNote (60, te::BeatPosition::fromBeats (1.0), te::BeatDuration::fromBeats (1.0), 100, 0, nullptr);
+            m2->getSequence().addNote (67, te::BeatPosition::fromBeats (2.0), te::BeatDuration::fromBeats (1.0), 90, 0, nullptr);
+            te::Clip::Array both;
+            both.add (m1.get()); both.add (m2.get());
+            const bool can = EditingOps::canConsolidate (both);
+            edit->getUndoManager().beginNewTransaction ("consolidate");
+            auto* joined = dynamic_cast<te::MidiClip*> (EditingOps::consolidate (both, &sm));
+            bool midiOk = can && joined != nullptr && ct2->getClips().size() == 1;
+            if (joined != nullptr)
+            {
+                std::vector<std::pair<int, double>> notes;
+                const double clipBeat = EngineHelpers::timeToBeat (*edit, joined->getPosition().getStart());
+                for (auto* n : joined->getSequence().getNotes()) notes.push_back ({ n->getNoteNumber(), clipBeat + n->getStartBeat().inBeats() - joined->getContentBeatAtTime (joined->getPosition().getStart()).inBeats() });
+                std::sort (notes.begin(), notes.end());
+                midiOk = midiOk && notes.size() == 2 && notes[0].first == 60 && std::abs (notes[0].second - 1.0) < 0.01 && notes[1].first == 67 && std::abs (notes[1].second - 10.0) < 0.01
+                         && std::abs (EngineHelpers::timeToBeat (*edit, joined->getPosition().getEnd()) - 12.0) < 0.01;
+            }
+            edit->getUndoManager().undo();
+            const bool midiUndone = ct2->getClips().size() == 2;
+            for (int i = ct2->getClips().size(); --i >= 0;) ct2->getClips()[i]->removeFromParent();
+
+            // two audio clips become one file: the first sound, the gap between them as silence, the second sound
+            auto writeTone = [&] (const String& name, double hz)
+            {
+                auto f = dir.getChildFile (name);
+                f.deleteFile();
+                AudioBuffer<float> b (2, 24000);
+                for (int i = 0; i < 24000; ++i) { const float v = 0.5f * (float) std::sin (MathConstants<double>::twoPi * hz * i / 48000.0); b.setSample (0, i, v); b.setSample (1, i, v); }
+                WavAudioFormat wav;
+                if (auto os = f.createOutputStream())
+                    if (std::unique_ptr<AudioFormatWriter> w { wav.createWriterFor (os.release(), 48000.0, 2, 24, {}, 0) }) w->writeFromAudioSampleBuffer (b, 0, 24000);
+                return f;
+            };
+            te::Clip::Ptr a1 = ClipImport::importFile (*ct2, *edit, writeTone ("join_a.wav", 300.0), te::TimePosition::fromSeconds (0.0));
+            te::Clip::Ptr a2 = ClipImport::importFile (*ct2, *edit, writeTone ("join_b.wav", 900.0), te::TimePosition::fromSeconds (1.0));
+            // crop first: the second clip trimmed to its middle keeps its sound in place
+            te::Clip::Array justB;
+            justB.add (a2.get());
+            const int cropped = a2 != nullptr ? EditingOps::cropToRange (justB, { te::TimePosition::fromSeconds (1.1), te::TimePosition::fromSeconds (1.4) }) : 0;
+            const bool cropOk = cropped == 1 && a2 != nullptr && std::abs (a2->getPosition().getStart().inSeconds() - 1.1) < 0.001 && std::abs (a2->getPosition().getEnd().inSeconds() - 1.4) < 0.001
+                                && std::abs (a2->getPosition().getOffset().inSeconds() - 0.1) < 0.001;
+            const int notReached = a1 != nullptr ? EditingOps::cropToRange (justB, { te::TimePosition::fromSeconds (5.0), te::TimePosition::fromSeconds (6.0) }) : 1;
+            te::Clip::Array audioBoth;
+            if (a1 != nullptr) audioBoth.add (a1.get());
+            if (a2 != nullptr) audioBoth.add (a2.get());
+            auto* joinedAudio = dynamic_cast<te::WaveAudioClip*> (EditingOps::consolidate (audioBoth, &sm));
+            bool audioOk = joinedAudio != nullptr && ct2->getClips().size() == 1;
+            String levels;
+            if (joinedAudio != nullptr)
+            {
+                audioOk = audioOk && std::abs (joinedAudio->getPosition().getStart().inSeconds()) < 0.001 && std::abs (joinedAudio->getPosition().getEnd().inSeconds() - 1.4) < 0.002;
+                const auto file = joinedAudio->getOriginalFile();
+                if (std::unique_ptr<AudioFormatReader> rd { edit->engine.getAudioFileFormatManager().readFormatManager.createReaderFor (file) })
+                {
+                    AudioBuffer<float> all (2, (int) rd->lengthInSamples);
+                    rd->read (&all, 0, (int) rd->lengthInSamples, 0, true, true);
+                    auto level = [&] (double from, double len) { const int a = (int) (from * rd->sampleRate), n = (int) (len * rd->sampleRate); return a + n <= all.getNumSamples() ? Decibels::gainToDecibels (all.getRMSLevel (0, a, n), -120.0f) : -120.0f; };
+                    const float first = level (0.1, 0.3), gap = level (0.6, 0.4), second = level (1.15, 0.2);
+                    levels = String (first, 1) + " / " + String (gap, 0) + " / " + String (second, 1) + " dB";
+                    audioOk = audioOk && first > -12.0f && gap < -80.0f && second > -12.0f && std::abs (rd->lengthInSamples / rd->sampleRate - 1.4) < 0.01;
+                }
+                else audioOk = false;
+            }
+            // a MIDI clip and an audio clip cannot be joined
+            auto m3 = te::insertMIDIClip (*ct2, "c", { beat (20.0), beat (24.0) });
+            te::Clip::Array mixed;
+            for (auto c : ct2->getClips()) mixed.add (c);
+            const bool mixedRefused = ! EditingOps::canConsolidate (mixed) && EditingOps::consolidate (mixed) == nullptr;
+            rep.check (midiOk && midiUndone && cropOk && notReached == 0 && audioOk && mixedRefused,
+                       "Crop and consolidate (MIDI clips joined with their notes in place, undo; audio clips joined into one file with the gap as silence; crop keeps the sound in place)",
+                       String (midiOk ? "" : "MIDI join wrong; ") + (midiUndone ? "" : "undo wrong; ") + (cropOk ? "" : "crop wrong; ") + (audioOk ? "" : "audio join wrong; ") + (mixedRefused ? "" : "mixed not refused; ")
+                       + "joined file: " + levels);
+            edit->deleteTrack (ct2);
+            edit->getUndoManager().clearUndoHistory();
+        }
+
         // --- sharing: collect all, templates -----------------------------------------------------------
         {
             auto outside = File::getSpecialLocation (File::tempDirectory).getChildFile ("PulseStudioSelfTestOutside");

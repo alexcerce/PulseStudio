@@ -810,6 +810,22 @@ private:
             if (auto t = EngineHelpers::getSelectedTrack (*sm))
                 EditingOps::bounceToNewTrack (*t, EditingOps::rangeOf (EditingOps::selectedClips (*sm)));
         }));
+        {
+            const auto sel = EditingOps::selectedClips (*sm);
+            const auto loop = edit.getTransport().getLoopRange();
+            bool reaches = false;
+            for (auto c : sel) reaches = reaches || c->getEditTimeRange().overlaps (loop);
+            m.addItem ("Crop to the loop range", ! loop.isEmpty() && reaches, false, [sm, &edit, loop]
+            {
+                edit.getUndoManager().beginNewTransaction ("Crop clips");
+                EditingOps::cropToRange (EditingOps::selectedClips (*sm), loop);
+            });
+            m.addItem ("Consolidate into one clip", EditingOps::canConsolidate (sel), false, [sm, &edit]
+            {
+                edit.getUndoManager().beginNewTransaction ("Consolidate clips");
+                EditingOps::consolidate (EditingOps::selectedClips (*sm), sm);
+            });
+        }
         m.addItem (PopupMenu::Item ("Delete").setAction ([sm, &edit] { edit.getUndoManager().beginNewTransaction ("Delete clips"); EditingOps::deleteSelected (*sm); }));
 
         // takes (loop-recorded MIDI takes, or audio takes combined from several passes)

@@ -253,6 +253,86 @@ namespace EditingOps
     }
 
     //==============================================================================
+    // Crop and consolidate
+    /** Trims clips to a time range: what lies outside it is cut off, and what is left stays where it was in time.
+        Clips that do not reach into the range are left alone. Returns how many were trimmed. */
+    inline int cropToRange (const te::Clip::Array& clips, te::TimeRange range)
+    {
+        int trimmed = 0;
+        if (range.isEmpty()) return 0;
+        for (auto c : clips)
+        {
+            const auto r = c->getEditTimeRange();
+            if (! r.overlaps (range)) continue;
+            bool changed = false;
+            if (range.getStart() > r.getStart()) { c->setStart (range.getStart(), true, false); changed = true; }
+            if (range.getEnd() < r.getEnd())     { c->setEnd (range.getEnd(), true); changed = true; }
+            if (changed) ++trimmed;
+        }
+        return trimmed;
+    }
+
+    /** True if these clips can be joined: two or more, all on one track, all MIDI or all audio. */
+    inline bool canConsolidate (const te::Clip::Array& clips)
+    {
+        if (clips.size() < 2) return false;
+        const bool midi = dynamic_cast<te::MidiClip*> (clips.getFirst().get()) != nullptr;
+        for (auto c : clips)
+        {
+            if (c->getTrack() != clips.getFirst()->getTrack()) return false;
+            if (midi ? dynamic_cast<te::MidiClip*> (c) == nullptr : dynamic_cast<te::WaveAudioClip*> (c) == nullptr) return false;
+        }
+        return true;
+    }
+
+    /** Joins clips of one track into a single clip from the start of the first to the end of the last. MIDI clips become
+        one MIDI clip with all their notes. Audio clips are written, as they sound before the track's devices and fader
+        (with their own fades, gain, warp and reverse), into one new file beside the project. Returns the new clip. */
+    inline te::Clip* consolidate (te::Clip::Array clips, te::SelectionManager* sm = nullptr)
+    {
+        if (! canConsolidate (clips)) return nullptr;
+        auto* track = dynamic_cast<te::AudioTrack*> (clips.getFirst()->getTrack());
+        if (track == nullptr) return nullptr;
+        auto& e = track->edit;
+        const auto range = rangeOf (clips);
+        auto clipAt = [track] (te::TimePosition t) -> te::Clip*
+        {
+            for (auto c : track->getClips()) if (std::abs ((c->getPosition().getStart() - t).inSeconds()) < 0.001) return c;
+            return nullptr;
+        };
+
+        if (dynamic_cast<te::MidiClip*> (clips.getFirst().get()) != nullptr)
+        {
+            juce::Array<te::MidiClip*> midi;
+            for (auto c : clips) midi.add (dynamic_cast<te::MidiClip*> (c));
+            if (te::mergeMidiClips (midi, sm).failed()) return nullptr;
+            return clipAt (range.getStart());
+        }
+
+        waitForClipProxies (e);
+        te::Renderer::Parameters p (e);
+        p.tracksToDo = te::toBitSet (juce::Array<te::Track*> { track });
+        for (auto c : clips) p.allowedClips.add (c);
+        p.destFile = bounceFolder (e).getNonexistentChildFile (File::createLegalFileName (track->getName() + " consolidated"), ".wav", false);
+        p.audioFormat = e.engine.getAudioFileFormatManager().getWavFormat();
+        p.bitDepth = 24;
+        p.sampleRateForAudio = 48000.0;
+        p.time = range;
+        p.endAllowance = te::TimeDuration::fromSeconds (0.0);
+        p.usePlugins = false;
+        p.useMasterPlugins = false;
+        p.checkNodesForAudio = false;
+        const auto f = renderDetached ("Consolidating " + track->getName(), p);
+        if (! f.existsAsFile()) return nullptr;
+
+        const String name = clips.getFirst()->getName();
+        for (auto c : clips) c->removeFromParent();
+        auto joined = track->insertWaveClip (name, f, { { range.getStart(), range.getLength() }, {} }, false);
+        if (joined != nullptr && sm != nullptr) sm->selectOnly (joined.get());
+        return joined.get();
+    }
+
+    //==============================================================================
     // Groups: freeze (render the submix to an audio track and mute the group) and flatten
     static inline const Identifier frozenGroupID { "pulseFrozenGroup" };
 

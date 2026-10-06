@@ -238,6 +238,18 @@ public:
             auto tracks = selectionManager.getItemsOfType<te::AudioTrack>();
             if (! tracks.isEmpty()) { um ("Group tracks"); EditingOps::groupTracks (*edit, tracks, "Group"); }
         });
+        c.add ("edit.crop", "Crop the selected clips to the loop range", "Edit", {}, [this]
+        {
+            if (edit == nullptr) return;
+            edit->getUndoManager().beginNewTransaction ("Crop clips");
+            EditingOps::cropToRange (EditingOps::selectedClips (selectionManager), edit->getTransport().getLoopRange());
+        });
+        c.add ("edit.consolidate", "Consolidate the selected clips into one", "Edit", key ('J', ctrl | shiftM), [this]
+        {
+            if (edit == nullptr) return;
+            edit->getUndoManager().beginNewTransaction ("Consolidate clips");
+            EditingOps::consolidate (EditingOps::selectedClips (selectionManager), &selectionManager);
+        });
         c.add ("edit.bounce", "Bounce selection to a new track", "Edit", key ('J', ctrl), [this]
         {
             auto clips = EditingOps::selectedClips (selectionManager);
@@ -644,7 +656,7 @@ public:
         for (auto& c : commands->all())
         {
             const bool needsAPerson = c.id.startsWith ("file.") || c.id.startsWith ("app.") || c.name.contains ("...")
-                                      || c.id == "view.palette" || c.id == "transport.record" || c.id == "edit.bounce" || c.id == "edit.undoHistory";
+                                      || c.id == "view.palette" || c.id == "transport.record" || c.id == "edit.bounce" || c.id == "edit.consolidate" || c.id == "edit.undoHistory";
             if (! needsAPerson) ids.add (c.id);   // (nothing that changes saved settings, such as the theme)
         }
         return ids;

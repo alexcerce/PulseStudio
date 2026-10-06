@@ -169,7 +169,7 @@ well EVERYWHERE." So, besides the list:
 3. MIDI: [x] note length  [x] pitch  [x] random  [x] velocity  [x] drawable arpeggiator / note-echo patterns
    [x] chord track + chord progressions (piano roll and MIDI effects follow it)  [x] step sequencer view for drum clips
 4. Audio editing: [ ] warp by dragging transients on the waveform, follow-tempo per clip  [ ] per-note pitch and time
-   editing of audio  [ ] reverse / crop / consolidate clips  [ ] clip launch recorded into the arrangement with quantised punch
+   editing of audio  [x] reverse / crop / consolidate clips  [ ] clip launch recorded into the arrangement with quantised punch
 5. Mixing: [ ] VCA faders  [ ] reference track A/B with loudness match  [ ] mastering chain preset + assistant
    [ ] match EQ  [ ] linear-phase EQ mode  [ ] loudness report on export  [ ] automatic freeze under load
    [ ] sidechain picker on every device
@@ -500,3 +500,10 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   step grid): Debug self-test 301 pass; monkey seed 2201 on the demo project and 2202 on the 30-track project;
   command fuzz 2201 (468 commands, including the new view.steps and midi.fitChords): all clean, no crash report.
   Installer built. Nothing owed. Programme groups 1, 2 and 3 are complete.
+- 2026-10-06: v0.99.23. EditingOps::cropToRange / canConsolidate / consolidate (MIDI through te::mergeMidiClips;
+  audio rendered with only those clips allowed and usePlugins = false, so the track's devices and fader are not
+  printed). Clip menu items and commands edit.crop, edit.consolidate (the latter kept out of the command fuzz,
+  like edit.bounce, because it renders). Reverse already existed. 302 checks, quick tier.
+  Left in group 4: warp by dragging transients on the waveform; per-note pitch and time editing of audio (a
+  large item: needs pitch tracking and a resynthesis that the engine does not have ready-made); clip launch
+  recorded into the arrangement with quantised punch. Read SampleEditor.h, ClipProperties.h (warp), SessionView.h.
