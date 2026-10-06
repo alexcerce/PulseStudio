@@ -12,6 +12,17 @@ struct PulseEngineBehaviour : public te::EngineBehaviour
 {
     bool canScanPluginsOutOfProcess() override { return true; }
 
+    /** The engine allows only 4 devices on the master and 16 on a track unless told otherwise. The master already holds
+        its meter and its loudness readout, which left room for two: not enough for a mastering chain. */
+    te::EditLimits getEditLimits() override
+    {
+        te::EditLimits l;
+        l.maxNumMasterPlugins = 24;
+        l.maxPluginsOnTrack = 48;
+        l.maxPluginsOnClip = 8;
+        return l;
+    }
+
     // Audio worker threads: one per physical core is plenty (the engine's default is every logical core but one,
     // and each of them wakes for every block of audio even when the project is doing nothing).
     int getNumberOfCPUsToUseForAudio() override

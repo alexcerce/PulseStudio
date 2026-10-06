@@ -170,8 +170,8 @@ well EVERYWHERE." So, besides the list:
    [x] chord track + chord progressions (piano roll and MIDI effects follow it)  [x] step sequencer view for drum clips
 4. Audio editing: [x] warp by dragging transients on the waveform, follow-tempo per clip  [ ] per-note pitch and time
    editing of audio  [x] reverse / crop / consolidate clips  [x] clip launch recorded into the arrangement with quantised punch
-5. Mixing: [ ] VCA faders  [ ] reference track A/B with loudness match  [ ] mastering chain preset + assistant
-   [ ] match EQ  [ ] linear-phase EQ mode  [ ] loudness report on export  [ ] automatic freeze under load
+5. Mixing: [ ] VCA faders  [ ] reference track A/B with loudness match  [x] mastering chain preset + assistant
+   [ ] match EQ  [ ] linear-phase EQ mode  [x] loudness report on export  [ ] automatic freeze under load
    [ ] sidechain picker on every device
 6. Workflow: [ ] device racks with parallel chains  [ ] track alternatives  [ ] project and track notes
    [ ] browser preview in time and in key  [ ] macros on the track header  [ ] toolbar / window layouts
@@ -519,3 +519,11 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   Group 4 has one item left, and it is a big one: per-note pitch and time editing of audio (pitch tracking,
   notes shown as blobs on the clip, each one dragged in pitch or time, the result written to a new file).
   Melodyne and other ARA plugins can already be used on a clip for this. Do it as a run of its own.
+- 2026-10-06: v0.99.26. Mastering.h: addChain / measure / gainFor / assist; commands mixer.masteringChain and
+  mixer.masterAssist (the latter kept out of the command fuzz: it renders the song up to three times); a Master
+  button beside the Limiter button on the master strip. Found on the way: the engine's EditLimits allowed only 4
+  master devices (2 already used by the meter and the loudness readout) and 16 per track; PulseEngineBehaviour
+  now returns 24 / 48 / 8 per clip. A project that has never been saved cannot be rendered (measure returns
+  nothing): the message says so. The loudness report on export existed already (ticked). 305 checks, quick tier.
+  Left in group 5: VCA faders, reference track A/B, match EQ, linear-phase EQ mode, automatic freeze under load,
+  sidechain picker on every device (check that the Gate's card shows the picker the Compressor's does).

@@ -2,6 +2,11 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.26 - 2026-10-06
+
+- Mastering: a ready chain for the master and an assistant that sets the loudness (Master button on the mixer's master strip)
+- Fixed: only two devices could be added to the master (the limit is now 24, and 48 on a track)
+
 ## 0.99.25 - 2026-10-06
 
 - Session clips recorded into the arrangement now start and end on the launch grid (down to sixteenths), not only on whole beats

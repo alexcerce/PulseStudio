@@ -1542,6 +1542,45 @@ namespace SelfTest
                        "Session recording: launches written into the arrangement land on the launch grid (sixteenths to bars)", "grid for 1/16: " + String (sixteenth, 2) + " beats, for a bar: " + String (bar, 1));
         }
 
+        // --- v0.99.26: the mastering chain and its assistant ------------------------------------------------
+        {
+            rep.step ("mastering");
+            // a small project of its own: four seconds of a steady tone at -20 dB
+            auto toneFile = dir.getChildFile ("master_tone.wav");
+            toneFile.deleteFile();
+            {
+                AudioBuffer<float> b (2, 48000 * 4);
+                for (int i = 0; i < b.getNumSamples(); ++i) { const float v = 0.1f * (float) std::sin (MathConstants<double>::twoPi * 440.0 * i / 48000.0); b.setSample (0, i, v); b.setSample (1, i, v); }
+                WavAudioFormat wav;
+                if (auto os = toneFile.createOutputStream())
+                    if (std::unique_ptr<AudioFormatWriter> w { wav.createWriterFor (os.release(), 48000.0, 2, 24, {}, 0) }) w->writeFromAudioSampleBuffer (b, 0, b.getNumSamples());
+            }
+            auto small = te::createEmptyEdit (engine, dir.getChildFile ("master_test.tracktionedit"));
+te::EditFileOperations (*small).save (true, true, false);   // like the app: the project exists on disk
+            small->ensureNumberOfAudioTracks (1);
+            auto* mt = te::getAudioTracks (*small)[0];
+            mt->insertWaveClip ("tone", toneFile, { { te::TimePosition(), te::TimeDuration::fromSeconds (4.0) }, {} }, false);
+            small->getMasterPluginList().insertPlugin (small->getPluginCache().createNewPlugin (te::LevelMeterPlugin::xmlTypeName, {}), -1, nullptr);
+
+            // the chain goes on in order, before the meter, and is not put on twice
+            auto* lim = Mastering::addChain (*small);
+            StringArray order;
+            for (auto p : small->getMasterPluginList()) order.add (p->getName());
+            const int count = small->getMasterPluginList().size();
+            Mastering::addChain (*small);
+            const bool chainOk = lim != nullptr && small->getMasterPluginList().size() == count
+                                 && order.indexOf ("Prism EQ") >= 0 && order.indexOf ("Prism EQ") < order.indexOf ("Multiband Dynamics") && order.indexOf ("Multiband Dynamics") < order.indexOf ("Exciter")
+                                 && order.indexOf ("Exciter") < order.indexOf ("Limiter") && order.indexOf ("Limiter") == count - 2;
+            // the assistant brings the quiet tone up to the target, and says what it did
+            const auto outcome = Mastering::assist (*small, -14.0);
+            const bool assisted = outcome.ok && outcome.before < -20.0 && std::abs (outcome.after + 14.0) < 1.0 && outcome.limiterGain > 5.0f && outcome.peakAfter < -0.5f
+                                  && lim != nullptr && std::abs (lim->get (pulse::Limiter::pGain) - outcome.limiterGain) < 0.01f && outcome.text().contains ("LUFS");
+            const bool sums = std::abs (Mastering::gainFor (-20.0, -14.0, 0.0f) - 6.0f) < 1e-5f && Mastering::gainFor (-10.0, -14.0, 0.0f) == 0.0f && Mastering::gainFor (-40.0, -14.0, 20.0f) == 24.0f;
+            rep.check (chainOk && assisted && sums, "Mastering (the chain goes on the master in order and only once; the assistant brings a song to -14 LUFS under the true-peak ceiling)",
+                       "master: " + order.joinIntoString (" > ") + "; " + String (outcome.before, 1) + " -> " + String (outcome.after, 1) + " LUFS with " + String (outcome.limiterGain, 1) + " dB, true peak " + String (outcome.peakAfter, 1));
+            small = nullptr;
+        }
+
         // --- sharing: collect all, templates -----------------------------------------------------------
         {
             auto outside = File::getSpecialLocation (File::tempDirectory).getChildFile ("PulseStudioSelfTestOutside");

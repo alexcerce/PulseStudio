@@ -9,6 +9,8 @@
 #include "FactoryPresets.h"
 #include "Icons.h"
 #include "PluginMenu.h"
+#include "Mastering.h"
+#include "About.h"
 
 //==============================================================================
 /** A strip's EQ at a glance: the curve of the first EQ on the channel (Prism EQ or EQ Six).
@@ -321,6 +323,9 @@ public:
             limiterBtn.setTooltip ("Master limiter (look-ahead brickwall). Its settings are in the master device chain.");
             limiterBtn.onClick = [this] { toggleMasterLimiter(); };
             addAndMakeVisible (limiterBtn);
+            masterBtn.setTooltip ("Mastering: put a ready chain on the master, or let the assistant set the loudness");
+            masterBtn.onClick = [this] { showMasteringMenu(); };
+            addAndMakeVisible (masterBtn);
         }
 
         latency.setJustificationType (Justification::centred);
@@ -413,6 +418,7 @@ public:
         }
         else
         {
+            masterBtn.setBounds (bottom.removeFromRight (bottom.getWidth() / 2).reduced (2, 0));
             limiterBtn.setBounds (bottom.reduced (2, 0));
         }
         if (loudLbl.isVisible()) loudLbl.setBounds (r.removeFromBottom (26));
@@ -544,6 +550,32 @@ private:
         return nullptr;
     }
 
+    void showMasteringMenu()
+    {
+        PopupMenu m;
+        auto& edit = evs.edit;
+        m.addItem ("Put the mastering chain on the master (EQ, multiband, exciter, limiter)", [&edit]
+        {
+            edit.getUndoManager().beginNewTransaction ("Mastering chain");
+            Mastering::addChain (edit);
+        });
+        m.addSectionHeader ("Assistant: measure the song and set the loudness");
+        auto assist = [&edit] (double target)
+        {
+            return [&edit, target]
+            {
+                if (About::isCapturing()) return;   // (the random-input test must not start renders of the whole song)
+                edit.getUndoManager().beginNewTransaction ("Mastering assistant");
+                const auto outcome = Mastering::assist (edit, target);
+                if (! About::isCapturing()) AlertWindow::showMessageBoxAsync (MessageBoxIconType::InfoIcon, "Mastering assistant", outcome.text());
+            };
+        };
+        m.addItem ("For streaming (-14 LUFS)", assist (-14.0));
+        m.addItem ("For podcasts and Apple (-16 LUFS)", assist (-16.0));
+        m.addItem ("Loud, for clubs (-9 LUFS)", assist (-9.0));
+        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&masterBtn));
+    }
+
     void toggleMasterLimiter()
     {
         auto& list = evs.edit.getMasterPluginList();
@@ -573,7 +605,7 @@ private:
     Rectangle<int> faderArea;
     DbScale scale { [this] (float v) { return (float) (fader.getY() - scale.getY()) + (float) fader.getPositionOfValue (jlimit (-60.0, 6.0, (double) v)); } };
     std::unique_ptr<LevelMeter> meter;
-    TextButton muteBtn { "M" }, soloBtn { "S" }, freezeBtn { "F" }, limiterBtn { "Limiter" };
+    TextButton muteBtn { "M" }, soloBtn { "S" }, freezeBtn { "F" }, limiterBtn { "Limiter" }, masterBtn { "Master" };
     Label latency, loudLbl;
     IconButton devicesBtn { Icons::Type::devices, "Show devices" };
     std::unique_ptr<MiniEQ> miniEQ;
