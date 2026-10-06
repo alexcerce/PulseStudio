@@ -439,3 +439,7 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   overlap, phase-vocoder shift, freeze that settles on the loudest of the first 12 steps, blur that keeps each
   frequency's pitch while it rings on, a ring of past steps for the per-frequency delay. 11 presets. 285 checks.
   Programme group 1 (effects) is complete: 21 new devices since v0.99.6.
+- 2026-10-06: slow tier for Programme group 1 (covers v0.99.10 to v0.99.14): Debug build, Debug self-test 285 pass,
+  monkey seeds 1401 / 1402 on the demo project and 1403 / 1404 on a 30-track project (--big 30) that now holds
+  every effect (so every new window is opened and clicked at random), command fuzz seed 1401: all clean, no crash
+  report. Installer built. Nothing owed. Next: group 2 (instruments), first item the Wavetable's third oscillator.

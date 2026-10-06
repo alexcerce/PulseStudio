@@ -701,8 +701,16 @@ public:
     {
         if (edit == nullptr) return;
         Random rng (4711);
+        // every effect gets a place somewhere in the project, so the random-input test opens every kind of window
         const char* fx[] = { pulse::Reverb::xmlTypeName, pulse::Delay::xmlTypeName, pulse::PrismEQ::xmlTypeName, pulse::ProCompressor::xmlTypeName,
-                             pulse::Saturator::xmlTypeName, pulse::AutoFilter::xmlTypeName, pulse::Limiter::xmlTypeName, pulse::Utility::xmlTypeName };
+                             pulse::Saturator::xmlTypeName, pulse::AutoFilter::xmlTypeName, pulse::Limiter::xmlTypeName, pulse::Utility::xmlTypeName,
+                             pulse::Gate::xmlTypeName, pulse::TransientShaper::xmlTypeName, pulse::DeEsser::xmlTypeName, pulse::ConvolutionReverb::xmlTypeName,
+                             pulse::Chorus::xmlTypeName, pulse::PhaserFlanger::xmlTypeName, pulse::AutoPan::xmlTypeName, pulse::FreqShifter::xmlTypeName,
+                             pulse::Redux::xmlTypeName, pulse::Exciter::xmlTypeName, pulse::Amp::xmlTypeName, pulse::Resonators::xmlTypeName,
+                             pulse::Shimmer::xmlTypeName, pulse::GrainDelay::xmlTypeName, pulse::BeatRepeat::xmlTypeName, pulse::Looper::xmlTypeName,
+                             pulse::Spectral::xmlTypeName, pulse::MultibandDynamics::xmlTypeName, pulse::GlueCompressor::xmlTypeName, pulse::PulseEQ::xmlTypeName,
+                             pulse::Vocoder::xmlTypeName };
+        const int numFx = (int) std::size (fx);
         const char* synths[] = { pulse::WavetableSynth::xmlTypeName, pulse::FMSynth::xmlTypeName, pulse::WavetableSynth::xmlTypeName };
         for (int t = EngineHelpers::getUserTracks (*edit).size(); t < numTracks; ++t)
         {
@@ -710,7 +718,7 @@ public:
             if (track == nullptr) break;
             PluginMenu::insertPlugin (track, track->pluginList, edit->getPluginCache().createNewPlugin (synths[t % 3], {}), nullptr);
             for (int k = 0; k < 2 + t % 3; ++k)
-                PluginMenu::insertPlugin (track, track->pluginList, edit->getPluginCache().createNewPlugin (fx[(t * 3 + k) % 8], {}), nullptr);
+                PluginMenu::insertPlugin (track, track->pluginList, edit->getPluginCache().createNewPlugin (fx[(t * 3 + k) % numFx], {}), nullptr);
             for (int bar = (t % 4) * 4; bar < 120; bar += 8 + (t % 3) * 4)
             {
                 const auto start = EngineHelpers::beatToTime (*edit, bar * 4.0), end = EngineHelpers::beatToTime (*edit, (bar + 4 + t % 5) * 4.0);

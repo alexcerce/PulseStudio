@@ -236,6 +236,10 @@ namespace pulse
                 const int a = jlimit (1, bins - 1, (int) (f0 / sampleRate * size)), b = jlimit (a + 1, bins, (int) (f1 / sampleRate * size) + 1);
                 float pk = 0.0f;
                 for (int k = a; k < b; ++k) pk = jmax (pk, m[(size_t) k]);
+                // at the bottom, where the points are closer together than the frequencies worked out, read between them
+                const float at = (float) (std::sqrt (f0 * f1) / sampleRate * size);
+                if (f1 - f0 < sampleRate / size && at >= 1.0f && at < (float) (bins - 1))
+                    pk = m[(size_t) at] + (m[(size_t) at + 1] - m[(size_t) at]) * (at - std::floor (at));
                 const float db = Decibels::gainToDecibels (pk * 4.0f / (float) size, -100.0f);
                 into[(size_t) p].store (jmax (db, into[(size_t) p].load() - 1.5f));   // falls back slowly, so it can be read
             }
