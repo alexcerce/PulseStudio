@@ -776,3 +776,18 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   of the demo project when it closed the project (Release happened to get away with it). The Programme has a
   new group 7, Techno, from what the owner said about how they will use the app; it comes before what is left
   of the others. Next: hear from the owner about the demo track; group 7.
+- 2026-10-06: v0.99.51. The demo song, again. The owner on the first one: "might be the worst thing I've ever
+  heard", and a reference: Brian Sanhaji, "Higgs" (CLR, 2010; 126 BPM, 7:52, root F by the shops' listings).
+  I CANNOT HEAR the reference or my own track; I know the reference's tempo, key, length, label and year, and
+  what that school of techno is like. DemoSong.h is rewritten to that: 126 BPM on F, 208 bars, sixteen-bar
+  moves, a short dry kick over a "Rumble" return (kick > reverb > 24 dB low pass at 105 Hz > saturation >
+  compressor keyed from the kick), an off-beat bass, quiet sixteenth hats, a rim / tom / faint clap loop, one
+  repeating tone (3-3-2 on F) whose filter automation is the arrangement, a high blip into the delay, a dark
+  bed, noise swells across the three changes. Gone from the first attempt, as the likeliest offenders: the
+  squealing acid line at 80% resonance, the chord stabs and their Am / Bb changes, snare rolls, crashes, tom
+  fills, the busy sixteenth bass, 132 BPM. Balance by measurement (main II, each track alone): kick -17.4,
+  tone -23.4, hats -26.0, perc -27.7, bass -31.9, blip -36.6, atmos -37.0 LUFS; mix: intro -15.4, main -14.2,
+  break -20.6, main II -13.9 LUFS, true peak -2.6 dB. The rumble's own level is not measured apart.
+  If this one is wrong too, the next step is not a third guess: ask the owner what was wrong (the sounds
+  themselves? the kick? the mix? the notes?), because the app's synths may be the limit and not the writing.
+  333 checks, quick tier.

@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.51 - 2026-10-06
+
+- The demo song is made again from nothing: dark, stripped, hypnotic techno at 126 BPM, in place of the first attempt
+
 ## 0.99.50 - 2026-10-06
 
 - The demo song is now a whole techno track (132 BPM, 120 bars) instead of an eight-bar loop

@@ -40,7 +40,7 @@ A small splash shows while Pulse starts: opening the audio interface can take a 
 1. **Audio Settings → Audio / MIDI**: pick your interface. Choose **ASIO** for the lowest latency, then set the buffer size.
 2. **Audio Settings → Recording**: set the count-in, MIDI overdub and a per-input recording offset.
 3. **Plugins**: click *Options → Scan for new or updated VST3 plugins*. Scanning runs in a separate process, so a crashing plugin is skipped instead of taking the app down.
-4. Press **Space** to play the demo song: a whole techno track (132 BPM, 120 bars, about 3:40) made only of Pulse's own instruments and effects. Intro, build, drop, breakdown, a second drop and an outro; a 909 kick that the bass and the drone duck under, hats and a rim playing three against four, a rolling bass and an acid line whose filter is drawn in automation across the song, stabs into a ping-pong delay, noise risers, a return where the drums ring through resonators, two VCA groups and a mastering chain. *File > Notes* in the demo lists what to look at.
+4. Press **Space** to play the demo song: a dark, stripped techno track for long blends (126 BPM, on F, 208 bars, about six and a half minutes) made only of Pulse's own instruments and effects. A tight kick over a rumble (the kick itself through a reverb, cut down to its lows and ducked by the kick), an off-beat bass, quiet rolling hats, a rim and two toms, and one repeating tone whose filter, drawn in automation, is the arrangement. No fills, rolls or crashes. *File > Notes* in the demo lists what to look at.
 
 Projects are saved as `.tracktionedit` files in `Documents/Pulse Studio/`. Presets go in `Documents/Pulse Studio/Presets/`, and bounces in a `Bounces` folder next to the project.
 

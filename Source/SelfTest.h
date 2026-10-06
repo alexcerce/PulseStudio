@@ -2926,22 +2926,22 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
                 if (n == 0) ++emptyTracks;
                 notes += n;
             }
-            expect (names.joinIntoString (",") == "Kick,Drums,Bass,Acid,Stab,Drone,Riser", "tracks: " + names.joinIntoString (","));
-            expect (emptyTracks == 0 && notes > 5000, "notes: " + String (notes) + ", tracks without any: " + String (emptyTracks));
+            expect (names.joinIntoString (",") == "Kick,Hats,Perc,Bass,Tone,Blip,Atmos,Noise", "tracks: " + names.joinIntoString (","));
+            expect (emptyTracks == 0 && notes > 4000, "notes: " + String (notes) + ", tracks without any: " + String (emptyTracks));
             const double songBars = demo->getLength().inSeconds() * DemoSong::bpm / 240.0;
             expect (std::abs (songBars - DemoSong::totalBars) < 1.0, "length " + String (songBars, 1) + " bars");
-            expect (std::abs (demo->tempoSequence.getTempo (0)->getBpm() - 132.0) < 0.01, "tempo");
+            expect (std::abs (demo->tempoSequence.getTempo (0)->getBpm() - DemoSong::bpm) < 0.01, "tempo");
             // the things it is meant to show are really there
-            te::Plugin* acidSynth = dtracks.size() > 3 ? dtracks[3]->pluginList[0] : nullptr;
+            te::Plugin* acidSynth = dtracks.size() > DemoSong::tone ? dtracks[DemoSong::tone]->pluginList[0] : nullptr;
             {
                 auto cutoff = acidSynth != nullptr ? acidSynth->getAutomatableParameterByID ("cutoff") : nullptr;   // (let go of before the project is closed)
-                expect (cutoff != nullptr && cutoff->getCurve().getNumPoints() >= 20, "the acid's filter automation");
+                expect (cutoff != nullptr && cutoff->getCurve().getNumPoints() >= 20, "the tone's filter automation");
             }
             int ducked = 0;
             for (auto t : dtracks) for (auto p : t->pluginList) if (dynamic_cast<pulse::ProCompressor*> (p) != nullptr && p->getSidechainSourceID() == dtracks[0]->itemID) ++ducked;
             expect (ducked == 2, String (ducked) + " compressors keyed from the kick");
             expect (Routing::getReturnTracks (*demo).size() == 3 && Vca::all (*demo).size() == 2 && demo->getMasterPluginList().findFirstPluginOfType<pulse::Limiter>() != nullptr, "returns / VCAs / mastering chain");
-            expect (SongKey::get (*demo) == 0 && Notes::ofProject (*demo).contains ("techno") && Notes::has (*dtracks[3]), "key / notes");
+            expect (SongKey::get (*demo) == 8 && Notes::ofProject (*demo).contains ("techno") && Notes::has (*dtracks[DemoSong::tone]), "key / notes");
             int slotClips = 0;
             for (auto t : dtracks) for (auto slot : t->getClipSlotList().getClipSlots()) if (slot->getClip() != nullptr) ++slotClips;
             expect (slotClips >= 16, String (slotClips) + " clips in the session view");
@@ -2964,17 +2964,17 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
                 auto f = EditingOps::renderDetached ("demo " + tag, p);
                 return f.existsAsFile() ? pulse::LoudnessAnalyser::measureFile (engine, f) : pulse::LoudnessAnalyser::Result();
             };
-            const auto drop = renderBars (40, 48, "drop"), brk = renderBars (56, 64, "breakdown"), intro = renderBars (0, 8, "intro"), drop2 = renderBars (88, 96, "drop2");
+            const auto drop = renderBars (80, 88, "drop"), brk = renderBars (96, 104, "breakdown"), intro = renderBars (0, 8, "intro"), drop2 = renderBars (152, 160, "drop2");
             // each track on its own over the same eight bars of the second drop: the balance of the mix, in numbers
             String balance;
-            for (auto t : dtracks) balance << t->getName() << " " << String (renderBars (88, 96, "solo", t).integrated, 1) << ", ";
+            for (auto t : dtracks) balance << t->getName() << " " << String (renderBars (152, 160, "solo", t).integrated, 1) << ", ";
             balance << "breakdown: ";
-            for (auto t : dtracks) balance << t->getName() << " " << String (renderBars (56, 64, "solo", t).integrated, 1) << ", ";
+            for (auto t : dtracks) balance << t->getName() << " " << String (renderBars (96, 104, "solo", t).integrated, 1) << ", ";
             expect (drop.integrated > -18.0 && drop.integrated < -7.0 && drop.truePeakDb < -0.5f, "the drop: " + String (drop.integrated, 1) + " LUFS, peak " + String (drop.truePeakDb, 1));
             expect (drop2.integrated > -18.0 && drop2.integrated < -7.0 && drop2.truePeakDb < -0.5f, "the second drop: " + String (drop2.integrated, 1) + " LUFS, peak " + String (drop2.truePeakDb, 1));
             expect (brk.integrated < drop.integrated - 3.0 && brk.integrated > -40.0, "the breakdown: " + String (brk.integrated, 1) + " LUFS against the drop's " + String (drop.integrated, 1));
             expect (intro.integrated > -35.0 && intro.integrated < drop.integrated, "the intro: " + String (intro.integrated, 1) + " LUFS");
-            rep.check (wrong.isEmpty(), "Demo song (a whole techno track: seven tracks, 120 bars, automation, sidechain, returns, mastering; it renders at sensible levels)",
+            rep.check (wrong.isEmpty(), "Demo song (a whole techno track: eight tracks, 208 bars, automation, sidechain, a rumble return, mastering; it renders at sensible levels)",
                        (wrong.isEmpty() ? String() : wrong.joinIntoString ("; ") + " | ") + String (notes) + " notes; intro " + String (intro.integrated, 1) + ", drop " + String (drop.integrated, 1) + " (peak " + String (drop.truePeakDb, 1)
                          + "), breakdown " + String (brk.integrated, 1) + ", drop II " + String (drop2.integrated, 1) + " LUFS (peak " + String (drop2.truePeakDb, 1) + "); each track alone in drop II: " + balance);
             demo = nullptr;
