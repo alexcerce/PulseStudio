@@ -759,3 +759,5 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   "dist/Pulse Studio demo - techno.wav" (3:38, 58 MB; dist is not in the repository) for the user to listen to.
   A random-input run on the new demo (Release, 3000 events, seed 361) ended clean with 2 stalls over 100 ms
   (259 and 282 ms, both on a mixer strip).
+- 2026-10-06: --render-demo also makes an .mp3 (256 kbps, through the Windows encoder the export uses). The
+  demo is in dist as "Pulse Studio demo - techno.mp3" (7 MB) and was sent to the user to listen to.

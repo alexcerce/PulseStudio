@@ -180,7 +180,10 @@ public:
                 te::EditFileOperations (*demo).save (true, true, false);
                 demo->getTransport().ensureContextAllocated();
                 out.deleteFile();
-                ok = EditingOps::renderDetached (*demo, out) && out.existsAsFile();
+                // an .mp3 is made by way of a .wav beside it, which is then taken away
+                const auto wav = out.hasFileExtension ("mp3") ? out.withFileExtension ("render.wav") : out;
+                ok = EditingOps::renderDetached (*demo, wav) && wav.existsAsFile();
+                if (ok && wav != out) { ok = Mp3EncoderWin::encode (wav, out, 256).isEmpty() && out.existsAsFile(); wav.deleteFile(); }
             }
             projectFile.deleteFile();
             setApplicationReturnValue (ok ? 0 : 1);
