@@ -200,7 +200,7 @@ namespace PluginMenu
             m.addSubMenu ("Audio Effects", vstFx);
         }
 
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (target));
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (target));
     }
 
     /** Index where new effects go: just before the track's volume/pan fader. */

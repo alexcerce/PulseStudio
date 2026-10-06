@@ -180,7 +180,7 @@ public:
                 auto current = plugin->getSidechainSourceName();
                 for (auto& name : plugin->getSidechainSourceNames (true))
                     m.addItem (name, true, name == current, [this, name] { plugin->setSidechainSourceByName (name); updateScButton(); });
-                m.showMenuAsync (PopupMenu::Options().withTargetComponent (&scBtn));
+                SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (&scBtn));
             };
             addAndMakeVisible (scBtn);
             updateScButton();
@@ -449,7 +449,7 @@ private:
                 FxRack::wrap (*p);
             });
         }
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&presetBtn));
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (&presetBtn));
     }
 
     void updateScButton()
@@ -1021,7 +1021,7 @@ public:
                     evs.edit.getUndoManager().beginNewTransaction ("Add modulator");
                     Modulators::add (*t, id);
                 });
-            m.showMenuAsync (PopupMenu::Options().withTargetComponent (&modBtn));
+            SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (&modBtn));
         };
         addAndMakeVisible (modBtn);
 
@@ -1267,7 +1267,7 @@ private:
         }
         m.addSeparator();
         m.addItem ("Show presets folder", [] { Presets::chainFolder().revealToUser(); });
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&chainBtn));
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (&chainBtn));
     }
 
     void movePlugin (te::Plugin& p, int dir)

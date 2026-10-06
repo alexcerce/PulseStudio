@@ -540,7 +540,7 @@ private:
             m.addItem ("Scan for new plugins (in the background)", ! pluginScan.isScanning(), false, [this] { pluginScan.start(); });
             const bool autoScan = settings().getBoolValue ("autoScanPlugins", true);
             m.addItem ("Scan for new plugins at startup", true, autoScan, [this, autoScan] { settings().setValue ("autoScanPlugins", ! autoScan); });
-            m.showMenuAsync ({});
+            SearchMenu::withSearch (m).showMenuAsync ({});
         };
         a.addInstrumentTrack = [this] { addTrack (true); };
         a.addAudioTrack      = [this] { addTrack (false); };
@@ -681,7 +681,7 @@ private:
             for (auto& l : mine) rm.addItem (l.name, [this, n = l.name] { Layouts::remove (settings(), n); });
             m.addSubMenu ("Remove one of yours", rm);
         }
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&layoutBtn));
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (&layoutBtn));
     }
 
     void showTab (Tab t)
@@ -1462,7 +1462,7 @@ private:
         m.addItem ("Drum Synth", [this, add] { add ("Drums", [this] { return edit->getPluginCache().createNewPlugin (pulse::DrumSynth::xmlTypeName, {}); }); });
         m.addItem ("Multi-sampler", [this, add] { add ("Sampler", [this] { return edit->getPluginCache().createNewPlugin (te::SamplerPlugin::xmlTypeName, {}); }); });
         m.addItem ("VST instrument...", [this, add] { add ("Instrument", [] { return te::Plugin::Ptr(); }); showTab (Tab::devices); });
-        m.showMenuAsync ({});
+        SearchMenu::withSearch (m).showMenuAsync ({});
     }
 
     //==============================================================================
@@ -1553,7 +1553,7 @@ private:
         }
         m.addSeparator();
         m.addItem ("Show templates folder", [] { Sharing::templatesFolder().revealToUser(); });
-        m.showMenuAsync ({});
+        SearchMenu::withSearch (m).showMenuAsync ({});
     }
 
     void createProject (File templateFile, bool demo)

@@ -1628,7 +1628,7 @@ namespace DeviceEditors
             for (int n : { 4, 8, 16, 32 }) m.addItem (String (n) + " pieces", doIt ("Slice evenly", [this, n] { simpler.sliceEvenly (n); }));
             m.addSeparator();
             m.addItem ("Remove all slices", ! simpler.getSlices().empty(), false, [this] { simpler.edit.getUndoManager().beginNewTransaction ("Remove slices"); simpler.setSlices ({}); });
-            m.showMenuAsync (PopupMenu::Options().withTargetComponent (&sliceBtn));
+            SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (&sliceBtn));
         }
         ParamCombo* filterType = nullptr;
         ParamToggle* loop = nullptr;
@@ -1999,7 +1999,7 @@ namespace DeviceEditors
                 {
                     Presets::askForName ("Save preset", plugin->getName(), [p = te::Plugin::Ptr (plugin)] (const String& n) { Presets::saveDevice (*p, n); });
                 });
-                m.showMenuAsync (PopupMenu::Options().withTargetComponent (&presetBtn));
+                SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (&presetBtn));
             };
             addAndMakeVisible (presetBtn);
             // previous / next factory preset, and the name of the current one on the button

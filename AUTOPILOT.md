@@ -150,7 +150,7 @@ well EVERYWHERE." So, besides the list:
 - **Quality-of-life list** (add to it whenever something is noticed; do one or two with every version):
   [x] typed value entry on every knob and readout  [x] A/B compare and copy A>B in every device window
   [x] undo/redo inside device windows shown in the window  [x] per-device input/output meters and gain match
-  [x] "what does this do" hover help everywhere, with a status-bar line  [ ] search in every menu that has more
+  [x] "what does this do" hover help everywhere, with a status-bar line  [x] search in every menu that has more
   than 20 entries  [ ] drag any device, clip, preset or sample anywhere it could sensibly go
   [ ] consistent modifier keys (fine, snap off, copy-drag) across arrangement, piano roll, automation and devices
   [ ] collect-all-and-save, missing-file finder  [x] undo history list  [ ] default track / device presets
@@ -675,3 +675,12 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   EQ's band switch. The check now fails on any silent control. "Everywhere" is true of device windows; the
   arrangement, mixer, piano roll, session view and browser are not audited this way yet (they have tooltips
   on most controls, but nothing proves all). 326 checks, quick tier.
+- 2026-10-06: v0.99.43. Search in long menus. Source/SearchMenu.h (included at the end of Common.h): collect()
+  walks a PopupMenu and its submenus for the entries that have an action; withSearch() returns the menu itself
+  when it has twenty or fewer, else a copy with "Search this menu..." on top; Box is the list to type into.
+  All 59 places that show a menu now show it through withSearch (m.showMenuAsync became
+  SearchMenu::withSearch (m).showMenuAsync). Menus whose entries answer by number and a callback, not by an
+  action of their own, are not searched (none of the long ones is of that kind). Seen on the way: the check of
+  preset levels failed once on "Dark Cinematic Drone" at -30.3 dBFS against a floor of -30 (its slow attack and
+  free-running LFOs put it on the edge; it had passed every earlier run); the preset is 4 dB louder now.
+  327 checks, quick tier.

@@ -540,7 +540,7 @@ namespace DynamicsUI
                 m.addItem ("Bypass", true, mb.getInt (M::idx (bi, M::bOn)) == 0, [this, bi] { mb.set (M::idx (bi, M::bOn), mb.getInt (M::idx (bi, M::bOn)) > 0 ? 0.0f : 1.0f); });
                 m.addSeparator();
                 m.addItem ("Remove a band", mb.numBands() > 2, false, [this] { mb.set (mb.g (M::gBands), (float) (mb.numBands() - 3)); });
-                m.showMenuAsync ({});
+                SearchMenu::withSearch (m).showMenuAsync ({});
                 return;
             }
             mouseDrag (e);

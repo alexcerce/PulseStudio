@@ -275,7 +275,7 @@ private:
         m.addItem ("Scatter hits at random", [this, note] { randomiseRow (note, 0.3f); repaint(); });
         m.addSeparator();
         m.addItem ("Clear this row", [this, note] { clearRow (note); repaint(); });
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (this).withMousePosition());
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (this).withMousePosition());
     }
 
     void timerCallback() override

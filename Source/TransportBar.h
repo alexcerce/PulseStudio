@@ -199,7 +199,7 @@ public:
             m.addSeparator();
             add ("User guide", "F1", actions.userGuide);
             add ("About Pulse Studio...", {}, actions.about);
-            m.showMenuAsync (PopupMenu::Options().withTargetComponent (&fileBtn));
+            SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (&fileBtn));
         };
         addAndMakeVisible (fileBtn);
         addChildComponent (cancelRenderBtn);
@@ -363,7 +363,7 @@ public:
         choice (LoadGuard::ask, "Tell me here (this readout turns red)");
         choice (LoadGuard::automatic, "Freeze the heaviest track the next time playback stops");
         choice (LoadGuard::off, "Do nothing");
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&cpuLabel));
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (&cpuLabel));
     }
 
     /** Freezes the track whose devices cost the most, and says so in the load readout for a few seconds. */
@@ -415,7 +415,7 @@ public:
                 m.addItem ("Accent the first beat of each bar", true, edit->clickTrackEmphasiseBars.get(),
                            [this] { edit->clickTrackEmphasiseBars = ! edit->clickTrackEmphasiseBars.get(); });
             }
-            m.showMenuAsync (PopupMenu::Options().withTargetComponent (e.eventComponent));
+            SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (e.eventComponent));
         }
     }
 

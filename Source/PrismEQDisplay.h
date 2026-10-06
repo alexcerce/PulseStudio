@@ -513,7 +513,7 @@ namespace PrismUI
                 for (int k = 0; k < EQ::perBand; ++k)
                     if (k != EQ::pOn && k != EQ::pFreq && k != EQ::pType) Graphs::reset (eq.param (EQ::idx (b, k)));
             });
-            m.showMenuAsync ({});
+            SearchMenu::withSearch (m).showMenuAsync ({});
         }
 
         void showDisplayMenu()
@@ -536,7 +536,7 @@ namespace PrismUI
                 eq.edit.getUndoManager().beginNewTransaction ("All bands off");
                 for (int b = 0; b < EQ::numBands; ++b) eq.set (EQ::idx (b, EQ::pOn), 0.0f);
             });
-            m.showMenuAsync ({});
+            SearchMenu::withSearch (m).showMenuAsync ({});
         }
 
     private:

@@ -2,6 +2,11 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.43 - 2026-10-06
+
+- Search in long menus (more than twenty entries): type to find an entry in the menu or its submenus
+- Wavetable preset "Dark Cinematic Drone" is 4 dB louder (it sat at the bottom of what a preset should play at)
+
 ## 0.99.42 - 2026-10-06
 
 - Help line in the lower tab bar: what the thing under the mouse does

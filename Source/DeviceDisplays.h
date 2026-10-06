@@ -834,7 +834,7 @@ namespace DeviceDisplays
                     simpler.edit.getUndoManager().beginNewTransaction ("Clear zones");
                     simpler.clearZones();
                 });
-                m.showMenuAsync (PopupMenu::Options().withTargetComponent (this));
+                SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (this));
                 return;
             }
             if (simpler.getSample() == nullptr || ! wave.contains (e.position)) { dragging = -1; return; }

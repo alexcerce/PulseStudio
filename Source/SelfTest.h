@@ -2581,6 +2581,65 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
             edit->getUndoManager().clearUndoHistory();
         }
 
+        // --- v0.99.43: search in long menus ------------------------------------------------------------------
+        {
+            rep.step ("menu search");
+            int chosen = -1;
+            PopupMenu menu, effects, instruments, deep;
+            for (int i = 0; i < 12; ++i) effects.addItem ("Effect " + String (i + 1), [&chosen, i] { chosen = i; });
+            effects.addItem ("Pulse Delay", [&chosen] { chosen = 100; });
+            effects.addItem ("Greyed out", false, false, [&chosen] { chosen = 999; });
+            for (int i = 0; i < 9; ++i) instruments.addItem ("Synth " + String (i + 1), true, i == 2, [&chosen, i] { chosen = 200 + i; });
+            deep.addItem ("Delay Designer", [&chosen] { chosen = 300; });
+            instruments.addSubMenu ("More", deep);
+            menu.addSectionHeader ("Devices");
+            menu.addSubMenu ("Effects", effects);
+            menu.addSeparator();
+            menu.addSubMenu ("Instruments", instruments);
+            menu.addItem ("Remove", [&chosen] { chosen = 400; });
+            std::vector<SearchMenu::Entry> all;
+            SearchMenu::collect (menu, {}, all);
+            // everything that can be chosen is found, with where it is; what cannot be chosen is left out
+            bool paths = all.size() == 24;
+            StringArray names;
+            for (auto& e : all) names.add (e.path);
+            paths = paths && names.contains ("Effects > Pulse Delay") && names.contains ("Instruments > More > Delay Designer") && names.contains ("Remove") && ! names.joinIntoString ("|").contains ("Greyed");
+            const bool words = SearchMenu::matches ("Effects > Pulse Delay", "delay pulse") && SearchMenu::matches ("Effects > Pulse Delay", "EFF del") && ! SearchMenu::matches ("Effects > Pulse Delay", "reverb")
+                               && SearchMenu::matches ("anything", "");
+            // "delay": both delays, the one whose own name starts with it first
+            const auto found = SearchMenu::filter (all, "delay");
+            const bool order = found.size() == 2 && all[(size_t) found[0]].path.endsWith ("Delay Designer") && all[(size_t) found[1]].path.endsWith ("Pulse Delay");
+            // a long menu gets the search entry on top; a short one is left as it is
+            auto longer = SearchMenu::withSearch (menu);
+            PopupMenu::MenuItemIterator it (longer, false);
+            const bool added = it.next() && it.getItem().text.startsWith ("Search this menu") && it.getItem().text.contains ("24");
+            PopupMenu small;
+            for (int i = 0; i < 20; ++i) small.addItem ("Item " + String (i), [] {});
+            auto same = SearchMenu::withSearch (small);
+            PopupMenu::MenuItemIterator it2 (same, false);
+            const bool leftAlone = it2.next() && it2.getItem().text == "Item 0";
+            // the box: typing narrows the list, choosing runs the entry
+            bool boxOk = false;
+            {
+                PulseLookAndFeel laf;
+                LookAndFeel::setDefaultLookAndFeel (&laf);
+                auto shared = std::make_shared<std::vector<SearchMenu::Entry>> (all);
+                SearchMenu::Box box (shared);
+                const bool everything = box.numShown() == 24;
+                box.type ("synth 3");
+                const bool narrowed = box.numShown() == 1 && box.shownText (0) == "Instruments > Synth 3";
+                box.chooseRow (0);
+                const bool ran = chosen == 202;
+                box.type ("zzz");
+                const bool nothing = box.numShown() == 0;
+                box.chooseRow (0);   // nothing to choose: nothing happens
+                boxOk = everything && narrowed && ran && nothing && chosen == 202;
+                LookAndFeel::setDefaultLookAndFeel (nullptr);
+            }
+            rep.check (paths && words && order && added && leftAlone && boxOk, "Search in long menus (every entry found with its submenu, any words in any order, the search entry only on long menus, choosing runs it)",
+                       String (paths ? "" : "entries wrong (" + String ((int) all.size()) + "); ") + (words ? "" : "matching wrong; ") + (order ? "" : "order wrong; ") + (added && leftAlone ? "" : "search entry wrong; ") + (boxOk ? "" : "box wrong; ") + "ok");
+        }
+
         // --- sharing: collect all, templates -----------------------------------------------------------
         {
             auto outside = File::getSpecialLocation (File::tempDirectory).getChildFile ("PulseStudioSelfTestOutside");

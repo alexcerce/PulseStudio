@@ -231,7 +231,7 @@ namespace BusLanes
                     m.addItem (p->isEnabled() ? "Bypass" : "Turn on", [p] { p->setEnabled (! p->isEnabled()); });
                     m.addSeparator();
                     m.addItem ("Delete", [p] { p->edit.getUndoManager().beginNewTransaction ("Delete device"); p->deleteFromParent(); });
-                    m.showMenuAsync (PopupMenu::Options().withTargetComponent (this));
+                    SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (this));
                     return;
                 }
                 if (owner.evs.showDevices) owner.evs.showDevices (owner.track);
@@ -313,7 +313,7 @@ namespace BusLanes
                     evs.edit.deleteTrack (track);
                 });
             }
-            m.showMenuAsync ({});
+            SearchMenu::withSearch (m).showMenuAsync ({});
         }
 
         void rebuildChips()

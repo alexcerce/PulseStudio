@@ -368,7 +368,7 @@ private:
             }), true);
         });
         m.addItem ("Open the settings folder", [this] { stateFolder (plugin).startAsProcess(); });
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&presetBtn));
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (&presetBtn));
     }
 
     void showRandomMenu()
@@ -377,7 +377,7 @@ private:
         m.addItem ("Randomise", [this] { randomise (1.0f); });
         m.addItem ("Randomise a little", [this] { randomise (0.2f); });
         m.addItem ("Undo randomise", ! beforeRandom.isEmpty(), false, [this] { undoRandomise(); });
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&randomBtn));
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (&randomBtn));
     }
 
     void rebuildKnobs()

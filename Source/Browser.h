@@ -815,7 +815,7 @@ private:
             settings.setValue ("browserFolders", list.joinIntoString ("\n"));
             rebuildSidebar();
         });
-        m.showMenuAsync (PopupMenu::Options().withMousePosition());
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withMousePosition());
     }
 
     void addFolder()
@@ -951,7 +951,7 @@ private:
         m.addSectionHeader ("The song's key (samples that name their key are previewed in it)");
         m.addItem ("Not set: play samples as they are", true, now < 0, [this] { setSongKey (-1); });
         for (int k = 0; k < 12; ++k) m.addItem (SongKey::name (k), true, now == k, [this, k] { setSongKey (k); });
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&keyBtn));
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (&keyBtn));
     }
 
     void setSongKey (int k)
@@ -981,7 +981,7 @@ private:
             results.repaint();
         });
         m.addItem ("Show in Explorer", [f] { f.revealToUser(); });
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (target).withMousePosition());
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (target).withMousePosition());
     }
 
     // FileBrowserListener

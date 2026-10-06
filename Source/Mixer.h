@@ -472,7 +472,7 @@ public:
                 PopupMenu m;
                 m.addItem ("Post-fader (follows the volume fader)", true, ! pre, [this, b = snd->bus] { Routing::setPreFader (*audioTrack(), b, false); });
                 m.addItem ("Pre-fader (independent of the fader)", true, pre, [this, b = snd->bus] { Routing::setPreFader (*audioTrack(), b, true); });
-                m.showMenuAsync (PopupMenu::Options().withTargetComponent (&snd->knob));
+                SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (&snd->knob));
                 return;
             }
 
@@ -483,7 +483,7 @@ public:
             auto& p = e.eventComponent == &fader ? *volPlugin->volParam : *volPlugin->panParam;
             PopupMenu m;
             evs.midiLearn->addToMenu (m, p);
-            m.showMenuAsync (PopupMenu::Options().withTargetComponent (e.eventComponent));
+            SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (e.eventComponent));
             return;
         }
 
@@ -592,7 +592,7 @@ private:
             m.addItem (g.name, true, g.index == current, [&edit, keep, i = g.index] { edit.getUndoManager().beginNewTransaction ("Join VCA"); Vca::join (edit, i, *keep); });
         m.addSeparator();
         m.addItem ("New VCA group with this track", [&edit, keep] { edit.getUndoManager().beginNewTransaction ("New VCA"); Vca::join (edit, Vca::add (edit), *keep); });
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (this).withMousePosition());
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (this).withMousePosition());
     }
 
     void showMasteringMenu()
@@ -639,7 +639,7 @@ private:
             edit.getUndoManager().beginNewTransaction ("Reference");
             Mastering::toggleReference (edit);
         });
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&masterBtn));
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (&masterBtn));
     }
 
     void toggleMasterLimiter()
@@ -710,7 +710,7 @@ public:
             m.addItem ("Reverb return", [make] { make ("Reverb", pulse::Reverb::xmlTypeName, "Hall"); });
             m.addItem ("Delay return",  [make] { make ("Delay", pulse::Delay::xmlTypeName, "Dotted 8th"); });
             m.addItem ("Empty return",  [this] { Routing::createReturnTrack (evs.edit, "Return " + String (Routing::nextFreeBus (evs.edit) + 1)); });
-            m.showMenuAsync (PopupMenu::Options().withTargetComponent (&addReturnBtn));
+            SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (&addReturnBtn));
         };
         content.addAndMakeVisible (addReturnBtn);
         vcaBtn.setTooltip ("New VCA group: one fader that moves the faders of the selected tracks together (right-click a track's name to join or leave a group)");
@@ -907,7 +907,7 @@ private:
                 del.addItem (names[i], [this, i] { MixSnapshots::remove (evs.edit, i); });
             m.addSubMenu ("Delete", del);
         }
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&snapBtn));
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (&snapBtn));
     }
     int numContentStrips = 0;
     bool rebuildFlag = false;

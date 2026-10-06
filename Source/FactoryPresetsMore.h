@@ -104,7 +104,7 @@ namespace FactoryPresetsMore
                                    { "reverbmix", 0.2f }, { "level", -10 } } },
                 { "Dark Cinematic Drone", { { "set1", 3 }, { "pos1", 0.1f }, { "set2", 2 }, { "pos2", 0.2f }, { "semi2", -12 }, { "voices", 5 }, { "detune", 0.4f }, { "ftype", 1 },
                                             { "cutoff", 600 }, { "reso", 0.35f }, { "a", 3000 }, { "s", 1 }, { "r", 5000 }, { "l2rate", 0.05f }, { "l3rate", 0.11f },
-                                            { "mod:2:cutoff", 0.25f }, { "mod:3:pos1", 0.4f }, { "mod:3:pos2", -0.3f }, { "reverbmix", 0.6f }, { "reverbsize", 1.0f }, { "level", -12 } } },
+                                            { "mod:2:cutoff", 0.25f }, { "mod:3:pos1", 0.4f }, { "mod:3:pos2", -0.3f }, { "reverbmix", 0.6f }, { "reverbsize", 1.0f }, { "level", -8 } } },
                 { "Trance Gate Pad (drawn)", { { "set1", 0 }, { "pos1", 0.66f }, { "set2", 2 }, { "pos2", 0.6f }, { "voices", 7 }, { "detune", 0.5f }, { "ftype", 0 }, { "cutoff", 4000 },
                                                { "a", 10 }, { "s", 1 }, { "r", 300 }, { "l2sync", 1 }, { "l2shape", 6 }, { "mod:2:level", -0.6f }, { "delaymix", 0.2f },
                                                { "reverbmix", 0.3f }, { "level", -16 }, { "output", -5 } } },

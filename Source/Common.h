@@ -339,3 +339,5 @@ namespace Pro
     /** A darkening overlay (wells, shadows): much lighter on light themes. */
     inline Colour shade (float alpha) { return Colours::black.withAlpha (Theme::isLight ? alpha * 0.18f : alpha); }
 }
+
+#include "SearchMenu.h"

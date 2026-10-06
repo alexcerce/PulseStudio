@@ -212,7 +212,7 @@ public:
         m.addItem ("Type a value...", [sp = SafePointer<ParamKnob> (this)] { if (sp != nullptr) sp->value.showEditor(); });
         if (auto def = param->getDefaultValue())
             m.addItem ("Reset to default", [this, v = *def] { param->setParameter (v, sendNotificationSync); });
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (this));
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (this));
     }
 
     te::AutomatableParameter& getParam() { return *param; }
@@ -414,7 +414,7 @@ public:
         const int cur = roundToInt (param->getCurrentValue());
         for (int i = 0; i < n; ++i)
             m.addItem (i + 1, param->valueToString ((float) i), true, i == cur);
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (this), [sp = SafePointer<ParamMenuBox> (this)] (int r)
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (this), [sp = SafePointer<ParamMenuBox> (this)] (int r)
         {
             if (sp == nullptr || r <= 0) return;
             sp->param->getEdit().getUndoManager().beginNewTransaction ("Change " + sp->param->getParameterName());

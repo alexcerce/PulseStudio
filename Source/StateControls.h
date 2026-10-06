@@ -156,6 +156,6 @@ namespace StateControls
                 ptr->edit.getUndoManager().beginNewTransaction ("Delay sync");
                 ptr->state.setProperty (te::IDs::length, jlimit (1, 2000, roundToInt (b * 60000.0 / bpm)), &ptr->edit.getUndoManager());
             });
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&target));
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (&target));
     }
 }

@@ -113,7 +113,7 @@ namespace MidiMap
                 to.addItem (learn.pageName (p), p != learn.getPage(), false, [this, index, p] { learn.moveToPage (index, p); });
             m.addSubMenu ("Move to", to);
             m.addItem ("Remove this mapping", [this, index] { learn.removeAt (index); });
-            m.showMenuAsync ({});
+            SearchMenu::withSearch (m).showMenuAsync ({});
         }
 
         void deleteKeyPressed (int row) override

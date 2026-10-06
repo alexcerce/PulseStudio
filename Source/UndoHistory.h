@@ -28,7 +28,7 @@ namespace UndoHistory
                 if (auto* e = dynamic_cast<te::Edit*> (ref.get())) move (*e, redo ? i + 1 : -(i + 1));
             });
         if (items.isEmpty()) m.addItem ("Nothing to " + String (redo ? "redo" : "undo"), false, false, [] {});
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&target));
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (&target));
     }
 
     //==============================================================================

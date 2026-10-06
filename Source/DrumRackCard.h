@@ -996,7 +996,7 @@ private:
                 select (slot);
                 audition (slot);
             });
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (target));
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (target));
     }
 
     void showPadMenu (int slot, Component* target)
@@ -1041,7 +1041,7 @@ private:
             });
             m.addItem ("Clear pad", [this, slot] { begin ("Clear pad"); DrumRack::clearPad (*rack, slot); refreshDetail(); repaintPads(); });
         }
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (target));
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (target));
     }
 
     void showKitMenu()
@@ -1093,7 +1093,7 @@ private:
             refreshDetail();
             repaintPads();
         });
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&kitBtn));
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (&kitBtn));
     }
 
     //==============================================================================

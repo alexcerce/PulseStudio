@@ -85,7 +85,7 @@ private:
                 m.addSubMenu (plugin == EditViewState::volumeOf (*track) ? "Mixer (volume / pan)" : plugin->getName(), sub);
         }
 
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&chooseBtn));
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (&chooseBtn));
     }
 
     EditViewState& evs;

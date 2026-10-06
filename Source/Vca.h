@@ -192,7 +192,7 @@ namespace Vca
             const int i = index;
             m.addItem ("Rename...", [this] { renameDialog(); });
             m.addItem ("Remove this VCA group (the tracks keep their faders)", [&edit, i] { edit.getUndoManager().beginNewTransaction ("Remove VCA"); Vca::remove (edit, i); });
-            m.showMenuAsync (PopupMenu::Options().withTargetComponent (this));
+            SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (this));
         }
 
     private:

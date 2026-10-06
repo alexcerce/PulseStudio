@@ -828,7 +828,7 @@ private:
             }
             m.addSubMenu (pl->getName(), sub);
         }
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&laneBox));
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (&laneBox));
     }
 
     /** On a Drum Rack track: the name of the pad that plays this note (empty otherwise). */
@@ -1153,7 +1153,7 @@ private:
         m.addItem ("Invert (flip pitches)", run ("Invert", [] (auto& c, auto& n) { MidiTools::invert (c, n); }));
         m.addItem ("Double speed", run ("Double speed", [] (auto& c, auto& n) { MidiTools::stretch (c, n, 0.5); }));
         m.addItem ("Half speed", run ("Half speed", [] (auto& c, auto& n) { MidiTools::stretch (c, n, 2.0); }));
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&toolsBtn));
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (&toolsBtn));
     }
 
     void timerCallback() override

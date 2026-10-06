@@ -634,7 +634,7 @@ private:
                 if (safe != nullptr) safe->repaint();
             }
         });
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (this));
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (this));
     }
 
     void addLoopItems (PopupMenu& m)
@@ -914,7 +914,7 @@ private:
             m.addItem ("Reset gain", [wac] { wac->setGainDB (0.0f); });
         }
 
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (this));
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (this));
     }
 
     EditViewState& evs;
@@ -1047,7 +1047,7 @@ public:
             PopupMenu m;
             m.addItem ("Insert MIDI clip here", [this, x = e.x] { createMidiClipAt ((float) x); });
             m.addItem ("Import audio here...", [this, x = e.x] { browseForAudio ((float) x); });
-            m.showMenuAsync (PopupMenu::Options().withTargetComponent (this));
+            SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (this));
         }
     }
 
@@ -1606,7 +1606,7 @@ public:
             });
             m.addSeparator();
             m.addItem ("Delete track", [this] { evs.edit.deleteTrack (track.get()); });
-            m.showMenuAsync (PopupMenu::Options().withTargetComponent (this));
+            SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (this));
         }
     }
 
@@ -1847,7 +1847,7 @@ private:
         if (instances.isEmpty())
             m.addItem ("No inputs - check Audio Settings", false, false, nullptr);
 
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&inBtn), [this, instances] (int res)
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (&inBtn), [this, instances] (int res)
         {
             if (res >= 1 && res <= instances.size())
             {
@@ -1950,7 +1950,7 @@ public:
                 if (auto t = EngineHelpers::getSelectedTrack (*sm))
                     EditingOps::bounceToNewTrack (*t, edit.getTransport().getLoopRange());
             });
-            m.showMenuAsync (PopupMenu::Options().withTargetComponent (this));
+            SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (this));
             dragging = true;   // don't move the playhead on release
         }
     }
@@ -2131,7 +2131,7 @@ public:
                 f->edit.getUndoManager().beginNewTransaction ("Flatten group");
                 EditingOps::flattenGroup (*f);
             });
-            m.showMenuAsync (PopupMenu::Options().withTargetComponent (this));
+            SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (this));
         }
     }
 
@@ -2489,7 +2489,7 @@ private:
             m.addItem ("Duplicate (with its content)", [&edit, index] { edit.getUndoManager().beginNewTransaction ("Duplicate section"); Sections::duplicate (edit, index); });
             m.addItem ("Delete (with its content, close the gap)", [this, &edit, index] { edit.getUndoManager().beginNewTransaction ("Delete section"); Sections::remove (edit, index, &evs.selectionManager); });
             m.addItem ("Remove the section only (keep the content)", [&edit, index] { edit.getUndoManager().beginNewTransaction ("Remove section"); Sections::removeMarker (edit, index); });
-            m.showMenuAsync ({}, [&edit, index] (int r)
+            SearchMenu::withSearch (m).showMenuAsync ({}, [&edit, index] (int r)
             {
                 if (r >= 1 && r <= 8) { edit.getUndoManager().beginNewTransaction ("Section colour"); Sections::setColour (edit, index, Sections::defaultColour (r - 1)); }
             });
@@ -2508,7 +2508,7 @@ private:
             const double b0 = EngineHelpers::timeToBeat (evs.edit, loop.getStart()), b1 = EngineHelpers::timeToBeat (evs.edit, loop.getEnd());
             Sections::add (evs.edit, "Section", b0, b1 - b0);
         });
-        m.showMenuAsync ({});
+        SearchMenu::withSearch (m).showMenuAsync ({});
     }
 
     void timerCallback() override
@@ -2659,7 +2659,7 @@ private:
         if (! v.isValid()) return;
         auto& edit = evs.edit;
         auto m = chordMenu ([&edit, index] (int r, int k) { edit.getUndoManager().beginNewTransaction ("Change chord"); Chords::change (edit, index, r, k); }, (int) v[Chords::rootID], (int) v[Chords::kindID]);
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (this).withMousePosition());
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (this).withMousePosition());
     }
 
     void showMenu (int index, float x)
@@ -2725,7 +2725,7 @@ private:
                 Chords::writeToClip (*clip);
         });
         m.addItem ("Remove all chords", any, false, [&edit] { edit.getUndoManager().beginNewTransaction ("Remove chords"); Chords::clear (edit); });
-        m.showMenuAsync ({});
+        SearchMenu::withSearch (m).showMenuAsync ({});
     }
 
     void timerCallback() override
@@ -2820,7 +2820,7 @@ public:
                 m.addItem ("Add time signature change here...", [this, beat] { askTimeSig (beat); });
             }
             dragged = nullptr;
-            m.showMenuAsync (PopupMenu::Options().withTargetComponent (this));
+            SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (this));
             return;
         }
 
@@ -2992,7 +2992,7 @@ public:
                     edit.getUndoManager().beginNewTransaction ("Delete tempo change");
                     edit.tempoSequence.removeTempo (i, true);
                 });
-                m.showMenuAsync (PopupMenu::Options().withTargetComponent (this));
+                SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (this));
             }
             dragIndex = -1;
             return;

@@ -706,7 +706,7 @@ private:
                                       { if (sp != nullptr && fc.getResult().existsAsFile()) importFile (fc.getResult()); });
             });
         }
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (this));
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (this));
     }
 
     EditViewState& evs;
@@ -1019,7 +1019,7 @@ private:
             sc->state.removeProperty (Launcher::sceneTempoID, &evs.edit.getUndoManager());
             markAndUpdate (rebuildFlag);
         });
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (e.eventComponent));
+        SearchMenu::withSearch (m).showMenuAsync (PopupMenu::Options().withTargetComponent (e.eventComponent));
     }
 
     void askSceneTempo (int s)
