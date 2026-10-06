@@ -166,7 +166,7 @@ well EVERYWHERE." So, besides the list:
 2. Instruments: [x] Wavetable third oscillator + wavetable import from audio  [x] sampler (slices, per-slice stretch,
    zones)  [x] analogue-style subtractive synth  [x] physical-modelling instrument (string / mallet)
    [x] electric piano  [x] tonewheel organ
-3. MIDI: [x] note length  [x] pitch  [x] random  [x] velocity  [ ] drawable arpeggiator / note-echo patterns
+3. MIDI: [x] note length  [x] pitch  [x] random  [x] velocity  [x] drawable arpeggiator / note-echo patterns
    [ ] chord track + chord progressions (piano roll and MIDI effects follow it)  [ ] step sequencer view for drum clips
 4. Audio editing: [ ] warp by dragging transients on the waveform, follow-tempo per clip  [ ] per-note pitch and time
    editing of audio  [ ] reverse / crop / consolidate clips  [ ] clip launch recorded into the arrangement with quantised punch
@@ -478,3 +478,8 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   The README's file table (near its end) has not been kept up with the files added since v0.99.6: Dynamics2,
   Convolution, ModFx, ColourFx, AmpFx, TimeFx, LoopFx, SpectralFx, Keys, Synths2 and their *Display.h files.
   Next in group 3: drawable arpeggiator / note-echo patterns, chord track, step sequencer view.
+- 2026-10-06: v0.99.20. Drawn patterns: Arpeggiator (state "pattern", 16 levels, pSteps, pSwing; a rest advances
+  time but not the note order) and Note Echo (state "levels"; absent = the old Feedback behaviour). The bars are
+  MidiFxUI::StepBars (MidiFx2Display.h), reusable for any row of values. 299 checks, quick tier.
+  Next in group 3: chord track + progressions, step sequencer view for drum clips. Both touch the arrangement and
+  piano roll (ArrangementView.h, PianoRoll.h): read those first.

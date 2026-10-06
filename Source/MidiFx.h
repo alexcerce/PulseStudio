@@ -112,8 +112,10 @@ namespace pulse
     class Arpeggiator : public PulseMidiEffect
     {
     public:
-        enum { pRate, pMode, pOctaves, pGate, pVelocity };
+        enum { pRate, pMode, pOctaves, pGate, pVelocity, pSteps, pSwing };
         static inline const char* xmlTypeName = "pulseArp";
+        static constexpr int maxSteps = 16;
+        static inline const Identifier patternID { "pattern" };
         static const char* getPluginName() { return "Arpeggiator"; }
         static inline const StringArray modeNames { "Up", "Down", "Up/Down", "As played", "Random", "Chord" };
 
@@ -124,14 +126,38 @@ namespace pulse
             add ("octaves", "Octaves", { 1.0f, 4.0f, 1.0f }, 1.0f, [] (float v) { return String (roundToInt (v)); });
             add ("gate", "Gate", { 0.05f, 1.0f }, 0.6f, fmt::pct);
             add ("velocity", "Velocity", { 0.0f, 127.0f, 1.0f }, 0.0f, [] (float v) { return v < 1 ? String ("As played") : String (roundToInt (v)); });
+            add ("steps", "Pattern Length", { 1.0f, (float) maxSteps, 1.0f }, (float) maxSteps, [] (float v) { return String (roundToInt (v)) + " steps"; });
+            add ("swing", "Swing", { 0.0f, 0.75f }, 0.0f, fmt::pct);
+            reloadPattern();
         }
 
         String getName() const override  { return "Arpeggiator"; }
         String getPluginType() override  { return xmlTypeName; }
-        std::vector<Section> getSections() const override { return { { "Arpeggiator", { pRate, pMode, pOctaves, pGate, pVelocity } } }; }
+        std::vector<Section> getSections() const override { return { { "Arpeggiator", { pRate, pMode, pOctaves, pGate, pVelocity } }, { "Pattern", { pSteps, pSwing } } }; }
+
+        /** The drawn pattern: how hard each step plays (0 = a rest, 1 = as played). Kept in the project. */
+        std::vector<float> getPattern() const
+        {
+            std::vector<float> v;
+            for (auto& t : StringArray::fromTokens (state[patternID].toString(), ",", {})) if (t.isNotEmpty()) v.push_back (jlimit (0.0f, 1.0f, t.getFloatValue()));
+            v.resize ((size_t) maxSteps, 1.0f);
+            return v;
+        }
+        void setPattern (const std::vector<float>& v)
+        {
+            StringArray s;
+            for (int i = 0; i < maxSteps; ++i) s.add (String (i < (int) v.size() ? jlimit (0.0f, 1.0f, v[(size_t) i]) : 1.0f, 3));
+            state.setProperty (patternID, s.joinIntoString (","), &edit.getUndoManager());
+        }
+        void valueTreePropertyChanged (ValueTree& v, const Identifier& id) override
+        {
+            PulseMidiEffect::valueTreePropertyChanged (v, id);
+            if (v == state && id == patternID) reloadPattern();
+        }
+        std::atomic<int> playingStep { -1 };   // which step of the pattern sounded last (for the picture)
 
     protected:
-        void reset() override { held.clear(); stepIndex = 0; nextStep = -1; }
+        void reset() override { held.clear(); stepIndex = 0; gridIndex = 0; nextStep = -1; playingStep.store (-1); }
 
         void process (const std::vector<te::MidiMessageWithSource>& in, Block& b) override
         {
@@ -139,7 +165,7 @@ namespace pulse
             {
                 if (m.isNoteOn())
                 {
-                    if (held.empty()) { stepIndex = 0; nextStep = -1; }   // start on the next grid step
+                    if (held.empty()) { stepIndex = 0; gridIndex = 0; nextStep = -1; }   // start on the next grid step
                     held.push_back ({ m.getNoteNumber(), m.getVelocity() });
                 }
                 else if (m.isNoteOff())
@@ -149,7 +175,7 @@ namespace pulse
                 else b.emit (m, offsetOf (m));   // CCs, bend... pass through
             }
 
-            if (held.empty()) return;
+            if (held.empty()) { playingStep.store (-1); return; }
 
             const double stepSamples = samplesPerBeat() * rateBeats[jlimit (0, rateNames.size() - 1, getInt (pRate))];
             if (nextStep < 0)
@@ -194,7 +220,15 @@ namespace pulse
             if (seq.empty()) return;
             const int mode = getInt (pMode);
             const int fixedVel = getInt (pVelocity);
-            const auto vel = (uint8) jlimit (1, 127, fixedVel > 0 ? fixedVel : (int) held.back().second);
+            // the drawn pattern: how hard this step plays, or a rest (the notes wait for the next step that sounds)
+            const int patternStep = gridIndex % jlimit (1, maxSteps, getInt (pSteps));
+            const float stepLevel = pattern[(size_t) patternStep].load();
+            // swing: every second step comes late
+            if (gridIndex % 2 == 1) when += (int64) (stepSamples * 0.5 * get (pSwing));
+            ++gridIndex;
+            if (stepLevel < 0.01f) return;
+            playingStep.store (patternStep);
+            const auto vel = (uint8) jlimit (1, 127, roundToInt ((float) (fixedVel > 0 ? fixedVel : (int) held.back().second) * stepLevel));
             const int64 off = when + (int64) jmax (1.0, stepSamples * get (pGate));
 
             std::vector<int> notes;
@@ -211,8 +245,15 @@ namespace pulse
             }
         }
 
+        void reloadPattern()
+        {
+            auto v = getPattern();
+            for (int i = 0; i < maxSteps; ++i) pattern[(size_t) i].store (v[(size_t) i]);
+        }
+
         std::vector<std::pair<int, uint8>> held;
-        int stepIndex = 0;
+        std::array<std::atomic<float>, maxSteps> pattern;
+        int stepIndex = 0, gridIndex = 0;
         int64 nextStep = -1;
         Random random;
     };
@@ -328,6 +369,8 @@ namespace pulse
     public:
         enum { pTime, pRepeats, pFeedback, pPitch };
         static inline const char* xmlTypeName = "pulseNoteEcho";
+        static constexpr int maxRepeats = 8;
+        static inline const Identifier levelsID { "levels" };
         static const char* getPluginName() { return "Note Echo"; }
 
         explicit NoteEcho (te::PluginCreationInfo info) : PulseMidiEffect (info)
@@ -336,6 +379,30 @@ namespace pulse
             add ("repeats", "Repeats", { 1.0f, 8.0f, 1.0f }, 3.0f, [] (float v) { return String (roundToInt (v)); });
             add ("feedback", "Feedback", { 0.1f, 1.0f }, 0.6f, fmt::pct);
             add ("pitch", "Pitch", { -12.0f, 12.0f, 1.0f }, 0.0f, fmt::st);
+            reloadLevels();
+        }
+
+        /** How loud each repeat is, against the note itself (0..1). Until a pattern has been drawn, each is Feedback times the one before. */
+        std::vector<float> getLevels() const
+        {
+            std::vector<float> v;
+            for (auto& t : StringArray::fromTokens (state[levelsID].toString(), ",", {})) if (t.isNotEmpty()) v.push_back (jlimit (0.0f, 1.0f, t.getFloatValue()));
+            if (v.empty()) { float lv = 1.0f; for (int r = 0; r < maxRepeats; ++r) { lv *= get (pFeedback); v.push_back (lv); } }
+            v.resize ((size_t) maxRepeats, 0.0f);
+            return v;
+        }
+        bool hasDrawnLevels() const { return state[levelsID].toString().isNotEmpty(); }
+        /** Draws the repeats (an empty list goes back to Feedback). */
+        void setLevels (const std::vector<float>& v)
+        {
+            StringArray s;
+            for (auto x : v) s.add (String (jlimit (0.0f, 1.0f, x), 3));
+            state.setProperty (levelsID, s.joinIntoString (","), &edit.getUndoManager());
+        }
+        void valueTreePropertyChanged (ValueTree& v, const Identifier& id) override
+        {
+            PulseMidiEffect::valueTreePropertyChanged (v, id);
+            if (v == state && id == levelsID) reloadLevels();
         }
 
         String getName() const override  { return "Note Echo"; }
@@ -355,6 +422,7 @@ namespace pulse
                 if (! m.isNoteOnOrOff()) continue;
 
                 const int64 when = b.start + offsetOf (m);
+                const bool drawn = drawnLevels.load();
                 float vel = m.isNoteOn() ? (float) m.getVelocity() : 0.0f;
                 for (int r = 1; r <= repeats; ++r)
                 {
@@ -362,13 +430,24 @@ namespace pulse
                     if (p < 0 || p > 127) break;
                     if (m.isNoteOn())
                     {
-                        vel *= fb;
-                        if (vel < 1.0f) break;
-                        schedule (when + delay * r, MidiMessage::noteOn (m.getChannel(), p, (uint8) jlimit (1, 127, roundToInt (vel))));
+                        // a drawn pattern gives each repeat its own level (and can leave one out); otherwise each is quieter than the last
+                        const float v = drawn ? (float) m.getVelocity() * levels[(size_t) (r - 1)].load() : (vel *= fb);
+                        if (v < 1.0f) { if (drawn) continue; break; }
+                        schedule (when + delay * r, MidiMessage::noteOn (m.getChannel(), p, (uint8) jlimit (1, 127, roundToInt (v))));
                     }
                     else schedule (when + delay * r, MidiMessage::noteOff (m.getChannel(), p));
                 }
             }
         }
+
+    private:
+        void reloadLevels()
+        {
+            auto v = getLevels();
+            for (int i = 0; i < maxRepeats; ++i) levels[(size_t) i].store (v[(size_t) i]);
+            drawnLevels.store (hasDrawnLevels());
+        }
+        std::array<std::atomic<float>, maxRepeats> levels;
+        std::atomic<bool> drawnLevels { false };
     };
 }

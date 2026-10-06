@@ -6,6 +6,108 @@
 /** The picture for the Velocity effect: how hard a note comes out for how hard it was played. */
 namespace MidiFxUI
 {
+    /** A row of bars to draw with the mouse: drag across them to set their heights, pull one to the bottom for none.
+        Used for the Arpeggiator's pattern and the Note Echo's repeats. */
+    class StepBars : public Component, private Timer
+    {
+    public:
+        std::function<std::vector<float>()> get;
+        std::function<void (const std::vector<float>&)> set;
+        std::function<int()> used, playing;          // how many of the bars count; which one is sounding (-1 = none)
+        std::function<void (const String&)> begin;    // starts an undo step
+        Colour colour { Theme::accent };
+        String title, hint;
+
+        StepBars() { startTimerHz (20); setMouseCursor (MouseCursor::CrosshairCursor); }
+
+        /** Sets one bar as a drag would (also used by the self-test). */
+        void setBar (int index, float value)
+        {
+            auto v = get();
+            if (index < 0 || index >= (int) v.size()) return;
+            v[(size_t) index] = value < 0.06f ? 0.0f : jlimit (0.0f, 1.0f, value);   // near the bottom means none
+            set (v);
+        }
+
+        void resized() override { area = getLocalBounds().toFloat().reduced (16.0f).withTrimmedTop (22.0f).withTrimmedBottom (16.0f); }
+
+        void paint (Graphics& g) override
+        {
+            Graphs::proDisplay (g, getLocalBounds().toFloat());
+            SpaceUI::areaTitle (g, area, title, hint);
+            g.setColour (Pro::shade (0.3f));
+            g.fillRoundedRectangle (area.expanded (6.0f), 5.0f);
+            const auto v = get();
+            const int n = (int) v.size(), count = used ? jlimit (1, n, used()) : n, now = playing ? playing() : -1;
+            const float bw = area.getWidth() / (float) jmax (1, n);
+            for (int i = 0; i < n; ++i)
+            {
+                auto cell = Rectangle<float> (area.getX() + bw * (float) i, area.getY(), bw, area.getHeight()).reduced (2.0f, 0.0f);
+                const bool on = i < count;
+                g.setColour (Theme::ink.withAlpha (i % 4 == 0 ? 0.07f : 0.035f));
+                g.fillRoundedRectangle (cell, 3.0f);
+                if (v[(size_t) i] > 0.0f)
+                {
+                    g.setColour ((i == now ? Colours::white : colour).withAlpha (on ? (i == now ? 0.95f : 0.8f) : 0.2f));
+                    g.fillRoundedRectangle (cell.withTop (cell.getBottom() - jmax (3.0f, v[(size_t) i] * cell.getHeight())), 3.0f);
+                }
+                else if (on)
+                {
+                    g.setColour (Theme::muted.withAlpha (0.6f));
+                    g.setFont (FontOptions (10.0f));
+                    g.drawText ("-", cell.removeFromBottom (14.0f), Justification::centred);
+                }
+                Graphs::label (g, String (i + 1), { cell.getX(), area.getBottom() + 3.0f, cell.getWidth(), 11.0f }, Justification::centred, on ? 0.7f : 0.3f);
+            }
+        }
+
+        void mouseDown (const MouseEvent& e) override { if (begin) begin (title); mouseDrag (e); }
+        void mouseDrag (const MouseEvent& e) override
+        {
+            const int n = (int) get().size();
+            setBar (jlimit (0, n - 1, (int) ((e.position.x - area.getX()) / jmax (1.0f, area.getWidth()) * (float) n)), (area.getBottom() - e.position.y) / jmax (1.0f, area.getHeight()));
+        }
+        void mouseDoubleClick (const MouseEvent& e) override
+        {
+            const int n = (int) get().size();
+            if (begin) begin (title);
+            setBar (jlimit (0, n - 1, (int) ((e.position.x - area.getX()) / jmax (1.0f, area.getWidth()) * (float) n)), 1.0f);
+        }
+
+    private:
+        void timerCallback() override { repaint(); }
+        Rectangle<float> area;
+    };
+
+    inline std::unique_ptr<StepBars> arpPattern (pulse::Arpeggiator& a)
+    {
+        auto b = std::make_unique<StepBars>();
+        te::Plugin::Ptr keep (&a);
+        b->title = "PATTERN";
+        b->hint = "draw how hard each step plays; pull a bar to the bottom for a rest; double-click for full";
+        b->colour = Theme::accent;
+        b->get = [&a, keep] { return a.getPattern(); };
+        b->set = [&a, keep] (const std::vector<float>& v) { a.setPattern (v); };
+        b->used = [&a, keep] { return a.getInt (pulse::Arpeggiator::pSteps); };
+        b->playing = [&a, keep] { return a.playingStep.load(); };
+        b->begin = [&a, keep] (const String& n) { a.edit.getUndoManager().beginNewTransaction (n); };
+        return b;
+    }
+
+    inline std::unique_ptr<StepBars> echoLevels (pulse::NoteEcho& e)
+    {
+        auto b = std::make_unique<StepBars>();
+        te::Plugin::Ptr keep (&e);
+        b->title = "REPEATS";
+        b->hint = "draw how loud each repeat is (until you do, each is Feedback times the one before)";
+        b->colour = Theme::green;
+        b->get = [&e, keep] { return e.getLevels(); };
+        b->set = [&e, keep] (const std::vector<float>& v) { e.setLevels (v); };
+        b->used = [&e, keep] { return e.getInt (pulse::NoteEcho::pRepeats); };
+        b->begin = [&e, keep] (const String& n) { e.edit.getUndoManager().beginNewTransaction (n); };
+        return b;
+    }
+
     class VelocityView : public SpaceUI::HandleView
     {
     public:

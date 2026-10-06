@@ -1785,6 +1785,16 @@ namespace DeviceEditors
             add ("Prism EQ", std::make_unique<PrismUI::View> (evs, *q, true));
         else if (auto vf = dynamic_cast<pulse::VelocityFx*> (&p))
             add ("Velocity", std::make_unique<MidiFxUI::VelocityView> (*vf));
+        else if (auto arp = dynamic_cast<pulse::Arpeggiator*> (&p))
+        {
+            add ("Pattern", MidiFxUI::arpPattern (*arp));
+            add ("What it does to a phrase", std::make_unique<DeviceViews::MidiFxPreview> (*arp));
+        }
+        else if (auto ne = dynamic_cast<pulse::NoteEcho*> (&p))
+        {
+            add ("Repeats", MidiFxUI::echoLevels (*ne));
+            add ("What it does to a phrase", std::make_unique<DeviceViews::MidiFxPreview> (*ne));
+        }
         else if (auto fx = dynamic_cast<pulse::PulseMidiEffect*> (&p))
             add ("What it does to a phrase", std::make_unique<DeviceViews::MidiFxPreview> (*fx));
         else if (auto vc = dynamic_cast<pulse::Vocoder*> (&p))

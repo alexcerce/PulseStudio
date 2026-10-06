@@ -213,6 +213,7 @@ namespace SelfTest
         shoot (pulse::NoteLength::xmlTypeName, nullptr, "shot_notelength.png");
         shoot (pulse::VelocityFx::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::VelocityFx::pCurve, 0.5f); p.set (pulse::VelocityFx::pOutLow, 40); }, "shot_velocity.png");
         shoot (pulse::RandomFx::xmlTypeName, nullptr, "shot_random.png");
+        shoot (pulse::Arpeggiator::xmlTypeName, [] (pulse::PulsePlugin& p) { dynamic_cast<pulse::Arpeggiator&> (p).setPattern ({ 1.0f, 0.4f, 0.7f, 0.0f, 1.0f, 0.4f, 0.0f, 0.6f, 1.0f, 0.3f, 0.7f, 0.0f, 0.9f, 0.5f, 0.7f, 0.3f }); }, "shot_arp.png");
         shoot (pulse::Gate::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Gate::pThreshold, -22); p.set (pulse::Gate::pRange, 40); p.set (pulse::Gate::pHysteresis, 6); }, "shot_gate.png");
         shoot (pulse::TransientShaper::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::TransientShaper::pAttack, 0.6f); p.set (pulse::TransientShaper::pSustain, -0.4f); }, "shot_transient.png");
         shoot (pulse::DeEsser::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::DeEsser::pThreshold, -36); p.set (pulse::DeEsser::pRange, 10); }, "shot_deesser.png");
@@ -1177,6 +1178,45 @@ namespace SelfTest
                 const bool dragged = vf->get (VF::pOutLow) > 20.0f && vf->get (VF::pOutHigh) < 115.0f && vf->get (VF::pCurve) > 0.2f && vview.getNumHandles() == 3;
                 rep.check (straight && fixed && fitted && softUp > 45 && hardSame == 127 && spread && inBounds && dragged,
                            "MIDI effect: Velocity (straight by default, fixed, fitted into a range, a curve, randomness within bounds, its picture)", "30 becomes " + String (softUp) + " with the curve at +50%");
+
+                // the Arpeggiator's drawn pattern: rests wait (the melody is not skipped), levels scale the velocity, the length wraps, swing delays every second step
+                {
+                    auto ap6 = make (pulse::Arpeggiator::xmlTypeName);
+                    auto* arp6 = dynamic_cast<pulse::Arpeggiator*> (ap6.get());
+                    using AR = pulse::Arpeggiator;
+                    const std::vector<std::pair<double, MidiMessage>> chordHeld { { 0.0, on (60) }, { 0.0, on (64) }, { 0.0, on (67) }, { 0.99, off (60) }, { 0.99, off (64) }, { 0.99, off (67) } };
+                    arp6->setPattern ({ 1.0f, 0.0f, 0.5f, 0.0f, 1.0f, 0.0f, 0.5f, 0.0f });
+                    auto pat = runFx (*ap6, chordHeld, 1.5);
+                    std::vector<int> pNotes, pVels; std::vector<double> pTimes;
+                    for (auto& [tm, m] : pat) if (m.isNoteOn()) { pNotes.push_back (m.getNoteNumber()); pVels.push_back (m.getVelocity()); pTimes.push_back (tm); }
+                    const bool rests = pNotes == std::vector<int> { 60, 64, 67, 60 } && pVels == std::vector<int> { 100, 50, 100, 50 } && pTimes.size() == 4 && std::abs (pTimes[1] - 0.25) < 0.011 && std::abs (pTimes[3] - 0.75) < 0.011;
+                    arp6->setPattern ({ 1.0f, 1.0f, 0.0f }); arp6->set (AR::pSteps, 3.0f);
+                    const bool wraps = noteOns (runFx (*ap6, chordHeld, 1.5)).size() == 6;   // 8 steps, steps 3 and 6 are rests
+                    arp6->setPattern ({}); arp6->set (AR::pSteps, 16.0f); arp6->set (AR::pSwing, 0.5f);
+                    std::vector<double> sw;
+                    for (auto& [tm, m] : runFx (*ap6, chordHeld, 1.5)) if (m.isNoteOn()) sw.push_back (tm);
+                    const bool swung = sw.size() == 8 && std::abs (sw[1] - (0.125 + 0.03125)) < 0.011 && std::abs (sw[2] - 0.25) < 0.011;
+                    // the picture: bars are set by dragging, and a bar pulled to the bottom is a rest
+                    arp6->set (AR::pSwing, 0.0f);
+                    auto barsView = MidiFxUI::arpPattern (*arp6);
+                    barsView->setSize (800, 300);
+                    barsView->setBar (2, 0.4f);
+                    barsView->setBar (5, 0.02f);
+                    const auto drawn = arp6->getPattern();
+                    const bool bars = std::abs (drawn[2] - 0.4f) < 0.01f && drawn[5] == 0.0f && drawn[0] == 1.0f && drawn.size() == 16;
+                    // the Note Echo's drawn repeats: each has its own level, and one can be left out
+                    auto ep6 = make (pulse::NoteEcho::xmlTypeName);
+                    auto* echo6 = dynamic_cast<pulse::NoteEcho*> (ep6.get());
+                    const bool byFeedback = ! echo6->hasDrawnLevels() && std::abs (echo6->getLevels()[1] - 0.36f) < 0.01f;
+                    echo6->setLevels ({ 1.0f, 0.0f, 0.5f });
+                    std::vector<int> eVels; std::vector<double> eTimes;
+                    for (auto& [tm, m] : runFx (*ep6, { { 0.0, on (72) }, { 0.1, off (72) } }, 1.5)) if (m.isNoteOn()) { eVels.push_back (m.getVelocity()); eTimes.push_back (tm); }
+                    const bool echoes = eVels == std::vector<int> { 100, 100, 50 } && eTimes.size() == 3 && std::abs (eTimes[2] - 0.75) < 0.011;
+                    rep.check (rests && wraps && swung && bars && byFeedback && echoes,
+                               "MIDI effects: drawn patterns (Arpeggiator steps with rests, length and swing; Note Echo repeats)",
+                               String (rests ? "" : "rests wrong; ") + (wraps ? "" : "length wrong; ") + (swung ? "" : "swing wrong; ") + (bars ? "" : "bars wrong; ") + (echoes ? "" : "echo levels wrong; ")
+                               + String ((int) pNotes.size()) + " notes from 8 steps with every second one a rest");
+                }
             }
         }
 

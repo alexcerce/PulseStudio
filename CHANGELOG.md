@@ -2,6 +2,11 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.20 - 2026-10-06
+
+- Arpeggiator: a drawn pattern of up to 16 steps (levels and rests), pattern length and swing
+- Note Echo: the level of each repeat can be drawn
+
 ## 0.99.19 - 2026-10-06
 
 - New MIDI effects: Note Length, Pitch, Random and Velocity
