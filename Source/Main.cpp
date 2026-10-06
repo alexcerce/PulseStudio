@@ -170,6 +170,19 @@ public:
             engine = std::make_unique<te::Engine> ("Pulse Studio Test", std::make_unique<PulseUIBehaviour>(), std::make_unique<PulseEngineBehaviour>());
             pulse::registerDevices (*engine);
             const auto out = File::getCurrentWorkingDirectory().getChildFile (args[i + 1].unquoted());
+            // a name ending in .tracktionedit asks for the project itself, to open and work on, and not for its sound
+            if (out.hasFileExtension ("tracktionedit"))
+            {
+                out.deleteFile();
+                {
+                    auto demo = te::createEmptyEdit (*engine, out);
+                    DemoSong::build (*demo);
+                    te::EditFileOperations (*demo).save (true, true, false);
+                }
+                setApplicationReturnValue (out.existsAsFile() ? 0 : 1);
+                quit();
+                return;
+            }
             auto projectFile = File::getSpecialLocation (File::tempDirectory).getChildFile ("pulse-demo-render.tracktionedit");
             projectFile.deleteFile();
             bool ok = false;
