@@ -21,6 +21,22 @@ this work after usage-limit windows. **Read this whole file before doing anythin
 - Before stopping (or if the context is getting full), commit work in progress that builds and passes, update the
   log below, and delete `.autopilot.lock`.
 
+## Testing (owner, 2026-10-06: "could we do testing more efficiently?")
+
+Two tiers, so that time goes into features:
+
+- **With every feature (quick, about 2 minutes):** Release build, the Release self-test (all checks must pass), and
+  `--device-shots` when there is a new window to look at. Then commit. This stays per feature because it is cheap
+  and finds mistakes while the code is fresh (on 2026-10-05/06 it caught an unstable feedback loop, a frequency
+  shifter going the wrong way and a wrong level, each within minutes of being written).
+- **Once per Programme group, and before anything is called a release (slow, about 15 minutes):** the Debug build,
+  the Debug self-test, `--monkey` (two seeds, 4000 events), `--command-fuzz`, the installer, and a look at every
+  new window at its smallest and largest size. Run each as its own foreground command (the Debug self-test alone
+  takes 5 minutes). Anything they find is fixed before the next group starts. Note in the log which commits a
+  slow pass covers.
+
+The version is bumped and README / CHANGELOG are written with every feature commit as before.
+
 ## Lock
 
 `.autopilot.lock` (repo root, git-ignored) holds the time a session last worked. If it exists and was modified
@@ -145,7 +161,7 @@ well EVERYWHERE." So, besides the list:
 
 1. Effects: [x] transient shaper  [x] de-esser  [x] gate / expander  [x] convolution reverb (built-in spaces)
    [ ] shimmer reverb  [ ] spectral (freeze / blur / shift / spectral delay)  [x] chorus / flanger / phaser
-   [x] tremolo / auto-pan  [ ] frequency shifter  [ ] bit reduction  [ ] amp + cabinet  [ ] exciter  [ ] beat repeat
+   [x] tremolo / auto-pan  [x] frequency shifter  [x] bit reduction  [ ] amp + cabinet  [x] exciter  [ ] beat repeat
    [ ] grain delay  [ ] looper  [ ] resonators
 2. Instruments: [ ] Wavetable third oscillator + wavetable import from audio  [ ] sampler (slices, per-slice stretch,
    zones)  [ ] analogue-style subtractive synth  [ ] physical-modelling instrument (string / mallet)
@@ -399,3 +415,9 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
 - 2026-10-06: v0.99.9. Pulse Chorus, Phaser-Flanger, Auto Pan: Source/ModFx.h (ModEffect base: free / tempo-synced
   LFO, Smooth for settings changed while playing), ModFxDisplay.h (ModUI views and panels). 9 / 9 / 8 presets.
   260 checks. The device fuzz caught the ensemble's feedback loop gaining with three voices (now the average).
+- 2026-10-06: v0.99.10. Frequency Shifter (two all-pass chains a quarter cycle apart; mirror image 54 to 59 dB
+  down from 80 Hz to 9 kHz), Redux, Exciter: Source/ColourFx.h, ColourFxDisplay.h. 9 / 8 / 7 presets. 267 checks.
+  The Debug self-test now takes about 5 minutes: run it, the monkey and the command fuzz as separate commands
+  (one command of all three went over the 10-minute limit).
+- 2026-10-06: testing split into two tiers at the owner's request (see Testing). v0.99.10 had the Debug self-test
+  (267 pass) but no monkey / command-fuzz run: owed at the end of group 1, with everything after v0.99.9.

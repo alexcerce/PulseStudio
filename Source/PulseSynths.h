@@ -1885,6 +1885,7 @@ namespace pulse
 #include "Dynamics2.h"
 #include "Convolution.h"
 #include "ModFx.h"
+#include "ColourFx.h"
 
 namespace pulse
 {
@@ -1910,6 +1911,9 @@ namespace pulse
         pm.createBuiltInType<Chorus>();
         pm.createBuiltInType<PhaserFlanger>();
         pm.createBuiltInType<AutoPan>();
+        pm.createBuiltInType<FreqShifter>();
+        pm.createBuiltInType<Redux>();
+        pm.createBuiltInType<Exciter>();
         pm.createBuiltInType<Arpeggiator>();
         pm.createBuiltInType<ChordFx>();
         pm.createBuiltInType<ScaleFx>();

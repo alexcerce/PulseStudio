@@ -196,6 +196,9 @@ namespace SelfTest
         shoot (pulse::Chorus::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Chorus::pMode, 1); p.set (pulse::Chorus::pAmount, 0.7f); }, "shot_chorus.png");
         shoot (pulse::PhaserFlanger::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::PhaserFlanger::pStages, 2); p.set (pulse::PhaserFlanger::pFeedback, 0.6f); }, "shot_phaser.png");
         shoot (pulse::AutoPan::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::AutoPan::pAmount, 0.8f); p.set (pulse::AutoPan::pPhase, 120); }, "shot_autopan.png");
+        shoot (pulse::FreqShifter::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::FreqShifter::pShift, 240); p.set (pulse::FreqShifter::pLfoAmount, 120); }, "shot_shifter.png");
+        shoot (pulse::Redux::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Redux::pRate, 6000); p.set (pulse::Redux::pBits, 4); }, "shot_redux.png");
+        shoot (pulse::Exciter::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Exciter::pAmount, 0.6f); p.set (pulse::Exciter::pColour, 0.6f); }, "shot_exciter.png");
         shoot (pulse::Gate::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Gate::pThreshold, -22); p.set (pulse::Gate::pRange, 40); p.set (pulse::Gate::pHysteresis, 6); }, "shot_gate.png");
         shoot (pulse::TransientShaper::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::TransientShaper::pAttack, 0.6f); p.set (pulse::TransientShaper::pSustain, -0.4f); }, "shot_transient.png");
         shoot (pulse::DeEsser::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::DeEsser::pThreshold, -36); p.set (pulse::DeEsser::pRange, 10); }, "shot_deesser.png");
@@ -4141,6 +4144,143 @@ namespace SelfTest
                     LookAndFeel::setDefaultLookAndFeel (nullptr);
                 }
                 cp2 = nullptr; pp2 = nullptr; ap2 = nullptr;
+            }
+
+            // --- frequency shifter, redux, exciter --------------------------------------------------------
+            {
+                auto mk = [&] (const char* type) { auto pl = edit->getPluginCache().createNewPlugin (type, {}); t->pluginList.insertPlugin (pl, 0, nullptr); return pl; };
+                auto fp2 = mk (pulse::FreqShifter::xmlTypeName), rp2 = mk (pulse::Redux::xmlTypeName), ep2 = mk (pulse::Exciter::xmlTypeName);
+                auto* shifter = dynamic_cast<pulse::FreqShifter*> (fp2.get());
+                auto* redux = dynamic_cast<pulse::Redux*> (rp2.get());
+                auto* exciter = dynamic_cast<pulse::Exciter*> (ep2.get());
+                using FS = pulse::FreqShifter;
+                using RX = pulse::Redux;
+                using EX = pulse::Exciter;
+                AudioBuffer<float> out;
+                auto partDb = [&] (const AudioBuffer<float>& b, double hz)   // level of one frequency over the last 0.2 s
+                {
+                    const int len = (int) (0.2 * sr), from = b.getNumSamples() - len;
+                    double re = 0, im = 0;
+                    for (int i = 0; i < len; ++i)
+                    {
+                        const double ph = MathConstants<double>::twoPi * hz * (from + i) / sr;
+                        re += b.getSample (0, from + i) * std::cos (ph); im += b.getSample (0, from + i) * std::sin (ph);
+                    }
+                    return Decibels::gainToDecibels ((float) (2.0 * std::sqrt (re * re + im * im) / len), -120.0f);
+                };
+                const float a10d = Decibels::decibelsToGain (-10.0f);
+
+                // shifter: 1 kHz + 200 Hz is 1.2 kHz and nothing else; down works too; ring mod gives both
+                shifter->set (FS::pShift, 200.0f); shifter->set (FS::pMix, 1.0f);
+                runFx (*shifter, sine (1000, a10d), 0.6, &out);
+                const float up = partDb (out, 1200), upOrig = partDb (out, 1000), upMirror = partDb (out, 800);
+                shifter->set (FS::pShift, -300.0f);
+                runFx (*shifter, sine (1000, a10d), 0.6, &out);
+                const float down = partDb (out, 700), downMirror = partDb (out, 1300);
+                // low and high notes are shifted just as cleanly
+                shifter->set (FS::pShift, 100.0f);
+                runFx (*shifter, sine (80, a10d), 0.6, &out);
+                const float lowUp = partDb (out, 180), lowMirror = partDb (out, 20);
+                runFx (*shifter, sine (9000, a10d), 0.6, &out);
+                const float highUp = partDb (out, 9100), highMirror = partDb (out, 8900);
+                shifter->set (FS::pMode, 1); shifter->set (FS::pShift, 200.0f);
+                runFx (*shifter, sine (1000, a10d), 0.6, &out);
+                const float ringA = partDb (out, 800), ringB = partDb (out, 1200);
+                shifter->set (FS::pMode, 0); shifter->set (FS::pFeedback, 0.9f); shifter->set (FS::pShift, 30.0f);
+                const float spiral = runFx (*shifter, sine (440, a10d), 3.0);
+                shifter->set (FS::pFeedback, 0.0f); shifter->set (FS::pShift, 100.0f);
+                const bool shiftOk = std::abs (up + 10.0f) < 0.5f && upOrig < -50.0f && upMirror < -45.0f && std::abs (down + 10.0f) < 0.5f && downMirror < -45.0f
+                                     && std::abs (lowUp + 10.0f) < 0.7f && lowMirror < -35.0f && std::abs (highUp + 10.0f) < 0.7f && highMirror < -35.0f
+                                     && std::abs (ringA + 16.0f) < 0.5f && std::abs (ringB + 16.0f) < 0.5f && spiral < 12.0f && spiral > -30.0f;
+                rep.check (shiftOk, "Frequency Shifter (moves up and down cleanly from 80 Hz to 9 kHz, ring mod, stable spiral)",
+                           "1 kHz +200: " + String (up, 1) + " dB at 1.2 kHz, " + String (upOrig, 0) + " at 1 kHz, " + String (upMirror, 0) + " at 800 Hz; -300: " + String (down, 1) + " / mirror " + String (downMirror, 0)
+                           + "; 80 Hz mirror " + String (lowMirror, 0) + ", 9 kHz mirror " + String (highMirror, 0) + "; ring " + String (ringA, 1) + " / " + String (ringB, 1) + "; 90% feedback peaks at " + String (spiral, 1));
+
+                // redux: full rate and 16 bits changes almost nothing; 2 bits leaves a handful of levels; 1 kHz gives 1000 new values a second
+                redux->set (RX::pRate, 48000.0f); redux->set (RX::pBits, 16.0f);
+                auto tone2 = sine (440, 0.5f);
+                runFx (*redux, tone2, 0.3, &out);
+                float cleanErr = 0;
+                for (int i = 0; i < out.getNumSamples(); ++i) cleanErr = jmax (cleanErr, std::abs (out.getSample (0, i) - tone2 (0, i / sr)));
+                redux->set (RX::pBits, 2.0f);
+                runFx (*redux, tone2, 0.3, &out);
+                std::set<int> levelsSeen;
+                for (int i = 0; i < out.getNumSamples(); ++i) levelsSeen.insert (roundToInt (out.getSample (0, i) * 1000.0f));
+                redux->set (RX::pBits, 16.0f); redux->set (RX::pRate, 1000.0f);
+                runFx (*redux, sine (97, 0.5f), 1.0, &out);
+                int changes = 0;
+                for (int i = 1; i < out.getNumSamples(); ++i) if (out.getSample (0, i) != out.getSample (0, i - 1)) ++changes;
+                redux->set (RX::pMix, 0.0f);
+                runFx (*redux, tone2, 0.2, &out);
+                float rxDry = 0;
+                for (int i = 0; i < out.getNumSamples(); ++i) rxDry = jmax (rxDry, std::abs (out.getSample (0, i) - tone2 (0, i / sr)));
+                redux->set (RX::pMix, 1.0f); redux->set (RX::pRate, 12000.0f); redux->set (RX::pBits, 12.0f);
+                const bool reduxOk = cleanErr < 1.0e-4f && levelsSeen.size() <= 5 && levelsSeen.size() >= 3 && std::abs (changes - 1000) < 30 && rxDry < 1.0e-6f
+                                     && std::abs (pulse::Redux::quantise (0.3f, 1.0f)) < 1.0e-6f && std::abs (pulse::Redux::quantise (0.7f, 1.0f) - 1.0f) < 1.0e-6f;
+                rep.check (reduxOk, "Redux (clean at full rate and 16 bits, few levels at 2 bits, a new value 1000 times a second at 1 kHz)",
+                           "error at 48 kHz / 16 bit " + String (cleanErr, 6) + ", levels at 2 bits: " + String ((int) levelsSeen.size()) + ", new values in a second at 1 kHz: " + String (changes));
+
+                // exciter: odd harmonics (3 x) with Colour at odd, even (2 x) at even, nothing added to a note below Frequency, Amount 0 changes nothing
+                exciter->set (EX::pFreq, 600.0f); exciter->set (EX::pDrive, 18.0f); exciter->set (EX::pAmount, 1.0f); exciter->set (EX::pColour, -1.0f);
+                runFx (*exciter, sine (1000, a10d), 0.6, &out);
+                const float odd3 = partDb (out, 3000), odd2 = partDb (out, 2000);
+                exciter->set (EX::pColour, 1.0f);
+                runFx (*exciter, sine (1000, a10d), 0.6, &out);
+                const float even2 = partDb (out, 2000);
+                exciter->set (EX::pFreq, 6000.0f); exciter->set (EX::pColour, 0.0f);
+                runFx (*exciter, sine (100, a10d), 0.6, &out);
+                const float lowKept = partDb (out, 100), lowHarm = jmax (partDb (out, 200), partDb (out, 300));
+                exciter->set (EX::pAmount, 0.0f);
+                auto tone3 = sine (2000, 0.25f);
+                runFx (*exciter, tone3, 0.3, &out);
+                float exDry = 0;
+                for (int i = 4800; i < out.getNumSamples(); ++i) exDry = jmax (exDry, std::abs (out.getSample (0, i) - tone3 (0, i / sr)));
+                exciter->set (EX::pAmount, 0.3f); exciter->set (EX::pFreq, 3000.0f); exciter->set (EX::pDrive, 12.0f);
+                const bool exciterOk = odd3 > -45.0f && odd2 < odd3 - 25.0f && even2 > -45.0f && std::abs (lowKept + 10.0f) < 0.2f && lowHarm < -75.0f && exDry < 1.0e-5f;
+                rep.check (exciterOk, "Exciter (odd and even harmonics by Colour, low notes left alone, nothing at Amount 0)",
+                           "odd: 3 kHz " + String (odd3, 1) + " dB, 2 kHz " + String (odd2, 1) + "; even: 2 kHz " + String (even2, 1) + "; 100 Hz note " + String (lowKept, 2) + " dB, its harmonics " + String (lowHarm, 0));
+
+                // their windows
+                {
+                    PulseLookAndFeel laf;
+                    LookAndFeel::setDefaultLookAndFeel (&laf);
+                    EditViewState evs (*edit, sm);
+                    ColourUI::ShifterView sv (*shifter);
+                    ColourUI::ReduxView rv2 (*redux);
+                    ColourUI::ExciterView ev (*exciter);
+                    Image img (Image::ARGB, 1000, 520, true);
+                    for (Component* c : { (Component*) &sv, (Component*) &rv2, (Component*) &ev }) { c->setSize (1000, 520); Graphics g (img); c->paint (g); }
+                    const float s0 = shifter->get (FS::pShift), l0 = shifter->get (FS::pLfoAmount), r0 = redux->get (RX::pRate), b0 = redux->get (RX::pBits), f0 = exciter->get (EX::pFreq), am0 = exciter->get (EX::pAmount);
+                    sv.dragHandle (0, 60.0f, 0.0f);
+                    sv.dragHandle (1, 40.0f, 0.0f);
+                    rv2.dragHandle (0, -100.0f, 60.0f);
+                    ev.dragHandle (0, 60.0f, -40.0f);
+                    const bool handlesOk = shifter->get (FS::pShift) > s0 + 100.0f && shifter->get (FS::pLfoAmount) > l0 + 50.0f && redux->get (RX::pRate) < r0 * 0.8f && redux->get (RX::pBits) < b0 - 1.0f
+                                           && exciter->get (EX::pFreq) > f0 * 1.2f && exciter->get (EX::pAmount) > am0 + 0.05f;
+                    StringArray missing;
+                    for (auto* pp : std::initializer_list<pulse::PulsePlugin*> { shifter, redux, exciter })
+                    {
+                        DeviceEditors::Editor ed (evs, *pp);
+                        ed.setSize (1100, 760);
+                        std::set<te::AutomatableParameter*> seen;
+                        std::function<void (Component&)> walk = [&] (Component& c)
+                        {
+                            if (auto* k = dynamic_cast<ParamKnob*> (&c)) seen.insert (&k->getParameter());
+                            if (auto* k = dynamic_cast<ParamChoice*> (&c)) seen.insert (&k->getParameter());
+                            if (auto* k = dynamic_cast<ParamToggle*> (&c)) seen.insert (&k->getParameter());
+                            for (auto* chd : c.getChildren()) walk (*chd);
+                        };
+                        walk (ed);
+                        for (int i = 0; i < pp->numParams(); ++i) if (! seen.count (&*pp->param (i))) missing.add (pp->getName() + ": " + pp->param (i)->paramID);
+                        if (! DeviceEditors::hasFullEditor (*pp)) missing.add (pp->getName() + ": no full window");
+                    }
+                    rep.check (handlesOk && missing.isEmpty(), "Frequency Shifter, Redux and Exciter windows: points on the graph, and a control for every parameter",
+                               missing.isEmpty() ? "shift " + String (roundToInt (s0)) + " -> " + String (roundToInt (shifter->get (FS::pShift))) + " Hz, rate " + String (roundToInt (r0)) + " -> "
+                                                   + String (roundToInt (redux->get (RX::pRate))) + " Hz, exciter from " + String (roundToInt (f0)) + " -> " + String (roundToInt (exciter->get (EX::pFreq))) + " Hz"
+                                                 : missing.joinIntoString ("; "));
+                    LookAndFeel::setDefaultLookAndFeel (nullptr);
+                }
+                fp2 = nullptr; rp2 = nullptr; ep2 = nullptr;
             }
 
             // displays build

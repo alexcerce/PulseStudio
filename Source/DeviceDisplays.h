@@ -10,6 +10,7 @@
 #include "Dynamics2Display.h"
 #include "ConvolutionDisplay.h"
 #include "ModFxDisplay.h"
+#include "ColourFxDisplay.h"
 
 /** Visual panels shown at the left of Pulse device cards. */
 namespace DeviceDisplays

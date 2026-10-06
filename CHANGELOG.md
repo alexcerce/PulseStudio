@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.10 - 2026-10-06
+
+- New effects: Frequency Shifter (with ring modulation), Redux (sample-rate and bit reduction) and Exciter, each with its own window and presets
+
 ## 0.99.9 - 2026-10-06
 
 - New effects: Pulse Chorus (chorus, ensemble, vibrato), Phaser-Flanger and Auto Pan (auto-pan and tremolo), each with its own window and presets

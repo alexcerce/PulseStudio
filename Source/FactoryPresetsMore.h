@@ -322,6 +322,40 @@ namespace FactoryPresetsMore
                 { "Send (100% wet hall)", { { "space", 6 }, { "predelay", 20 }, { "lowcut", 150 }, { "mix", 1.0f } } } } },
 
             //----------------------------------------------------------------------------------
+            // Frequency Shifter: mode 0 shift, 1 ring mod
+            { "pulseShifter", {
+                { "Slow Phasing (0.3 Hz)", { { "shift", 0 }, { "fine", 0.3f }, { "mix", 0.5f } } },
+                { "Stereo Drift", { { "shift", 0 }, { "fine", 1.5f }, { "spread", 1.0f }, { "mix", 0.5f } } },
+                { "Bell Maker", { { "shift", 240 }, { "mix", 1.0f } } },
+                { "Detuned Double", { { "shift", 6 }, { "spread", 1.0f }, { "mix", 0.4f } } },
+                { "Barber Pole Up", { { "shift", 12 }, { "feedback", 0.8f }, { "delay", 60 }, { "mix", 0.6f } } },
+                { "Falling Spiral", { { "shift", -35 }, { "feedback", 0.85f }, { "delay", 120 }, { "mix", 0.5f } } },
+                { "Robot Ring", { { "mode", 1 }, { "shift", 90 }, { "mix", 1.0f } } },
+                { "Tremolo Ring (8 Hz)", { { "mode", 1 }, { "shift", 8 }, { "mix", 1.0f } } },
+                { "Seasick", { { "shift", 0 }, { "lfoamount", 30 }, { "lforate", 0.3f }, { "mix", 1.0f } } } } },
+
+            //----------------------------------------------------------------------------------
+            { "pulseRedux", {
+                { "12-bit Sampler", { { "rate", 26000 }, { "bits", 12 }, { "soft", 1 } } },
+                { "SP-style Crunch", { { "rate", 13000 }, { "bits", 12 }, { "tone", 9000 } } },
+                { "8-bit Console", { { "rate", 11000 }, { "bits", 8 } } },
+                { "Telephone", { { "rate", 6000 }, { "bits", 10 }, { "soft", 1 }, { "tone", 3200 } } },
+                { "Aliasing Bells", { { "rate", 3500 }, { "bits", 16 } } },
+                { "Broken Speaker", { { "rate", 9000 }, { "bits", 3.5f }, { "tone", 5000 } } },
+                { "Unstable Clock", { { "rate", 8000 }, { "jitter", 0.8f }, { "bits", 12 } } },
+                { "Dust (parallel)", { { "rate", 5000 }, { "bits", 6 }, { "mix", 0.3f } } } } },
+
+            //----------------------------------------------------------------------------------
+            { "pulseExciter", {
+                { "Vocal Presence", { { "freq", 3500 }, { "drive", 12 }, { "colour", 0.3f }, { "amount", 0.25f } } },
+                { "Air", { { "freq", 8000 }, { "drive", 14 }, { "colour", 0 }, { "amount", 0.3f } } },
+                { "Acoustic Guitar Sparkle", { { "freq", 5000 }, { "drive", 10 }, { "colour", 0.5f }, { "amount", 0.3f } } },
+                { "Snare Crack", { { "freq", 2500 }, { "drive", 16 }, { "colour", -0.5f }, { "amount", 0.35f } } },
+                { "Dull Recording Rescue", { { "freq", 2000 }, { "drive", 18 }, { "colour", 0 }, { "amount", 0.45f } } },
+                { "Bass Definition", { { "freq", 700 }, { "drive", 14 }, { "colour", -0.3f }, { "amount", 0.3f } } },
+                { "Master Sheen (subtle)", { { "freq", 6500 }, { "drive", 8 }, { "colour", 0.2f }, { "amount", 0.12f } } } } },
+
+            //----------------------------------------------------------------------------------
             // Pulse Chorus: mode 0 chorus, 1 ensemble, 2 vibrato
             { "pulseChorus", {
                 { "Classic Chorus", { { "mode", 0 }, { "rate", 0.8f }, { "amount", 0.5f }, { "delay", 7 }, { "mix", 0.5f } } },
