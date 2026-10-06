@@ -2933,8 +2933,10 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
             expect (std::abs (demo->tempoSequence.getTempo (0)->getBpm() - 132.0) < 0.01, "tempo");
             // the things it is meant to show are really there
             te::Plugin* acidSynth = dtracks.size() > 3 ? dtracks[3]->pluginList[0] : nullptr;
-            auto cutoff = acidSynth != nullptr ? acidSynth->getAutomatableParameterByID ("cutoff") : nullptr;
-            expect (cutoff != nullptr && cutoff->getCurve().getNumPoints() >= 20, "the acid's filter automation");
+            {
+                auto cutoff = acidSynth != nullptr ? acidSynth->getAutomatableParameterByID ("cutoff") : nullptr;   // (let go of before the project is closed)
+                expect (cutoff != nullptr && cutoff->getCurve().getNumPoints() >= 20, "the acid's filter automation");
+            }
             int ducked = 0;
             for (auto t : dtracks) for (auto p : t->pluginList) if (dynamic_cast<pulse::ProCompressor*> (p) != nullptr && p->getSidechainSourceID() == dtracks[0]->itemID) ++ducked;
             expect (ducked == 2, String (ducked) + " compressors keyed from the kick");

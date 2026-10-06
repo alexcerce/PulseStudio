@@ -176,6 +176,15 @@ well EVERYWHERE." So, besides the list:
 6. Workflow: [x] device racks with parallel chains  [x] track alternatives  [x] project and track notes
    [x] browser preview in time and in key  [x] macros on the track header  [x] toolbar / window layouts
    [x] controller mapping pages  [x] video track
+7. Techno (the owner, 2026-10-06: "I'd use this mostly for experimental techno music"; do this group before what is
+   left of the others): [x] the demo song is a whole techno track (wait for the owner's ears on it, then change what
+   they say)  [ ] step sequencer: probability, ratchets and a length of its own for each row (polymetre)
+   [ ] a drum machine view of the Drum Rack: 16 steps a pad, accents, swing, pattern A/B/C/D and chaining
+   [ ] an acid bass preset bank for Pulse Analog, with accent and slide written as the 303 does  [ ] distortion:
+   more kinds worth having on a kick (clipper, wavefolder with tone, rumble maker = reverb into low pass into
+   sidechain)  [ ] a "kick" synth with pitch and click envelopes drawn on a graph  [ ] techno presets for every
+   instrument and factory drum kits (909, 808, industrial)  [ ] a performance view: mutes, fills and filter
+   sweeps on one page, playable from a controller
 
 Not attempted (told the owner why): content libraries and AI session players (large downloads / trained models),
 a scripting environment like Max for Live, surround / Atmos, a score editor. Still owed from before: rerun the
@@ -761,3 +770,9 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   (259 and 282 ms, both on a mixer strip).
 - 2026-10-06: --render-demo also makes an .mp3 (256 kbps, through the Windows encoder the export uses). The
   demo is in dist as "Pulse Studio demo - techno.mp3" (7 MB) and was sent to the user to listen to.
+- 2026-10-06: slow tier for v0.99.46 to v0.99.50, clean after one fix: Debug build, Debug self-test 333 / 333,
+  random input 3000 events on the new demo (seed 371), command fuzz 744 commands (seed 372). The first Debug
+  self-test crashed, and the fault was in the new demo-song check, not in the app: it still held a parameter
+  of the demo project when it closed the project (Release happened to get away with it). The Programme has a
+  new group 7, Techno, from what the owner said about how they will use the app; it comes before what is left
+  of the others. Next: hear from the owner about the demo track; group 7.
