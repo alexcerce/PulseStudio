@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.21 - 2026-10-06
+
+- Chord track: a strip of chords above the arrangement, progressions in any key, chords written out as notes, notes fitted to the chords, and the Scale effect can follow them
+
 ## 0.99.20 - 2026-10-06
 
 - Arpeggiator: a drawn pattern of up to 16 steps (levels and rests), pattern length and swing

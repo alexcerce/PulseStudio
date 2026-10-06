@@ -2,6 +2,7 @@
 
 #include "EditViewState.h"
 #include "Sections.h"
+#include "Chords.h"
 #include "BusLanes.h"
 #include "PluginMenu.h"
 #include "AutomationLane.h"
@@ -2447,6 +2448,220 @@ private:
 };
 
 //==============================================================================
+/** The chord track: the song's chords as blocks above the ruler. Double-click empty space to add one (then choose
+    it), click a chord to change it, drag its right edge for its length; right-click for progressions in any key,
+    writing the chords out as notes, and clearing. */
+class ChordStrip : public Component,
+                   private Timer
+{
+public:
+    explicit ChordStrip (EditViewState& e) : evs (e) { startTimerHz (10); }
+
+    static Colour colourFor (const Chords::Chord& c)
+    {
+        return Colour::fromHSV ((float) (((c.root * 7) % 12) / 12.0), c.kind == Chords::minor ? 0.5f : 0.4f, 0.72f, 1.0f);   // neighbours on the circle of fifths get neighbouring colours
+    }
+
+    void paint (Graphics& g) override
+    {
+        g.fillAll (Theme::bg2);
+        const auto list = Chords::all (evs.edit);
+        g.setFont (FontOptions (12.0f, Font::bold));
+        for (auto& c : list)
+        {
+            auto r = rectOf (c);
+            if (r.getRight() < 0 || r.getX() > getWidth()) continue;
+            const auto col = colourFor (c);
+            g.setColour (col.withAlpha (0.8f));
+            g.fillRoundedRectangle (r.reduced (1.0f, 2.0f), 4.0f);
+            g.setColour (col.getPerceivedBrightness() > 0.6f ? Colour (0xff111317) : Colours::white);
+            g.drawText (c.name(), r.reduced (6.0f, 0.0f), Justification::centredLeft, true);
+        }
+        if (list.empty())
+        {
+            g.setColour (Theme::muted.withAlpha (0.6f));
+            g.setFont (FontOptions (11.0f));
+            g.drawText ("Double-click to add a chord; right-click for whole progressions in any key", getLocalBounds().reduced (8, 0), Justification::centredLeft);
+        }
+    }
+
+    Rectangle<float> rectOf (const Chords::Chord& c) const
+    {
+        const float x0 = evs.beatToX (c.start), x1 = evs.beatToX (c.end());
+        return { x0, 0.0f, jmax (6.0f, x1 - x0), (float) getHeight() };
+    }
+
+    int chordAt (float x) const
+    {
+        for (auto& c : Chords::all (evs.edit))
+            if (auto r = rectOf (c); x >= r.getX() && x < r.getRight()) return c.index;
+        return -1;
+    }
+
+    /** Adds a chord one bar long at the bar under x: the same chord as the one before it, or C major. Returns its index. */
+    int addAt (float x)
+    {
+        const double bar = EngineHelpers::beatsPerBar (evs.edit);
+        const double start = jmax (0.0, std::floor (evs.xToBeat (x) / bar) * bar);
+        int root = 0, kind = Chords::major;
+        for (auto& c : Chords::all (evs.edit)) if (c.start < start) { root = c.root; kind = c.kind; }
+        evs.edit.getUndoManager().beginNewTransaction ("Add chord");
+        return Chords::add (evs.edit, start, bar, root, kind);
+    }
+
+    void mouseMove (const MouseEvent& e) override
+    {
+        const int i = chordAt (e.position.x - 3.0f);
+        setMouseCursor (i >= 0 && onRightEdge (e.position.x, i) ? MouseCursor::LeftRightResizeCursor : chordAt (e.position.x) >= 0 ? MouseCursor::PointingHandCursor : MouseCursor::NormalCursor);
+    }
+
+    void mouseDown (const MouseEvent& e) override
+    {
+        const int i = chordAt (e.position.x - 3.0f);
+        resizing = i >= 0 && onRightEdge (e.position.x, i);
+        dragIndex = resizing ? i : chordAt (e.position.x);
+        startedEdit = false;
+        if (e.mods.isPopupMenu()) { showMenu (dragIndex, e.position.x); dragIndex = -1; }
+    }
+
+    void mouseDrag (const MouseEvent& e) override
+    {
+        if (dragIndex < 0 || ! resizing) return;
+        for (auto& c : Chords::all (evs.edit))
+            if (c.index == dragIndex)
+            {
+                const double end = jmax (c.start + 0.25, evs.snap (evs.xToBeat (e.position.x)));
+                if (! startedEdit) { evs.edit.getUndoManager().beginNewTransaction ("Chord length"); startedEdit = true; }
+                Chords::setLength (evs.edit, dragIndex, end - c.start);
+            }
+        repaint();
+    }
+
+    void mouseUp (const MouseEvent& e) override
+    {
+        // a plain click on a chord opens the list to change it
+        if (dragIndex >= 0 && ! resizing && ! e.mouseWasDraggedSinceMouseDown() && ! e.mods.isPopupMenu()) showPicker (dragIndex);
+        dragIndex = -1;
+        resizing = startedEdit = false;
+    }
+
+    void mouseDoubleClick (const MouseEvent& e) override
+    {
+        if (chordAt (e.position.x) >= 0) return;
+        if (const int n = addAt (e.position.x); n >= 0) showPicker (n);
+    }
+
+private:
+    bool onRightEdge (float x, int index) const
+    {
+        for (auto& c : Chords::all (evs.edit))
+            if (c.index == index) return std::abs (x - rectOf (c).getRight()) < 6.0f;
+        return false;
+    }
+
+    /** Every chord, by root note and kind, as a menu. */
+    PopupMenu chordMenu (std::function<void (int root, int kind)> chosen, int currentRoot = -1, int currentKind = -1) const
+    {
+        PopupMenu m;
+        const auto roots = Scales::rootNames();
+        for (int r = 0; r < 12; ++r)
+        {
+            PopupMenu sub;
+            for (int k = 0; k < (int) Chords::kinds().size(); ++k)
+                sub.addItem (roots[r] + Chords::kinds()[(size_t) k].suffix + "   " + Chords::kinds()[(size_t) k].name, true, r == currentRoot && k == currentKind, [chosen, r, k] { chosen (r, k); });
+            m.addSubMenu (roots[r], sub, true, nullptr, r == currentRoot);
+        }
+        return m;
+    }
+
+    void showPicker (int index)
+    {
+        auto v = Chords::node (evs.edit, index);
+        if (! v.isValid()) return;
+        auto& edit = evs.edit;
+        auto m = chordMenu ([&edit, index] (int r, int k) { edit.getUndoManager().beginNewTransaction ("Change chord"); Chords::change (edit, index, r, k); }, (int) v[Chords::rootID], (int) v[Chords::kindID]);
+        m.showMenuAsync (PopupMenu::Options().withTargetComponent (this).withMousePosition());
+    }
+
+    void showMenu (int index, float x)
+    {
+        PopupMenu m;
+        auto& edit = evs.edit;
+        const double bar = EngineHelpers::beatsPerBar (edit);
+        const double barStart = jmax (0.0, std::floor (evs.xToBeat (x) / bar) * bar);
+        if (index >= 0)
+        {
+            auto v = Chords::node (edit, index);
+            m.addSubMenu ("Change this chord", chordMenu ([&edit, index] (int r, int k) { edit.getUndoManager().beginNewTransaction ("Change chord"); Chords::change (edit, index, r, k); },
+                                                          (int) v[Chords::rootID], (int) v[Chords::kindID]));
+            m.addItem ("Remove this chord", [&edit, index] { edit.getUndoManager().beginNewTransaction ("Remove chord"); Chords::remove (edit, index); });
+            m.addSeparator();
+        }
+        else
+            m.addSubMenu ("Add a chord here", chordMenu ([&edit, barStart, bar] (int r, int k) { edit.getUndoManager().beginNewTransaction ("Add chord"); Chords::add (edit, barStart, bar, r, k); }));
+
+        // whole progressions, a bar a chord, in any key
+        PopupMenu prog;
+        const auto roots = Scales::rootNames();
+        for (int minorKey = 0; minorKey < 2; ++minorKey)
+        {
+            PopupMenu keys;
+            for (int r = 0; r < 12; ++r)
+            {
+                PopupMenu list;
+                for (int p = 0; p < (int) Chords::progressions().size(); ++p)
+                {
+                    const String name = Chords::progressions()[(size_t) p].name;
+                    const bool forMinor = name.startsWith ("i "), either = name.startsWith ("Twelve");
+                    if (! either && forMinor != (minorKey == 1)) continue;
+                    list.addItem (name, [&edit, p, r, minorKey, barStart, bar]
+                    {
+                        edit.getUndoManager().beginNewTransaction ("Add progression");
+                        Chords::addProgression (edit, p, r, minorKey == 1, barStart, bar);
+                    });
+                }
+                keys.addSubMenu (roots[r] + (minorKey == 1 ? " minor" : " major"), list);
+            }
+            prog.addSubMenu (minorKey == 1 ? "In a minor key" : "In a major key", keys);
+        }
+        m.addSubMenu ("Add a progression from this bar", prog);
+        m.addSeparator();
+
+        const bool any = ! Chords::all (edit).empty();
+        auto* selClip = evs.selectionManager.getFirstItemOfType<te::MidiClip>();
+        m.addItem ("Write the chords into the selected MIDI clip", any && selClip != nullptr, false, [&edit, clip = te::MidiClip::Ptr (selClip)]
+        {
+            if (clip == nullptr) return;
+            edit.getUndoManager().beginNewTransaction ("Write chords");
+            Chords::writeToClip (*clip);
+        });
+        auto* selTrack = evs.selectionManager.getFirstItemOfType<te::AudioTrack>();
+        m.addItem ("Write the chords as a new clip on the selected track", any && selTrack != nullptr, false, [&edit, track = te::AudioTrack::Ptr (selTrack)]
+        {
+            if (track == nullptr) return;
+            const auto chords = Chords::all (edit);
+            if (chords.empty()) return;
+            edit.getUndoManager().beginNewTransaction ("Write chords");
+            if (auto clip = te::insertMIDIClip (*track, "Chords", { EngineHelpers::beatToTime (edit, chords.front().start), EngineHelpers::beatToTime (edit, chords.back().end()) }))
+                Chords::writeToClip (*clip);
+        });
+        m.addItem ("Remove all chords", any, false, [&edit] { edit.getUndoManager().beginNewTransaction ("Remove chords"); Chords::clear (edit); });
+        m.showMenuAsync ({});
+    }
+
+    void timerCallback() override
+    {
+        const String sig = Chords::signature (evs.edit) + String (evs.viewStartBeat) + String (evs.pixelsPerBeat);
+        if (sig != lastSig) { lastSig = sig; repaint(); }
+    }
+
+    EditViewState& evs;
+    int dragIndex = -1;
+    bool resizing = false, startedEdit = false;
+    String lastSig;
+};
+
+//==============================================================================
 /** Strip above the ruler: song markers (click to jump, drag to move, double-click to rename)
     and time-signature changes. */
 class MarkerStrip : public Component,
@@ -2786,11 +3001,12 @@ class ArrangementView : public Component,
 public:
     static constexpr int headerWidth = 230;
 
-    explicit ArrangementView (EditViewState& e) : evs (e), ruler (e), markerStrip (e), sectionStrip (e), tempoLane (e), content (e), playhead (e), buses (e, headerWidth),
+    explicit ArrangementView (EditViewState& e) : evs (e), ruler (e), markerStrip (e), sectionStrip (e), chordStrip (e), tempoLane (e), content (e), playhead (e), buses (e, headerWidth),
                                                    overview (e, [this] { return jmax (100, viewport.getWidth() - headerWidth - viewport.getScrollBarThickness()); })
     {
         addAndMakeVisible (overview);
         addAndMakeVisible (sectionStrip);
+        addAndMakeVisible (chordStrip);
         addAndMakeVisible (buses);
         addAndMakeVisible (ruler);
         addAndMakeVisible (markerStrip);
@@ -2856,8 +3072,9 @@ public:
         g.setFont (FontOptions (11.0f, Font::bold));
         g.drawText ("MARKERS", 10, 0, headerWidth - 20, markerStripHeight, Justification::centredLeft);
         g.drawText ("SECTIONS", 10, markerStripHeight, headerWidth - 20, sectionStripHeight, Justification::centredLeft);
+        g.drawText ("CHORDS", 10, markerStripHeight + sectionStripHeight, headerWidth - 20, chordStripHeight, Justification::centredLeft);
         if (tempoLane.isVisible())
-            g.drawText ("TEMPO", 10, markerStripHeight + sectionStripHeight + rulerHeight, headerWidth - 20, tempoLaneHeight, Justification::centredLeft);
+            g.drawText ("TEMPO", 10, markerStripHeight + sectionStripHeight + chordStripHeight + rulerHeight, headerWidth - 20, tempoLaneHeight, Justification::centredLeft);
         g.setColour (Theme::line);
         g.drawHorizontalLine (topHeight() - 1, 0.0f, (float) getWidth());
         if (! overviewLabel.isEmpty())
@@ -2882,6 +3099,7 @@ public:
         stripTools.removeFromRight (3);
         tempoBtn.setBounds (stripTools.removeFromRight (52));
         sectionStrip.setBounds (r.removeFromTop (sectionStripHeight).withTrimmedLeft (headerWidth));
+        chordStrip.setBounds (r.removeFromTop (chordStripHeight).withTrimmedLeft (headerWidth));
         auto top = r.removeFromTop (rulerHeight);
         if (tempoLane.isVisible())
             tempoLane.setBounds (r.removeFromTop (tempoLaneHeight).withTrimmedLeft (headerWidth));
@@ -2931,9 +3149,9 @@ public:
     }
 
 private:
-    static constexpr int rulerHeight = 30, markerStripHeight = 20, sectionStripHeight = 22, tempoLaneHeight = 64, overviewHeight = 30;
+    static constexpr int rulerHeight = 30, markerStripHeight = 20, sectionStripHeight = 22, chordStripHeight = 22, tempoLaneHeight = 64, overviewHeight = 30;
     Rectangle<int> overviewLabel;
-    int topHeight() const { return markerStripHeight + sectionStripHeight + rulerHeight + (tempoLane.isVisible() ? tempoLaneHeight : 0); }
+    int topHeight() const { return markerStripHeight + sectionStripHeight + chordStripHeight + rulerHeight + (tempoLane.isVisible() ? tempoLaneHeight : 0); }
 
     /** Holds the rows; drops on the empty area below the tracks create a new track. */
     struct Content : public Component,
@@ -3269,6 +3487,7 @@ private:
     Ruler ruler;
     MarkerStrip markerStrip;
     SectionStrip sectionStrip;
+    ChordStrip chordStrip;
     TempoLane tempoLane;
     TextButton tempoBtn { "Tempo" }, xfadeBtn { "X-fade" };
     IconButton pencilBtn { Icons::Type::pencil, "Pencil (D)" };

@@ -6,6 +6,7 @@
 
 #include "EditViewState.h"
 #include "Scales.h"
+#include "Chords.h"
 #include "ClipEnvelopes.h"
 
 /** Piano roll editor for a te::MidiClip. X positions are in the clip's content beats. */
@@ -1075,6 +1076,7 @@ public:
         else if (id == "legato") MidiTools::legato (*clip, selected);
         else if (id == "strum")  MidiTools::strum (*clip, selected, 1.0 / 16.0, true);
         else if (id == "fit")    MidiTools::fitToScale (*clip, selected, scaleBox.getSelectedId() - 2, rootBox.getSelectedId() - 1);
+        else if (id == "fitchords") Chords::fitNotes (*clip, selected);
         repaint();
     }
 
@@ -1110,6 +1112,9 @@ private:
         m.addSubMenu ("Strum chords", strum);
         m.addItem ("Fit to scale" + String (scale < 0 ? "  (choose a scale first)" : ""), scale >= 0, false,
                    run ("Fit to scale", [scale, root] (auto& c, auto& n) { MidiTools::fitToScale (c, n, scale, root); }));
+        const bool anyChords = ! Chords::all (clip->edit).empty();
+        m.addItem ("Fit to the chord track" + String (anyChords ? "" : "  (add chords above the arrangement first)"), anyChords, false,
+                   run ("Fit to chords", [] (auto& c, auto& n) { Chords::fitNotes (c, n); }));
         PopupMenu vel;
         vel.addItem ("Louder (+10%)", run ("Velocity", [] (auto& c, auto& n) { Random r; MidiTools::velocities (c, n, MT::louder, r); }));
         vel.addItem ("Softer (-10%)", run ("Velocity", [] (auto& c, auto& n) { Random r; MidiTools::velocities (c, n, MT::softer, r); }));

@@ -157,6 +157,7 @@ Plug it in and it connects automatically (hot-plug supported). The Push's area i
   - **Arpeggiator:** up, down, up/down, as played, random or chord. Rate is 1/4-1/32 or triplets, over 1-4 octaves, with gate and velocity. It locks to the song grid while playing.
   - **Chord:** up to four added intervals.
   - **Scale:** snaps everything to a key, with transpose.
+  - **Chord track:** a *CHORDS* strip above the arrangement holds the song's chords. Double-click to add one, click one to change it (17 kinds, from major and minor to ninths), drag its right edge for its length. Right-click for whole **progressions** in any major or minor key, a bar a chord (pop, ballad, fifties, rock, jazz ii-V-I, canon, minor epic, Andalusian, twelve-bar blues and more). The chords can be **written out as notes** into the selected MIDI clip or as a new clip; in the piano roll *Tools > Fit to the chord track* moves notes to the chord sounding where each starts; and the **Scale** MIDI effect has *Follow the chord track*, so whatever is played lands on a note of the current chord.
   - **Note Echo:** tempo-synced MIDI echoes with velocity feedback and a pitch step. The level of each repeat can be drawn instead (*Repeats* in its window): any repeat can be louder, quieter or left out.
   - **Drawn arpeggio patterns:** the Arpeggiator's window has a *Pattern* of up to 16 steps to draw: how hard each step plays, with a bar pulled to the bottom being a rest (the notes wait, so the melody is not skipped). *Pattern length* sets how many steps repeat, and *Swing* makes every second step late.
   - **Note Length:** gives every note a set length whatever was played: a note value at the song's tempo (1/32 to 1 bar) or a time in milliseconds, scaled by *Gate* (under 100% for staccato, over for notes that overlap). It can also play the note when the key comes up instead of when it goes down.
@@ -367,7 +368,7 @@ All of these can be changed in *File → Keyboard shortcuts*. New: **Ctrl+P** co
 ## Command line
 
 - `--render out.wav` renders the last project offline and exits.
-- `--selftest report.txt` builds a scratch project and runs 299 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--selftest report.txt` builds a scratch project and runs 300 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
 - `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
 
 ## Code layout

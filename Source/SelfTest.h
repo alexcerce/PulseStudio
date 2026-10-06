@@ -1220,6 +1220,104 @@ namespace SelfTest
             }
         }
 
+        // --- v0.99.21: the chord track --------------------------------------------------------------------
+        {
+            rep.step ("chords");
+            Chords::clear (*edit);
+            // chords never overlap: a new one cuts away what it covers of the others (here it splits one in two)
+            Chords::add (*edit, 0.0, 8.0, 0, Chords::major);
+            Chords::add (*edit, 2.0, 2.0, 9, Chords::minor);
+            auto list = Chords::all (*edit);
+            const bool cut = list.size() == 3 && list[0].name() == "C" && std::abs (list[0].length - 2.0) < 1e-6 && list[1].name() == "Am" && std::abs (list[1].start - 2.0) < 1e-6
+                             && list[2].name() == "C" && std::abs (list[2].start - 4.0) < 1e-6 && std::abs (list[2].length - 4.0) < 1e-6;
+            const auto atThree = Chords::at (*edit, 3.0), atTen = Chords::at (*edit, 10.0);
+            const bool found = atThree.has_value() && atThree->name() == "Am" && ! atTen.has_value();
+            // names and notes
+            Chords::Chord g7; g7.root = 7; g7.kind = Chords::dominant7;
+            const bool named = g7.name() == "G7" && g7.contains (65) && ! g7.contains (64) && g7.snap (64) == 65 && g7.snap (63) == 62 && g7.snap (66) == 65 && Chords::voicing (g7, 4, true) == std::vector<int> { 55, 67, 71, 74, 77 };
+            // progressions in any key
+            Chords::clear (*edit);
+            const int nPop = Chords::addProgression (*edit, 0, 0, false, 0.0, 4.0);
+            String pop;
+            for (auto& c : Chords::all (*edit)) pop << c.name() << " ";
+            Chords::clear (*edit);
+            Chords::addProgression (*edit, 6, 9, true, 0.0, 4.0);
+            String epic;
+            for (auto& c : Chords::all (*edit)) epic << c.name() << " ";
+            Chords::clear (*edit);
+            Chords::addProgression (*edit, 4, 2, false, 0.0, 4.0);
+            String jazz;
+            for (auto& c : Chords::all (*edit)) jazz << c.name() << " ";
+            const bool progs = nPop == 4 && pop.trim() == "C G Am F" && epic.trim() == "Am F C G" && jazz.trim() == "Em7 A7 Dmaj7 Dmaj7";
+            // written out as notes, and notes fitted to the chords
+            Chords::clear (*edit);
+            Chords::addProgression (*edit, 0, 0, false, 0.0, 4.0);
+            auto ct = ClipImport::createContentTrack (*edit, "Chord test", false);
+            auto mc = te::insertMIDIClip (*ct, "chords", { EngineHelpers::beatToTime (*edit, 0.0), EngineHelpers::beatToTime (*edit, 16.0) });
+            const int written = Chords::writeToClip (*mc);
+            bool rightNotes = written == 16 && mc->getSequence().getNumNotes() == 16;
+            for (auto* n : mc->getSequence().getNotes())
+                if (auto c = Chords::at (*edit, n->getStartBeat().inBeats())) rightNotes = rightNotes && c->contains (n->getNoteNumber()) && std::abs (n->getLengthBeats().inBeats() - 4.0) < 1e-6;
+            mc->getSequence().clear (nullptr);
+            mc->getSequence().addNote (61, te::BeatPosition::fromBeats (0.5), te::BeatDuration::fromBeats (0.5), 100, 0, nullptr);    // C# over C  -> C
+            mc->getSequence().addNote (61, te::BeatPosition::fromBeats (4.5), te::BeatDuration::fromBeats (0.5), 100, 0, nullptr);    // C# over G  -> D (one up; B would be two down)
+            mc->getSequence().addNote (64, te::BeatPosition::fromBeats (12.5), te::BeatDuration::fromBeats (0.5), 100, 0, nullptr);   // E over F   -> F
+            const int movedNotes = Chords::fitNotes (*mc);
+            std::vector<int> fitted;
+            for (auto* n : mc->getSequence().getNotes()) fitted.push_back (n->getNoteNumber());
+            const bool fits = movedNotes == 3 && fitted == std::vector<int> { 60, 62, 65 };
+            // undo takes a chord away again
+            const int before = (int) Chords::all (*edit).size();
+            edit->getUndoManager().beginNewTransaction ("add chord");
+            Chords::add (*edit, 32.0, 4.0, 5, Chords::minor);
+            const int during = (int) Chords::all (*edit).size();
+            edit->getUndoManager().undo();
+            const bool undone = during == before + 1 && (int) Chords::all (*edit).size() == before;
+            // the Scale effect follows the chord track: a C# played over the G bar comes out as a note of G
+            auto sfx = edit->getPluginCache().createNewPlugin (pulse::ScaleFx::xmlTypeName, {});
+            auto* scaleFx = dynamic_cast<pulse::ScaleFx*> (sfx.get());
+            scaleFx->set (pulse::ScaleFx::pScale, 11.0f);   // chromatic: the scale itself changes nothing
+            scaleFx->set (pulse::ScaleFx::pFollow, 1.0f);
+            const double beatSec = 60.0 / edit->tempoSequence.getTempo (0)->getBpm();
+            auto followAt = [&] (double beat, int pitch)
+            {
+                sfx->initialise ({ te::TimePosition(), 48000.0, 480 });
+                AudioBuffer<float> audio (2, 480);
+                te::MidiMessageArray midi;
+                midi.addMidiMessage (MidiMessage::noteOn (1, pitch, (uint8) 100), 0.0, te::createUniqueMPESourceID());
+                const double t0 = beat * beatSec;
+                te::PluginRenderContext fc (&audio, 0, 480, &midi, 0.0, { te::TimePosition::fromSeconds (t0), te::TimePosition::fromSeconds (t0 + 0.01) }, true, false, true, false);
+                sfx->applyToBuffer (fc);
+                int out = -1;
+                for (auto& m : midi) if (m.isNoteOn()) out = m.getNoteNumber();
+                sfx->deinitialise();
+                return out;
+            };
+            const int overC = followAt (1.0, 61), overG = followAt (5.0, 61), pastTheEnd = followAt (40.0, 61);
+            scaleFx->set (pulse::ScaleFx::pFollow, 0.0f);
+            const int notFollowing = followAt (5.0, 61);
+            const bool follows = overC == 60 && overG == 62 && pastTheEnd == 61 && notFollowing == 61;
+            // the strip in the arrangement: drawing, and a chord added by a double-click
+            EditViewState cevs (*edit, sm);
+            ChordStrip stripView (cevs);
+            stripView.setSize (1200, 22);
+            { Image img (Image::ARGB, 1200, 22, true); Graphics g (img); stripView.paint (g); }
+            const int nBefore = (int) Chords::all (*edit).size();
+            const int addedIndex = stripView.addAt (cevs.beatToX (20.5));
+            const auto added = Chords::at (*edit, 20.5);
+            const bool stripOk = addedIndex >= 0 && (int) Chords::all (*edit).size() == nBefore + 1 && added.has_value() && added->name() == "F" && std::abs (added->start - 20.0) < 1e-6;
+            rep.check (cut && found && named && progs && rightNotes && fits && undone && follows && stripOk,
+                       "Chord track (chords never overlap, names and notes, progressions in any key, written as notes, notes fitted, undo, the Scale effect follows, the strip)",
+                       String (cut ? "" : "cutting wrong; ") + (found ? "" : "lookup wrong; ") + (named ? "" : "names wrong; ") + (progs ? "" : "progressions wrong (" + pop + "| " + epic + "| " + jazz + "); ")
+                       + (rightNotes ? "" : "written notes wrong; ") + (fits ? "" : "fitting wrong; ") + (undone ? "" : "undo wrong; ")
+                       + (follows ? "" : "follow wrong (" + String (overC) + " " + String (overG) + " " + String (pastTheEnd) + " " + String (notFollowing) + "); ") + (stripOk ? "" : "strip wrong; ")
+                       + "C major pop: " + pop.trim() + "; A minor: " + epic.trim() + "; ii V I in D: " + jazz.trim());
+            sfx = nullptr;
+            edit->deleteTrack (ct);
+            Chords::clear (*edit);
+            edit->getUndoManager().clearUndoHistory();
+        }
+
         // --- sharing: collect all, templates -----------------------------------------------------------
         {
             auto outside = File::getSpecialLocation (File::tempDirectory).getChildFile ("PulseStudioSelfTestOutside");

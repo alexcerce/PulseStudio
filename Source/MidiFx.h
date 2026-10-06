@@ -2,6 +2,7 @@
 
 #include "PulseDevices.h"
 #include "Scales.h"
+#include "Chords.h"
 
 /** MIDI effects (placed before an instrument): Arpeggiator, Chord, Scale and Note Echo.
     They rewrite the MIDI passing through the chain; audio passes through untouched. */
@@ -91,6 +92,8 @@ namespace pulse
 
         virtual void reset() {}
         virtual void process (const std::vector<te::MidiMessageWithSource>& in, Block&) = 0;
+        /** Called on the message thread four times a second (for effects that keep a copy of something in the project). */
+        virtual void onTimer() {}
 
         int offsetOf (const MidiMessage& m) const     { return roundToInt (m.getTimeStamp() * sampleRate); }
         void schedule (int64 when, const MidiMessage& m) { if (pending.size() < 4096) pending.push_back ({ when, m }); }
@@ -102,7 +105,7 @@ namespace pulse
         std::atomic<double> bpm { 120.0 };
 
     private:
-        void timerCallback() override { bpm.store (edit.tempoSequence.getTempo (0)->getBpm()); }
+        void timerCallback() override { bpm.store (edit.tempoSequence.getTempo (0)->getBpm()); onTimer(); }
     };
 
     static inline const StringArray rateNames { "1/4", "1/8", "1/8T", "1/16", "1/16T", "1/32" };
@@ -318,7 +321,7 @@ namespace pulse
     class ScaleFx : public PulseMidiEffect
     {
     public:
-        enum { pRoot, pScale, pTranspose };
+        enum { pRoot, pScale, pTranspose, pFollow };
         static inline const char* xmlTypeName = "pulseScale";
         static const char* getPluginName() { return "Scale"; }
 
@@ -327,11 +330,13 @@ namespace pulse
             add ("root", "Root", steps (12), 0.0f, fmt::choice (Scales::rootNames()));
             add ("scale", "Scale", steps ((int) Scales::all().size()), 0.0f, fmt::choice (Scales::names()));
             add ("transpose", "Transpose", { -24.0f, 24.0f, 1.0f }, 0.0f, fmt::st);
+            add ("follow", "Follow The Chord Track", steps (2), 0.0f, fmt::choice ({ "Off", "On" }));
+            onTimer();
         }
 
         String getName() const override  { return "Scale"; }
         String getPluginType() override  { return xmlTypeName; }
-        std::vector<Section> getSections() const override { return { { "Scale", { pRoot, pScale, pTranspose } } }; }
+        std::vector<Section> getSections() const override { return { { "Scale", { pRoot, pScale, pTranspose } }, { "Chords", { pFollow } } }; }
 
         /** What an incoming pitch becomes. */
         int map (int pitch) const { return Scales::snap (getInt (pScale), getInt (pRoot), jlimit (0, 127, pitch + getInt (pTranspose))); }
@@ -339,13 +344,31 @@ namespace pulse
     protected:
         void reset() override { mapped.fill (-1); }
 
+        void onTimer() override
+        {
+            const auto sig = Chords::signature (edit);
+            if (sig == chordSig && chords != nullptr) return;
+            chordSig = sig;
+            auto snap = Chords::snapshot (edit);
+            const SpinLock::ScopedLockType sl (chordLock);
+            chords = snap;
+        }
+
         void process (const std::vector<te::MidiMessageWithSource>& in, Block& b) override
         {
+            {
+                const SpinLock::ScopedTryLockType sl (chordLock);
+                if (sl.isLocked()) audioChords = chords;
+            }
+            const bool follow = getInt (pFollow) > 0;
+            const double beatAtStart = b.fc.editTime.getStart().inSeconds() * bpm.load() / 60.0;
             for (auto& m : in)
             {
                 if (m.isNoteOn())
                 {
-                    const int p = map (m.getNoteNumber());
+                    int p = map (m.getNoteNumber());
+                    // following the chord track: the note goes to the nearest note of the chord sounding at that moment
+                    if (follow) p = Chords::snapTo (audioChords, beatAtStart + offsetOf (m) / samplesPerBeat(), p);
                     mapped[(size_t) m.getNoteNumber()] = p;
                     b.emit (MidiMessage::noteOn (m.getChannel(), p, m.getVelocity()), offsetOf (m));
                 }
@@ -361,6 +384,9 @@ namespace pulse
 
     private:
         std::array<int, 128> mapped {};
+        SpinLock chordLock;
+        Chords::Snapshot chords, audioChords;
+        String chordSig;
     };
 
     //==============================================================================

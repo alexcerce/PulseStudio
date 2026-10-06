@@ -289,6 +289,7 @@ public:
         c.add ("midi.humanize", "MIDI: humanize notes", "MIDI", key ('H', ctrl | altM), [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("humanize"); } });
         c.add ("midi.legato", "MIDI: legato", "MIDI", key ('L', ctrl | altM), [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("legato"); } });
         c.add ("midi.fitScale", "MIDI: fit to scale", "MIDI", key ('F', ctrl | altM), [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("fit"); } });
+        c.add ("midi.fitChords", "MIDI: fit to the chord track", "MIDI", {}, [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("fitchords"); } });
         c.add ("midi.strum", "MIDI: strum chords up", "MIDI", {}, [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("strum"); } });
         c.add ("mixer.snapshot", "Store a mixer snapshot", "Mixer", {}, [this] { if (edit) MixSnapshots::store (*edit, "Mix " + String (MixSnapshots::names (*edit).size() + 1)); });
         c.add ("mixer.resetLoudness", "Reset the loudness meter", "Mixer", {}, [this]
@@ -1182,6 +1183,11 @@ private:
         }
 
         // song sections over the demo
+        // the chords the demo plays, on the chord track (a bar each, round and round)
+        {
+            const int roots[4] = { 9, 5, 0, 7 }, kinds[4] = { Chords::minor, Chords::major, Chords::major, Chords::major };   // Am F C G
+            for (int bar = 0; bar < 8; ++bar) Chords::add (*edit, bar * 4.0, 4.0, roots[bar % 4], kinds[bar % 4]);
+        }
         Sections::add (*edit, "Intro", 0.0, 8.0);
         Sections::add (*edit, "Build", 8.0, 8.0);
         Sections::add (*edit, "Drop", 16.0, 16.0);
