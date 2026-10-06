@@ -158,6 +158,10 @@ Plug it in and it connects automatically (hot-plug supported). The Push's area i
   - **Chord:** up to four added intervals.
   - **Scale:** snaps everything to a key, with transpose.
   - **Note Echo:** tempo-synced MIDI echoes with velocity feedback and a pitch step.
+  - **Note Length:** gives every note a set length whatever was played: a note value at the song's tempo (1/32 to 1 bar) or a time in milliseconds, scaled by *Gate* (under 100% for staccato, over for notes that overlap). It can also play the note when the key comes up instead of when it goes down.
+  - **Pitch:** moves every note by semitones and octaves, and can let through only the notes in a range (for splitting a keyboard).
+  - **Random:** now and then moves a note by a random number of steps: *Chance* says how often, *Choices* how many different steps, *Step* how big each is, up, down or both ways. With a scale chosen, what comes out stays in it.
+  - **Velocity:** reshapes how hard the notes are played: a curve (bring soft playing up, or tame hard playing), a range the result is fitted into, randomness, or every note the same. Its picture is the line itself: drag its two ends and its middle.
 - **MPE:** the Wavetable synth responds per note to pitch bend (Bend Range up to 48 semitones), pressure (cutoff and level) and slide/CC74 (wavetable position). It also takes poly aftertouch from Push 2 pads.
 
 ### Instruments and effects
@@ -362,7 +366,7 @@ All of these can be changed in *File → Keyboard shortcuts*. New: **Ctrl+P** co
 ## Command line
 
 - `--render out.wav` renders the last project offline and exits.
-- `--selftest report.txt` builds a scratch project and runs 294 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--selftest report.txt` builds a scratch project and runs 298 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
 - `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
 
 ## Code layout
@@ -388,7 +392,7 @@ All app code is header-only in `Source/` and compiled through `Main.cpp`.
 | `UtilityDevices.h` | Utility, Tuner and Spectrum devices |
 | `DrumRack.h`, `DrumPads.h`, `DrumRackCard.h` | Drum Rack model (pads, routing, move / copy / extract, kits), the pad / pad mixer / Drum Synth devices, and the Drum Rack editor |
 | `Presets.h`, `Macros.h`, `MidiLearn.h` | Sound design and controller features |
-| `MidiFx.h`, `Scales.h` | MIDI effects (Arpeggiator, Chord, Scale, Note Echo), shared scales |
+| `MidiFx.h`, `MidiFx2.h`, `Scales.h` | MIDI effects (Arpeggiator, Chord, Scale, Note Echo; Note Length, Pitch, Random, Velocity), shared scales |
 | `Sandbox.h`, `BackgroundRender.h` | Plugin sandbox (helper process), background exports |
 | `Commands.h` | Command registry, command palette, shortcut editor |
 | `Modulators.h`, `ClipEnvelopes.h` | Track modulators, clip envelopes |

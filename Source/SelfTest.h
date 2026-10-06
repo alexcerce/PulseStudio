@@ -210,6 +210,9 @@ namespace SelfTest
         shoot (pulse::EPiano::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::EPiano::pBark, 0.7f); }, "shot_epiano.png");
         shoot (pulse::Analog::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Analog::pWave2, 1); p.set (pulse::Analog::pReso, 0.6f); p.set (pulse::Analog::pCutoff, 1200); }, "shot_analog.png");
         shoot (pulse::StringModel::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::StringModel::pPosition, 0.15f); p.set (pulse::StringModel::pBrightness, 0.8f); }, "shot_string.png");
+        shoot (pulse::NoteLength::xmlTypeName, nullptr, "shot_notelength.png");
+        shoot (pulse::VelocityFx::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::VelocityFx::pCurve, 0.5f); p.set (pulse::VelocityFx::pOutLow, 40); }, "shot_velocity.png");
+        shoot (pulse::RandomFx::xmlTypeName, nullptr, "shot_random.png");
         shoot (pulse::Gate::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Gate::pThreshold, -22); p.set (pulse::Gate::pRange, 40); p.set (pulse::Gate::pHysteresis, 6); }, "shot_gate.png");
         shoot (pulse::TransientShaper::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::TransientShaper::pAttack, 0.6f); p.set (pulse::TransientShaper::pSustain, -0.4f); }, "shot_transient.png");
         shoot (pulse::DeEsser::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::DeEsser::pThreshold, -36); p.set (pulse::DeEsser::pRange, 10); }, "shot_deesser.png");
@@ -1068,6 +1071,113 @@ namespace SelfTest
             for (auto& [t, m] : eAll) if (m.isNoteOn()) onTimes.push_back (t);
             rep.check (onTimes.size() == 4 && std::abs (onTimes[1] - 0.25) < 0.011 && std::abs (onTimes[3] - 0.75) < 0.011,
                        "MIDI effect: Note Echo (3 repeats, 1/8)", String ((int) onTimes.size()) + " notes");
+
+            // --- v0.99.19: note length, pitch, random, velocity ---------------------------------------------
+            {
+                auto on = [] (int n, int v = 100) { return MidiMessage::noteOn (1, n, (uint8) v); };
+                auto off = [] (int n) { return MidiMessage::noteOff (1, n); };
+                auto offTimes = [] (const std::vector<std::pair<double, MidiMessage>>& v) { std::vector<double> t; for (auto& [tm, m] : v) if (m.isNoteOff()) t.push_back (tm); return t; };
+                auto onTimes2 = [] (const std::vector<std::pair<double, MidiMessage>>& v) { std::vector<double> t; for (auto& [tm, m] : v) if (m.isNoteOn()) t.push_back (tm); return t; };
+
+                // note length: a key held for a second comes out a sixteenth long (0.125 s at 120); half that with the gate at 50%; and in milliseconds
+                auto nlp = make (pulse::NoteLength::xmlTypeName);
+                auto* nl = dynamic_cast<pulse::NoteLength*> (nlp.get());
+                using NL = pulse::NoteLength;
+                auto held = runFx (*nlp, { { 0.0, on (60) }, { 1.0, off (60) } }, 1.5);
+                const double sixteenth = offTimes (held).size() == 1 ? offTimes (held)[0] : -1.0;
+                nl->set (NL::pGate, 0.5f);
+                auto half = runFx (*nlp, { { 0.0, on (60) }, { 1.0, off (60) } }, 1.5);
+                const double halfGate = offTimes (half).size() == 1 ? offTimes (half)[0] : -1.0;
+                nl->set (NL::pGate, 1.0f); nl->set (NL::pMode, 0); nl->set (NL::pTime, 300.0f);
+                auto timed = runFx (*nlp, { { 0.0, on (60) }, { 0.01, off (60) } }, 1.0);
+                const double threeHundred = offTimes (timed).size() == 1 ? offTimes (timed)[0] : -1.0;
+                // the same note again before the first has ended: the first is ended first, and there is one ending for each beginning
+                auto again = runFx (*nlp, { { 0.0, on (60) }, { 0.05, off (60) }, { 0.1, on (60) }, { 0.15, off (60) } }, 1.0);
+                const bool paired = onTimes2 (again).size() == 2 && offTimes (again).size() == 2 && std::abs (offTimes (again)[0] - 0.1) < 0.011 && std::abs (offTimes (again)[1] - 0.4) < 0.011;
+                // played when the key comes up, with the velocity the key went down with
+                nl->set (NL::pTrigger, 1);
+                auto released = runFx (*nlp, { { 0.0, on (64, 77) }, { 0.5, off (64) } }, 1.2);
+                int relVel = 0;
+                for (auto& [tm, m] : released) if (m.isNoteOn()) relVel = m.getVelocity();
+                const bool onUp = onTimes2 (released).size() == 1 && std::abs (onTimes2 (released)[0] - 0.5) < 0.011 && relVel == 77 && offTimes (released).size() == 1 && std::abs (offTimes (released)[0] - 0.8) < 0.011;
+                rep.check (std::abs (sixteenth - 0.125) < 0.011 && std::abs (halfGate - 0.0625) < 0.011 && std::abs (threeHundred - 0.3) < 0.011 && paired && onUp,
+                           "MIDI effect: Note Length (a note value, the gate, milliseconds, the same note twice, play on key up)",
+                           "1/16 ends at " + String (sixteenth, 3) + " s, at 50% " + String (halfGate, 4) + ", 300 ms at " + String (threeHundred, 3));
+
+                // pitch: moved, and only a range let through (with the right note-offs)
+                auto pp5 = make (pulse::PitchFx::xmlTypeName);
+                auto* pf = dynamic_cast<pulse::PitchFx*> (pp5.get());
+                using PT = pulse::PitchFx;
+                pf->set (PT::pSemis, 7.0f); pf->set (PT::pOctaves, 1.0f);
+                auto moved = runFx (*pp5, { { 0.0, on (60) }, { 0.2, off (60) } }, 0.5);
+                int movedOff = -1;
+                for (auto& [tm, m] : moved) if (m.isNoteOff()) movedOff = m.getNoteNumber();
+                pf->set (PT::pSemis, 0.0f); pf->set (PT::pOctaves, 0.0f); pf->set (PT::pLowest, 60.0f); pf->set (PT::pRange, 12.0f);
+                auto ranged = noteOns (runFx (*pp5, { { 0.0, on (59) }, { 0.0, on (60) }, { 0.0, on (71) }, { 0.0, on (72) } }, 0.3));
+                std::sort (ranged.begin(), ranged.end());
+                rep.check (noteOns (moved) == std::vector<int> { 79 } && movedOff == 79 && ranged == std::vector<int> { 60, 71 } && pf->map (59) == -1,
+                           "MIDI effect: Pitch (an octave and a fifth up; only C3 to B3 let through)");
+
+                // random: at 0% nothing moves; at 100% every note moves by one of the steps, in the direction asked, and its note-off follows it; a scale keeps it in key
+                auto rp5 = make (pulse::RandomFx::xmlTypeName);
+                auto* rf = dynamic_cast<pulse::RandomFx*> (rp5.get());
+                using RF = pulse::RandomFx;
+                std::vector<std::pair<double, MidiMessage>> many;
+                for (int i = 0; i < 40; ++i) { many.push_back ({ i * 0.02, on (60) }); many.push_back ({ i * 0.02 + 0.01, off (60) }); }
+                rf->set (RF::pChance, 0.0f);
+                bool untouched = true;
+                for (int n : noteOns (runFx (*rp5, many, 1.0))) untouched = untouched && n == 60;
+                rf->set (RF::pChance, 1.0f); rf->set (RF::pChoices, 3.0f); rf->set (RF::pStep, 2.0f); rf->set (RF::pDirection, 0);
+                auto rnd = runFx (*rp5, many, 1.0);
+                std::set<int> seen;
+                bool stepsOk = true, offsFollow = true;
+                int lastOn = -1;
+                for (auto& [tm, m] : rnd)
+                {
+                    if (m.isNoteOn()) { lastOn = m.getNoteNumber(); seen.insert (lastOn); stepsOk = stepsOk && (lastOn == 62 || lastOn == 64 || lastOn == 66); }
+                    if (m.isNoteOff()) offsFollow = offsFollow && m.getNoteNumber() == lastOn;
+                }
+                rf->set (RF::pDirection, 2); rf->set (RF::pChoices, 12.0f); rf->set (RF::pStep, 1.0f); rf->set (RF::pRoot, 0); rf->set (RF::pScale, 1.0f);
+                bool inKey = true;
+                for (int n : noteOns (runFx (*rp5, many, 1.0))) inKey = inKey && Scales::contains (0, 0, n);
+                rep.check (untouched && stepsOk && offsFollow && seen.size() == 3 && inKey && rf->reach() == 12,
+                           "MIDI effect: Random (never at 0%, always at 100%, steps and direction, note-offs follow, stays in a scale)", String ((int) seen.size()) + " different notes from 3 choices");
+
+                // velocity: fixed, a range, a curve that brings soft playing up, and randomness that stays in bounds
+                auto vp5 = make (pulse::VelocityFx::xmlTypeName);
+                auto* vf = dynamic_cast<pulse::VelocityFx*> (vp5.get());
+                using VF = pulse::VelocityFx;
+                auto velsOf = [&] (std::initializer_list<int> in)
+                {
+                    std::vector<std::pair<double, MidiMessage>> msgs;
+                    int i = 0;
+                    for (int v : in) msgs.push_back ({ 0.01 * i++, on (60 + i, v) });
+                    std::vector<int> out;
+                    for (auto& [tm, m] : runFx (*vp5, msgs, 0.5)) if (m.isNoteOn()) out.push_back (m.getVelocity());
+                    return out;
+                };
+                const bool straight = velsOf ({ 1, 64, 127 }) == std::vector<int> { 1, 64, 127 };
+                vf->set (VF::pMode, 1); vf->set (VF::pOutHigh, 90.0f);
+                const bool fixed = velsOf ({ 10, 64, 127 }) == std::vector<int> { 90, 90, 90 };
+                vf->set (VF::pMode, 0); vf->set (VF::pOutLow, 70.0f); vf->set (VF::pOutHigh, 110.0f);
+                const bool fitted = velsOf ({ 1, 64, 127 }) == std::vector<int> { 70, 90, 110 };
+                vf->set (VF::pOutLow, 1.0f); vf->set (VF::pOutHigh, 127.0f); vf->set (VF::pCurve, 0.5f);
+                const int softUp = vf->map (30), hardSame = vf->map (127);
+                vf->set (VF::pCurve, 0.0f); vf->set (VF::pRandom, 1.0f);
+                bool spread = false, inBounds = true;
+                for (int v : velsOf ({ 64, 64, 64, 64, 64, 64, 64, 64, 2, 126 })) { spread = spread || std::abs (v - 64) > 5; inBounds = inBounds && v >= 1 && v <= 127; }
+                // its picture: the two ends and the middle of the line are dragged
+                vf->set (VF::pRandom, 0.0f);
+                MidiFxUI::VelocityView vview (*vf);
+                vview.setSize (700, 500);
+                { Image img (Image::ARGB, 700, 500, true); Graphics g (img); vview.paint (g); }
+                vview.dragHandle (0, 0.0f, -80.0f);
+                vview.dragHandle (2, 0.0f, 60.0f);
+                vview.dragCurve (-60.0f);
+                const bool dragged = vf->get (VF::pOutLow) > 20.0f && vf->get (VF::pOutHigh) < 115.0f && vf->get (VF::pCurve) > 0.2f && vview.getNumHandles() == 3;
+                rep.check (straight && fixed && fitted && softUp > 45 && hardSame == 127 && spread && inBounds && dragged,
+                           "MIDI effect: Velocity (straight by default, fixed, fitted into a range, a curve, randomness within bounds, its picture)", "30 becomes " + String (softUp) + " with the curve at +50%");
+            }
         }
 
         // --- sharing: collect all, templates -----------------------------------------------------------

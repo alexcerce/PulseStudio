@@ -1783,6 +1783,8 @@ namespace DeviceEditors
         }
         else if (auto q = dynamic_cast<pulse::PrismEQ*> (&p))
             add ("Prism EQ", std::make_unique<PrismUI::View> (evs, *q, true));
+        else if (auto vf = dynamic_cast<pulse::VelocityFx*> (&p))
+            add ("Velocity", std::make_unique<MidiFxUI::VelocityView> (*vf));
         else if (auto fx = dynamic_cast<pulse::PulseMidiEffect*> (&p))
             add ("What it does to a phrase", std::make_unique<DeviceViews::MidiFxPreview> (*fx));
         else if (auto vc = dynamic_cast<pulse::Vocoder*> (&p))

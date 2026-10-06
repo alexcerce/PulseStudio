@@ -332,6 +332,44 @@ namespace FactoryPresetsMore
                 { "Send (100% wet hall)", { { "space", 6 }, { "predelay", 20 }, { "lowcut", 150 }, { "mix", 1.0f } } } } },
 
             //----------------------------------------------------------------------------------
+            // Note Length: mode 0 time, 1 synced; rate 0 1/32, 1 1/16, 2 1/8, 3 1/4, 4 1/2, 5 1 bar; trigger 0 key down, 1 key up
+            { "pulseNoteLength", {
+                { "Staccato 1/16", { { "mode", 1 }, { "rate", 1 }, { "gate", 0.5f } } },
+                { "Even 1/8 Notes", { { "mode", 1 }, { "rate", 2 }, { "gate", 0.9f } } },
+                { "Long Pads (1 bar)", { { "mode", 1 }, { "rate", 5 }, { "gate", 1.0f } } },
+                { "Drum Triggers (20 ms)", { { "mode", 0 }, { "time", 20 } } },
+                { "Play on Release", { { "mode", 1 }, { "rate", 2 }, { "trigger", 1 } } },
+                { "Overlapping Legato", { { "mode", 1 }, { "rate", 3 }, { "gate", 1.6f } } } } },
+
+            //----------------------------------------------------------------------------------
+            { "pulsePitch", {
+                { "Octave Up", { { "octaves", 1 } } },
+                { "Octave Down", { { "octaves", -1 } } },
+                { "Fifth Up", { { "semis", 7 } } },
+                { "Bass Notes Only (below C3)", { { "lowest", 0 }, { "range", 60 } } },
+                { "Top Half Only (C3 and up)", { { "lowest", 60 }, { "range", 68 } } } } },
+
+            //----------------------------------------------------------------------------------
+            // Random: direction 0 up, 1 down, 2 both; scale 0 any note, 1.. = the scales
+            { "pulseRandom", {
+                { "Octave Jumps", { { "chance", 0.3f }, { "choices", 2 }, { "step", 12 }, { "direction", 2 } } },
+                { "Sometimes a Fifth", { { "chance", 0.25f }, { "choices", 1 }, { "step", 7 }, { "direction", 0 } } },
+                { "Wander in C Major", { { "chance", 0.6f }, { "choices", 4 }, { "step", 1 }, { "direction", 2 }, { "root", 0 }, { "scale", 1 } } },
+                { "Total Chaos", { { "chance", 1.0f }, { "choices", 24 }, { "step", 1 }, { "direction", 2 } } },
+                { "Melody Maker (A minor)", { { "chance", 0.8f }, { "choices", 7 }, { "step", 2 }, { "direction", 2 }, { "root", 9 }, { "scale", 2 } } } } },
+
+            //----------------------------------------------------------------------------------
+            // Velocity: mode 0 curve, 1 fixed
+            { "pulseVelocity", {
+                { "All Full", { { "mode", 1 }, { "outhigh", 127 } } },
+                { "All Medium (90)", { { "mode", 1 }, { "outhigh", 90 } } },
+                { "Bring Up Soft Playing", { { "curve", 0.5f } } },
+                { "Tame Hard Playing", { { "curve", -0.4f }, { "outhigh", 110 } } },
+                { "Narrow Range (70 to 110)", { { "outlow", 70 }, { "outhigh", 110 } } },
+                { "Humanise", { { "random", 0.2f } } },
+                { "Ghost Notes", { { "outlow", 15 }, { "outhigh", 50 }, { "random", 0.15f } } } } },
+
+            //----------------------------------------------------------------------------------
             // Pulse Analog: wave 0 saw, 1 pulse, 2 triangle, 3 sine; mode 0 poly, 1 mono
             { "pulseAnalog", {
                 { "Fat Brass", { { "wave1", 0 }, { "wave2", 0 }, { "fine2", 9 }, { "cutoff", 900 }, { "reso", 0.15f }, { "envamt", 0.55f }, { "fa", 40 }, { "fd", 500 }, { "fs", 0.5f }, { "a", 15 }, { "s", 0.9f }, { "r", 250 }, { "unison", 0.3f } } },

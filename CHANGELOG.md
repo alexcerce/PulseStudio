@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.19 - 2026-10-06
+
+- New MIDI effects: Note Length, Pitch, Random and Velocity
+
 ## 0.99.18 - 2026-10-06
 
 - Simpler: Slice mode (cut a sample at its hits or into equal pieces, one key per slice), with slices made longer or shorter to fit a note length without changing their pitch

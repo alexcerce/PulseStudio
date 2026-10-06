@@ -108,6 +108,10 @@ namespace PluginMenu
         addBuiltIn<pulse::ChordFx> (midiFx, edit, cb);
         addBuiltIn<pulse::ScaleFx> (midiFx, edit, cb);
         addBuiltIn<pulse::NoteEcho> (midiFx, edit, cb);
+        addBuiltIn<pulse::NoteLength> (midiFx, edit, cb);
+        addBuiltIn<pulse::PitchFx> (midiFx, edit, cb);
+        addBuiltIn<pulse::RandomFx> (midiFx, edit, cb);
+        addBuiltIn<pulse::VelocityFx> (midiFx, edit, cb);
 
         if (drumRackFactory)
         {

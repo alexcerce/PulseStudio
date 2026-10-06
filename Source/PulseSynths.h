@@ -2,6 +2,7 @@
 
 #include "PulseDevices.h"
 #include "MidiFx.h"
+#include "MidiFx2.h"
 #include "Sandbox.h"
 
 /** Pulse's instruments: a wavetable synth and a Simpler-style sampler. */
@@ -2303,6 +2304,10 @@ namespace pulse
         pm.createBuiltInType<ChordFx>();
         pm.createBuiltInType<ScaleFx>();
         pm.createBuiltInType<NoteEcho>();
+        pm.createBuiltInType<NoteLength>();
+        pm.createBuiltInType<PitchFx>();
+        pm.createBuiltInType<RandomFx>();
+        pm.createBuiltInType<VelocityFx>();
         pm.createBuiltInType<SandboxedPlugin>();
         pm.createBuiltInType<DrumPad>();
         pm.createBuiltInType<PadOut>();

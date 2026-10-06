@@ -166,7 +166,7 @@ well EVERYWHERE." So, besides the list:
 2. Instruments: [x] Wavetable third oscillator + wavetable import from audio  [x] sampler (slices, per-slice stretch,
    zones)  [x] analogue-style subtractive synth  [x] physical-modelling instrument (string / mallet)
    [x] electric piano  [x] tonewheel organ
-3. MIDI: [ ] note length  [ ] pitch  [ ] random  [ ] velocity  [ ] drawable arpeggiator / note-echo patterns
+3. MIDI: [x] note length  [x] pitch  [x] random  [x] velocity  [ ] drawable arpeggiator / note-echo patterns
    [ ] chord track + chord progressions (piano roll and MIDI effects follow it)  [ ] step sequencer view for drum clips
 4. Audio editing: [ ] warp by dragging transients on the waveform, follow-tempo per clip  [ ] per-note pitch and time
    editing of audio  [ ] reverse / crop / consolidate clips  [ ] clip launch recorded into the arrangement with quantised punch
@@ -471,3 +471,10 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   start follows a slow reading point (the first piece begins at full level so the hit keeps its edge). 294 checks,
   quick tier. Programme group 2 (instruments) is complete; its slow tier is owed only for this last commit.
   Next: group 3 (MIDI: note length, pitch, random, velocity effects; arp / echo patterns; chord track; step sequencer).
+- 2026-10-06: v0.99.19. MIDI effects Note Length, Pitch, Random, Velocity: Source/MidiFx2.h (+ MidiFx2Display.h for
+  the Velocity line). The other three use the existing "what it does to a phrase" picture. Two-way settings are
+  shown by the generic window as a button carrying the parameter's NAME, so a two-way parameter must be named
+  for what "on" means ("All The Same", not "Mode"): worth checking on older devices too. 298 checks, quick tier.
+  The README's file table (near its end) has not been kept up with the files added since v0.99.6: Dynamics2,
+  Convolution, ModFx, ColourFx, AmpFx, TimeFx, LoopFx, SpectralFx, Keys, Synths2 and their *Display.h files.
+  Next in group 3: drawable arpeggiator / note-echo patterns, chord track, step sequencer view.
