@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.49 - 2026-10-06
+
+- The window no longer freezes during the mastering assistant's measuring, while Match EQ listens to a reference file, or while Collect all copies files: each shows a progress window
+
 ## 0.99.48 - 2026-10-06
 
 - Recovering an autosave after a crash keeps the last saved version beside the project; Escape no longer deletes the autosave; a damaged autosave is not offered

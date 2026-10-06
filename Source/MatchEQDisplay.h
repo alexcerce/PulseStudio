@@ -218,8 +218,22 @@ namespace MatchUI
         /** Loads a reference file as the button does (for the self-test). */
         bool loadReference (const File& f)
         {
+            // the file is listened to on a thread of its own, with a progress window: a long song takes a few seconds
+            struct Listener : public ThreadWithProgressWindow
+            {
+                Listener (te::Engine& e, const File& file) : ThreadWithProgressWindow ("Listening to " + file.getFileName(), true, true), engine (e), f (file) {}
+                void run() override { ok = pulse::MatchEQ::listenToFile (engine, f, points, [this] (float p) { setProgress (p); return ! threadShouldExit(); }); }
+                te::Engine& engine;
+                File f;
+                pulse::MatchEQ::Points points {};
+                bool ok = false;
+            };
+            Listener listener (eq.engine, f);
+            if (About::isCapturing()) listener.run(); else if (! listener.runThread()) return true;   // (cancelled: nothing changes, and nothing is wrong)
+            if (! listener.ok) return false;
             eq.edit.getUndoManager().beginNewTransaction ("Match EQ reference");
-            return eq.learnFromFile (f, true);
+            eq.keep (true, listener.points, f.getFileName());
+            return true;
         }
 
     private:

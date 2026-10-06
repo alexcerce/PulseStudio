@@ -210,36 +210,77 @@ namespace Sharing
 
     /** Copies every sample the project uses into "<project> Samples" next to it and points the
         project at the copies (so the folder can be zipped and opened anywhere). */
-    inline CollectResult collectAll (te::Edit& e)
+    /** What collecting will do, worked out without doing any of it: which files are outside the project's folder
+        and where each will be copied to. */
+    struct CollectPlan
     {
-        CollectResult r;
-        r.folder = samplesFolder (e);
-        const auto projectDir = editFileOf (e).getParentDirectory();
-        std::map<String, File> done;
+        CollectResult result;
+        std::vector<std::pair<File, File>> copies;   // from, to
+        std::map<String, File> placed;                // (old path, lower case) -> where it is now
+        int64 bytes = 0;
+    };
 
-        auto bring = [&] (const File& f) -> File
+    inline CollectPlan planCollect (te::Edit& e)
+    {
+        CollectPlan plan;
+        plan.result.folder = samplesFolder (e);
+        const auto projectDir = editFileOf (e).getParentDirectory();
+        StringArray taken;
+        forEachFile (e, [&] (const File& f)
         {
             if (f == File() || ! f.existsAsFile())
             {
-                if (f.getFullPathName().isNotEmpty()) r.missing.addIfNotAlreadyThere (f.getFullPathName());
+                if (f.getFullPathName().isNotEmpty()) plan.result.missing.addIfNotAlreadyThere (f.getFullPathName());
                 return f;
             }
-            if (f.isAChildOf (projectDir)) { ++r.alreadyInProject; return f; }
-            auto key = f.getFullPathName().toLowerCase();
-            if (auto it = done.find (key); it != done.end()) return it->second;
+            if (f.isAChildOf (projectDir)) { ++plan.result.alreadyInProject; return f; }
+            const auto key = f.getFullPathName().toLowerCase();
+            if (plan.placed.count (key) != 0) return f;
+            // a name of its own in the samples folder (two files of the same name from different places both get one)
+            auto dest = plan.result.folder.getChildFile (f.getFileName());
+            for (int n = 2; dest.existsAsFile() || taken.contains (dest.getFullPathName().toLowerCase()); ++n)
+                dest = plan.result.folder.getChildFile (f.getFileNameWithoutExtension() + " " + String (n) + f.getFileExtension());
+            taken.add (dest.getFullPathName().toLowerCase());
+            plan.placed[key] = dest;
+            plan.copies.push_back ({ f, dest });
+            plan.bytes += f.getSize();
+            return f;
+        });
+        return plan;
+    }
 
-            r.folder.createDirectory();
-            auto dest = r.folder.getNonexistentChildFile (f.getFileNameWithoutExtension(), f.getFileExtension(), false);
-            if (! f.copyFileTo (dest)) { r.missing.add (f.getFullPathName()); return f; }
-            ++r.copied;
-            done[key] = dest;
-            return dest;
-        };
+    /** The copying: files only, nothing of the project, so it can run on any thread. `progress` is told how far it is
+        (0..1) and stops it by returning false. A file that cannot be copied is noted, and the project keeps the old one. */
+    inline void copyPlanned (CollectPlan& plan, const std::function<bool (float)>& progress = {})
+    {
+        if (! plan.copies.empty()) plan.result.folder.createDirectory();
+        int64 doneBytes = 0;
+        for (auto& [from, to] : plan.copies)
+        {
+            if (progress && ! progress (plan.bytes > 0 ? (float) ((double) doneBytes / (double) plan.bytes) : 0.0f)) { plan.placed.erase (from.getFullPathName().toLowerCase()); continue; }
+            if (from.copyFileTo (to)) ++plan.result.copied;
+            else { plan.result.missing.add (from.getFullPathName()); plan.placed.erase (from.getFullPathName().toLowerCase()); }
+            doneBytes += from.getSize();
+        }
+    }
 
-        forEachFile (e, bring);
-
+    /** Points the project at the copies, and saves it. */
+    inline CollectResult finishCollect (te::Edit& e, CollectPlan& plan)
+    {
+        forEachFile (e, [&] (const File& f)
+        {
+            auto it = plan.placed.find (f.getFullPathName().toLowerCase());
+            return it != plan.placed.end() && it->second.existsAsFile() ? it->second : f;
+        });
         te::EditFileOperations (e).save (true, true, false);
-        return r;
+        return plan.result;
+    }
+
+    inline CollectResult collectAll (te::Edit& e)
+    {
+        auto plan = planCollect (e);
+        copyPlanned (plan);
+        return finishCollect (e, plan);
     }
 
     //==============================================================================

@@ -729,3 +729,15 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   recoverAutosave (keeps the saved version as "<name> (before recovery)" first). MainComponent: a box with
   Recover / Discard / Ask me next time, both dates in its text; a damaged autosave is renamed aside. Tested
   with files (the box itself is not driven by a test). 332 checks, quick tier.
+- 2026-10-06: v0.99.49. "Nothing blocks the window for more than 100 ms": not ticked, but measured and
+  three things fixed. The random-input test now reports STALLS: each event after which the window was busy
+  for over 100 ms, with what was under the mouse. Release build, 4000 events: 4 to 7 stalls a run on the demo
+  project and 5 on the 30-track one; most are 100 to 300 ms (closing device windows in "tidy", right-click
+  menus on the chord strip, a click in the device chain), and about one a run is near one second inside a
+  device window (Pulse Delay's strip once, the De-esser's display once); the cause of those is not found yet
+  (the events differ from run to run with the same seed). Renders (bounce, flatten, freeze, export) already
+  ran on a thread with a progress window. Fixed here: Mastering::measure rendered on the message thread
+  (now threaded, with the window); MatchEQ::listenToFile is the part of learnFromFile that touches nothing of
+  the project, run on a thread from the panel; Sharing::planCollect / copyPlanned / finishCollect split
+  collect-all so the copying runs on a thread. Still on the message thread: loading a long sample into
+  Simpler or a pad, slicing, importing a wavetable, reading transients for warp markers, opening a project.

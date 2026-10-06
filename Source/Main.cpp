@@ -366,6 +366,10 @@ public:
                     out.replaceWithText ("monkey run, seed " + String (seed) + ", " + String (numEvents) + " events\n");
                     startTimer (5000);
                 }
+                double lastTick = 0.0;
+                std::vector<std::pair<int, double>> stalls;
+                StringArray stallWhere;
+                String lastWhere;
                 /** The window the next events go to: a device window for a while after one was opened, else the main one. */
                 Component& target() { return deviceWindow != nullptr && deviceEvents > 0 ? *deviceWindow : static_cast<Component&> (window); }
                 juce::Point<float> anywhere()
@@ -401,11 +405,21 @@ public:
                 }
                 void timerCallback() override
                 {
+                    // how long the window was busy with the last event and what came of it (the timer asks for 20 ms):
+                    // anything over 100 ms is a moment in which the app did not answer
+                    const double now = Time::getMillisecondCounterHiRes();
+                    if (lastTick > 0.0 && done > 0)
+                        if (const double busy = now - lastTick - 20.0; busy > 100.0) { stalls.push_back ({ done - 1, busy }); stallWhere.add (lastWhere); }
+                    lastTick = now;
                     startTimer (20);
                     if (done >= total)
                     {
                         stopTimer();
                         tidy();
+                        String report = "STALLS " + String ((int) stalls.size()) + " of " + String (done) + " events left the window busy for more than 100 ms\n";
+                        for (int k = 0; k < (int) stalls.size(); ++k)
+                            report << "  event " << stalls[(size_t) k].first << ": " << roundToInt (stalls[(size_t) k].second) << " ms, on " << stallWhere[(size_t) k] << "\n";
+                        out.appendText (report);
                         out.appendText ("DONE " + String (done) + " events\n");
                         JUCEApplication::getInstance()->setApplicationReturnValue (0);
                         JUCEApplication::quit();
@@ -433,6 +447,12 @@ public:
                     if (done % 25 == 24) { out.appendText (String (done) + " tidy\n"); tidy(); ++done; return; }
                     const int kind = rng.nextInt (100);
                     const auto p = anywhere();
+                    // what is under the point, for the report of stalls: the kinds of the thing and of what it sits in
+                    lastWhere.clear();
+                    int depth = 0;
+                    for (auto* c = target().getComponentAt (p.toInt()); c != nullptr && depth < 4; c = c->getParentComponent(), ++depth)
+                        lastWhere << (depth > 0 ? " < " : "") << String (typeid (*c).name()).fromLastOccurrenceOf ("::", false, false).replace ("class ", "").replace ("struct ", "")
+                                  << (c->getName().isNotEmpty() ? " \"" + c->getName().substring (0, 24) + "\"" : String());
                     const auto none = ModifierKeys();
                     if (kind < 45)
                     {

@@ -1675,7 +1675,17 @@ private:
     void collectAll()
     {
         saveIfNeeded();
-        auto r = Sharing::collectAll (*edit);
+        // the copying runs on a thread of its own with a progress window (a project's samples can be gigabytes)
+        auto plan = Sharing::planCollect (*edit);
+        struct Copier : public ThreadWithProgressWindow
+        {
+            explicit Copier (Sharing::CollectPlan& p) : ThreadWithProgressWindow ("Copying " + String ((int) p.copies.size()) + " file(s) into the project", true, true), plan (p) {}
+            void run() override { Sharing::copyPlanned (plan, [this] (float p) { setProgress (p); return ! threadShouldExit(); }); }
+            Sharing::CollectPlan& plan;
+        };
+        Copier copier (plan);
+        if (plan.copies.empty() || About::isCapturing()) copier.run(); else copier.runThread();
+        auto r = Sharing::finishCollect (*edit, plan);
         AlertWindow::showMessageBoxAsync (r.missing.isEmpty() ? MessageBoxIconType::InfoIcon : MessageBoxIconType::WarningIcon,
                                           "Collect all and save", r.summary());
     }

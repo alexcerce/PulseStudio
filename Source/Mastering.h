@@ -81,7 +81,7 @@ namespace Mastering
         pulse::LoudnessAnalyser::Result r;
         e.getTransport().ensureContextAllocated();   // (a project that has never been played has nothing to render through yet)
         EditingOps::waitForClipProxies (e);
-        EditingOps::renderDetached (e, f);
+        EditingOps::renderDetached (e, f, true);   // (on a thread of its own, with the progress window: the app keeps answering)
         if (f.existsAsFile()) r = pulse::LoudnessAnalyser::measureFile (e.engine, f);
         f.deleteFile();
         return r;

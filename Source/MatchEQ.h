@@ -166,7 +166,17 @@ namespace pulse
         /** Learns a sound from an audio file (the first ten minutes of it). */
         bool learnFromFile (const File& f, bool asReference)
         {
-            std::unique_ptr<AudioFormatReader> reader { engine.getAudioFileFormatManager().readFormatManager.createReaderFor (f) };
+            Points p;
+            if (! listenToFile (engine, f, p, {})) return false;
+            keep (asReference, p, f.getFileName());
+            return true;
+        }
+
+        /** The listening itself: reads the file and works out its spectrum. It touches nothing of the project, so it
+            can run on any thread; `progress` is told how far it is (0..1) and stops it by returning false. */
+        static bool listenToFile (te::Engine& eng, const File& f, Points& into, const std::function<bool (float)>& progress)
+        {
+            std::unique_ptr<AudioFormatReader> reader { eng.getAudioFileFormatManager().readFormatManager.createReaderFor (f) };
             if (reader == nullptr || reader->lengthInSamples < SpectrumLearner::size || reader->sampleRate <= 0) return false;
             auto heard = std::make_unique<SpectrumLearner>();
             const int chunk = 32768;
@@ -177,12 +187,13 @@ namespace pulse
                 const int n = (int) jmin ((int64) chunk, most - at);
                 reader->read (&buf, 0, n, at, true, true);
                 heard->push (buf.getReadPointer (0), reader->numChannels > 1 ? buf.getReadPointer (1) : nullptr, n);
+                if (progress && ! progress ((float) ((double) at / (double) jmax ((int64) 1, most)))) return false;
             }
-            Points p;
-            if (! heard->result (reader->sampleRate, p)) return false;
-            store (asReference, p, f.getFileName());
-            return true;
+            return heard->result (reader->sampleRate, into);
         }
+
+        /** Keeps a spectrum as this track's or the reference's (undoable; on the message thread). */
+        void keep (bool asReference, const Points& p, const String& name) { store (asReference, p, name); }
 
         /** Forgets one of the two sounds (undoable). */
         void forget (bool reference)
