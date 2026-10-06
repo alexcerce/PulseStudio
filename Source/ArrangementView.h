@@ -19,6 +19,7 @@
 #include "DragDrop.h"
 #include "Notes.h"
 #include "HeaderMacros.h"
+#include "Alternatives.h"
 
 //==============================================================================
 /** Draws a bar/beat grid between x positions for the given view. */
@@ -1562,6 +1563,7 @@ public:
                 m.addItem ("Ungroup \"" + folder->getName() + "\"", [folder] { EditingOps::ungroup (*folder); });
 
             m.addItem (Notes::has (*track) ? "Notes for this track..." : "Write a note for this track...", [this] { Notes::show (evs.edit, track.get()); });
+            Alternatives::addToMenu (m, *track);
             m.addSeparator();
             const bool frozen = track->isFrozen (te::Track::individualFreeze);
             m.addItem (frozen ? "Unfreeze track" : "Freeze track", [t = track] { EditingOps::toggleFreeze (*t); });
@@ -1772,6 +1774,8 @@ private:
 
         if (track->isFrozen (te::Track::anyFreeze))
             desc = "FROZEN  " + desc;
+        if (Alternatives::has (*track))   // which of its alternatives is on the track
+            desc << "   [" << Alternatives::nameOf (*track, Alternatives::current (*track)) << "]";
 
         type.setText (desc, dontSendNotification);
 

@@ -414,8 +414,9 @@ namespace EditingOps
 
         (void) track.setFrozen (false, te::Track::individualFreeze);
 
-        for (auto c : track.getClips())
-            c->removeFromParent();
+        ReferenceCountedArray<te::Clip> old;   // (copied first: the track's own list changes as the clips go)
+        for (auto c : track.getClips()) old.add (c);
+        for (auto c : old) c->removeFromParent();
 
         for (auto p : track.pluginList.getPlugins())
             if (p != track.getVolumePlugin() && p != track.getLevelMeterPlugin()

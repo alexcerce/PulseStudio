@@ -173,7 +173,7 @@ well EVERYWHERE." So, besides the list:
 5. Mixing: [x] VCA faders  [x] reference track A/B with loudness match  [x] mastering chain preset + assistant
    [x] match EQ  [x] linear-phase EQ mode  [x] loudness report on export  [x] automatic freeze under load
    [x] sidechain picker on every device
-6. Workflow: [ ] device racks with parallel chains  [ ] track alternatives  [x] project and track notes
+6. Workflow: [ ] device racks with parallel chains  [x] track alternatives  [x] project and track notes
    [x] browser preview in time and in key  [x] macros on the track header  [x] toolbar / window layouts
    [ ] controller mapping pages  [ ] video track
 
@@ -595,3 +595,11 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   settings). MainComponent: currentLayout / applyLayout, the Layout button and its menu, commands
   view.layout1..5 and view.myLayout1..4 (no keys by default). A layout does not hold the toolbar's contents
   (the toolbar cannot be rearranged), track heights or zoom. 317 checks, quick tier.
+- 2026-10-06: v0.99.36. Track alternatives. Source/Alternatives.h: a child "PULSEALTS" of the track's state,
+  one "ALT" per alternative holding copies of its clips' states; switchTo stashes the clips in use and puts the
+  other ones on the track with fresh ids (te::EditItemID::remapIDs + insertClipWithState). The track menu, the
+  "[B]" on the header, commands track.altNext / altNew / altNewEmpty. Found on the way, and fixed: removing
+  clips while walking track.getClips() skips every other one (the list changes under the loop). Flatten had
+  done exactly that since it was written, so a track with several clips kept some of them beside the rendered
+  one; it has its own check now. Not done: alternatives for folder tracks; automation is shared by all
+  alternatives of a track (Logic's are too, unless asked otherwise). 319 checks, quick tier.

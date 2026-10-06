@@ -304,6 +304,18 @@ public:
         c.add ("view.palette", "Command palette", "View", key ('P', ctrl), [this] { openPalette(); });
         c.add ("edit.pencil", "Pencil (draw automation)", "Edit", key ('D'), [this] { evs->drawMode = ! evs->drawMode; evs->viewChanged.sendChangeMessage(); });
 
+        c.add ("track.altNext", "Track: switch to its next alternative", "Tracks", {}, [this]
+        {
+            if (auto t = EngineHelpers::getSelectedTrack (selectionManager)) { edit->getUndoManager().beginNewTransaction ("Switch alternative"); Alternatives::next (*t); }
+        });
+        c.add ("track.altNew", "Track: new alternative (a copy of what is on it)", "Tracks", {}, [this]
+        {
+            if (auto t = EngineHelpers::getSelectedTrack (selectionManager)) { edit->getUndoManager().beginNewTransaction ("Duplicate alternative"); Alternatives::add (*t, true); }
+        });
+        c.add ("track.altNewEmpty", "Track: new alternative (empty)", "Tracks", {}, [this]
+        {
+            if (auto t = EngineHelpers::getSelectedTrack (selectionManager)) { edit->getUndoManager().beginNewTransaction ("New alternative"); Alternatives::add (*t, false); }
+        });
         c.add ("track.addInstrument", "New instrument track", "Tracks", key ('T', ctrl), [this] { addTrack (true); });
         c.add ("track.addAudio", "New audio track", "Tracks", key ('T', ctrl | shiftM), [this] { addTrack (false); });
 

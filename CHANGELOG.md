@@ -2,6 +2,11 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.36 - 2026-10-06
+
+- Track alternatives: several versions of a track's clips, one in use (track menu > Alternatives)
+- Fixed: Flatten left some of the original clips behind on a track that had more than one
+
 ## 0.99.35 - 2026-10-06
 
 - Window layouts: five ready-made ones and your own (Layout button on the lower tab bar)

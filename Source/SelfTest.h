@@ -492,6 +492,20 @@ namespace SelfTest
                          && dynamic_cast<te::WaveAudioClip*> (flatTrack->getClips()[0]) != nullptr
                          && ! EngineHelpers::trackHasInstrument (*flatTrack), "Flatten instrument track to audio");
 
+            {
+                // a track with several clips is left with the one rendered clip and nothing else
+                auto many = ClipImport::createContentTrack (*edit, "ToFlattenMany", true);
+                for (int i = 0; i < 3; ++i)
+                {
+                    auto mc = many->insertMIDIClip ("part " + String (i + 1), { bars (i), bars (i + 1) }, nullptr);
+                    mc->getSequence().addNote (60 + i, te::BeatPosition(), te::BeatDuration::fromBeats (2.0), 110, 0, nullptr);
+                }
+                const bool flat = EditingOps::flatten (*many);
+                rep.check (flat && many->getClips().size() == 1 && dynamic_cast<te::WaveAudioClip*> (many->getClips()[0]) != nullptr, "Flatten a track with several clips (only the rendered clip is left)",
+                           String (many->getClips().size()) + " clips afterwards");
+                edit->deleteTrack (many);
+            }
+
             auto freezeResult = synth->setFrozen (true, te::Track::individualFreeze);
             rep.check (freezeResult.wasOk() && synth->isFrozen (te::Track::individualFreeze), "Freeze track", freezeResult.getErrorMessage());
             (void) synth->setFrozen (false, te::Track::individualFreeze);
@@ -2049,6 +2063,85 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
             rep.check (round && rejects && heights && distinct && firstName && kept && removed, "Window layouts (written and read back, the lower panel always fits, five different ready-made ones, your own kept by name)",
                        String (round ? "" : "round trip wrong; ") + (rejects ? "" : "junk accepted; ") + (heights ? "" : "heights wrong; ") + (distinct ? "" : "ready-made ones not distinct; ")
                        + (firstName && kept ? "" : "saving wrong; ") + (removed ? "" : "removing wrong; ") + "ok");
+        }
+
+        // --- v0.99.36: track alternatives ----------------------------------------------------------------------
+        {
+            rep.step ("alternatives");
+            auto at = ClipImport::createContentTrack (*edit, "Alt Track", true);
+            auto addClip = [&] (const String& nm, double from, int note)
+            {
+                auto mc = at->insertMIDIClip (nm, { te::TimePosition::fromSeconds (from), te::TimePosition::fromSeconds (from + 2.0) }, nullptr);
+                mc->getSequence().addNote (note, te::BeatPosition(), te::BeatDuration::fromBeats (1.0), 100, 0, nullptr);
+            };
+            auto clipNames = [&] { StringArray s; for (auto c : at->getClips()) s.add (c->getName()); s.sort (true); return s.joinIntoString (","); };
+            auto firstNote = [&] () -> int
+            {
+                for (auto c : at->getClips()) if (auto mc = dynamic_cast<te::MidiClip*> (c)) if (mc->getSequence().getNumNotes() > 0) return mc->getSequence().getNote (0)->getNoteNumber();
+                return -1;
+            };
+            addClip ("verse", 0.0, 60); addClip ("chorus", 4.0, 64);
+            const bool plain = ! Alternatives::has (*at) && Alternatives::count (*at) == 1 && Alternatives::current (*at) == 0 && Alternatives::names (*at).joinIntoString (",") == "A";
+            // a new, empty alternative: the track is empty, the old clips are kept under A
+            edit->getUndoManager().beginNewTransaction ("new alt");
+            const int b = Alternatives::add (*at, false);
+            const bool emptyB = b == 1 && Alternatives::has (*at) && Alternatives::current (*at) == 1 && at->getClips().isEmpty() && Alternatives::names (*at).joinIntoString (",") == "A,B";
+            addClip ("other verse", 0.0, 72);
+            // back to A and forth to B: each has its own clips, with their notes
+            edit->getUndoManager().beginNewTransaction ("switch");
+            const bool toA = Alternatives::switchTo (*at, 0) && clipNames() == "chorus,verse" && firstNote() >= 60 && firstNote() <= 64;
+            edit->getUndoManager().beginNewTransaction ("switch back");
+            const bool toB = Alternatives::switchTo (*at, 1) && clipNames() == "other verse" && firstNote() == 72 && ! Alternatives::switchTo (*at, 1) && ! Alternatives::switchTo (*at, 7);
+            // undo goes back to A's clips
+            edit->getUndoManager().undo();
+            const bool undone = Alternatives::current (*at) == 0 && clipNames() == "chorus,verse";
+            // a copy: the same clips, changed without touching the original; next goes round
+            edit->getUndoManager().beginNewTransaction ("copy alt");
+            const int c3 = Alternatives::add (*at, true, "Loud take");
+            addClip ("extra", 8.0, 50);
+            const bool copied = c3 == 2 && clipNames() == "chorus,extra,verse" && Alternatives::nameOf (*at, 2) == "Loud take";
+            const bool round = Alternatives::next (*at) && Alternatives::current (*at) == 0 && clipNames() == "chorus,verse" && Alternatives::next (*at) && Alternatives::current (*at) == 1 && clipNames() == "other verse";
+            // no two clips anywhere share an id (the ones kept and the ones on the track)
+            Alternatives::switchTo (*at, 2);
+            std::set<String> ids;
+            bool unique = true;
+            for (auto tr : te::getAudioTracks (*edit)) for (auto cl : tr->getClips()) unique = unique && ids.insert (cl->itemID.toString()).second;
+            // rename, and delete: the one in use hands over to its neighbour; the last one cannot go
+            Alternatives::rename (*at, 1, "  Quiet  ");
+            const bool renamed = Alternatives::nameOf (*at, 1) == "Quiet";
+            const bool removedCurrent = Alternatives::remove (*at, 2) && Alternatives::count (*at) == 2 && Alternatives::current (*at) == 1 && clipNames() == "other verse";
+            const bool removedOther = Alternatives::remove (*at, 0) && Alternatives::count (*at) == 1 && Alternatives::current (*at) == 0 && clipNames() == "other verse" && ! Alternatives::has (*at);
+            const bool lastStays = ! Alternatives::remove (*at, 0) && clipNames() == "other verse";
+            const bool letters = Alternatives::letter (0) == "A" && Alternatives::letter (25) == "Z" && Alternatives::letter (26) == "AA" && Alternatives::letter (27) == "AB";
+            // the alternatives travel with the project file, and the header says which is in use
+            Alternatives::add (*at, false);
+            const bool saved = edit->state.toXmlString().contains ("PULSEALTS") && edit->state.toXmlString().contains ("other verse");
+            bool headerOk = false;
+            {
+                PulseLookAndFeel laf;
+                LookAndFeel::setDefaultLookAndFeel (&laf);
+                EditViewState evs (*edit, sm);
+                TrackHeader head (evs, at);
+                head.setSize (220, 74);
+                std::function<bool (Component&)> says = [&] (Component& c) -> bool
+                {
+                    if (auto* l = dynamic_cast<Label*> (&c); l != nullptr && l->getText().contains ("[B]")) return true;
+                    for (auto* ch : c.getChildren()) if (says (*ch)) return true;
+                    return false;
+                };
+                headerOk = says (head);
+                PopupMenu menu;
+                Alternatives::addToMenu (menu, *at);
+                headerOk = headerOk && menu.getNumItems() == 1;
+                LookAndFeel::setDefaultLookAndFeel (nullptr);
+            }
+            rep.check (plain && emptyB && toA && toB && undone && copied && round && unique && renamed && removedCurrent && removedOther && lastStays && letters && saved && headerOk,
+                       "Track alternatives (new empty and as a copy, switching keeps each one's clips and notes, undo, rename, delete, saved with the project, shown on the header)",
+                       String (plain ? "" : "a plain track is wrong; ") + (emptyB ? "" : "new empty wrong; ") + (toA && toB ? "" : "switching wrong (" + clipNames() + "); ") + (undone ? "" : "undo wrong; ")
+                       + (copied ? "" : "copy wrong; ") + (round ? "" : "next wrong; ") + (unique ? "" : "clip ids shared; ") + (renamed ? "" : "rename wrong; ")
+                       + (removedCurrent && removedOther && lastStays ? "" : "delete wrong; ") + (letters ? "" : "letters wrong; ") + (saved ? "" : "not in the project; ") + (headerOk ? "" : "header / menu wrong; ") + "ok");
+            edit->deleteTrack (at);
+            edit->getUndoManager().clearUndoHistory();
         }
 
         // --- sharing: collect all, templates -----------------------------------------------------------
