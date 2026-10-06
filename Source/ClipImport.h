@@ -116,6 +116,7 @@ namespace ClipImport
             { "Vocoder",      pulse::Vocoder::xmlTypeName,         false },
             { "Pitch Correction", pulse::PitchCorrect::xmlTypeName, false },
             { "Utility",      pulse::Utility::xmlTypeName,         false },
+            { "Effect Rack",  "fxrack",                            false },
             { "Tuner",        pulse::Tuner::xmlTypeName,           false },
             { "Spectrum",     pulse::Spectrum::xmlTypeName,        false },
             { "Arpeggiator",  pulse::Arpeggiator::xmlTypeName,     false, true },
@@ -168,7 +169,7 @@ namespace ClipImport
     inline void noteInstrument (te::AudioTrack& t)
     {
         for (auto p : t.pluginList)
-            if (p->isSynth() || dynamic_cast<te::RackInstance*> (p) != nullptr) { t.state.setProperty (autoInstID, p->itemID.toString(), nullptr); return; }
+            if (EngineHelpers::isInstrument (p)) { t.state.setProperty (autoInstID, p->itemID.toString(), nullptr); return; }
     }
 
     /** Turns a raw id that ended up as a name ("pulseDrumSynth", "drumrackkit", "plugin:builtin:x")
@@ -199,7 +200,7 @@ namespace ClipImport
     inline String instrumentTrackName (te::Plugin& p)
     {
         const auto type = p.getPluginType();
-        if (type == pulse::DrumSynth::xmlTypeName || dynamic_cast<te::RackInstance*> (&p) != nullptr) return "Drums";
+        if (type == pulse::DrumSynth::xmlTypeName || FxRack::isInstrumentRack (&p)) return "Drums";
         return p.getName();
     }
 
@@ -226,12 +227,14 @@ namespace ClipImport
     {
         if (isMidiFile (f)) return false;
         for (auto p : t.pluginList)
-            if (p->isSynth() || dynamic_cast<te::RackInstance*> (p) != nullptr) return true;
+            if (EngineHelpers::isInstrument (p)) return true;
         return false;
     }
 
     inline te::Plugin::Ptr createPluginFromDescription (te::Edit& edit, const String& d)
     {
+        if (d == "plugin:builtin:fxrack")
+            return FxRack::create (edit);
         if (d == "plugin:builtin:drumrack")
             return DrumRack::create (edit);
         if (d == "plugin:builtin:drumrackkit")

@@ -1467,7 +1467,7 @@ public:
     te::Plugin* instrument() const
     {
         for (auto p : track->pluginList)
-            if (p->isSynth() || dynamic_cast<te::RackInstance*> (p) != nullptr) return p;
+            if (EngineHelpers::isInstrument (p)) return p;
         return nullptr;
     }
 
@@ -1758,7 +1758,7 @@ private:
         String desc = "AUDIO";
         te::Plugin* inst = nullptr;
         for (auto p : track->pluginList)
-            if (p->isSynth() || dynamic_cast<te::RackInstance*> (p) != nullptr) { inst = p; desc = "INST  " + (dynamic_cast<te::RackInstance*> (p) != nullptr ? String ("Drum Rack") : p->getName()); break; }
+            if (EngineHelpers::isInstrument (p)) { inst = p; desc = "INST  " + (dynamic_cast<te::RackInstance*> (p) != nullptr ? String ("Drum Rack") : p->getName()); break; }
 
         // tracks Pulse named follow their instrument (until the user renames them)
         if (inst != nullptr && track->state.getProperty (ClipImport::autoNameID) && ! name.isBeingEdited())

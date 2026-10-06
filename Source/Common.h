@@ -152,10 +152,21 @@ namespace EngineHelpers
         return nullptr;
     }
 
+    /** An Effect Rack (a rack of effect chains; the engine calls every rack an instrument, which this one is not). */
+    inline bool isEffectRack (te::Plugin* p)
+    {
+        if (auto ri = dynamic_cast<te::RackInstance*> (p))
+            return ri->type != nullptr && (bool) ri->type->state.getProperty ("pulseFxRack");
+        return false;
+    }
+
+    /** True for a device that makes sound from notes: a synth, a sampler, the Drum Rack. */
+    inline bool isInstrument (te::Plugin* p) { return p != nullptr && p->isSynth() && ! isEffectRack (p); }
+
     inline bool trackHasInstrument (te::AudioTrack& t)
     {
         for (auto p : t.pluginList)
-            if (p->isSynth())
+            if (isInstrument (p))
                 return true;
 
         return false;

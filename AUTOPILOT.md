@@ -173,7 +173,7 @@ well EVERYWHERE." So, besides the list:
 5. Mixing: [x] VCA faders  [x] reference track A/B with loudness match  [x] mastering chain preset + assistant
    [x] match EQ  [x] linear-phase EQ mode  [x] loudness report on export  [x] automatic freeze under load
    [x] sidechain picker on every device
-6. Workflow: [ ] device racks with parallel chains  [x] track alternatives  [x] project and track notes
+6. Workflow: [x] device racks with parallel chains  [x] track alternatives  [x] project and track notes
    [x] browser preview in time and in key  [x] macros on the track header  [x] toolbar / window layouts
    [x] controller mapping pages  [ ] video track
 
@@ -609,3 +609,17 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   the mappings window. MainComponent: commands midi.mappings / pageNext / pagePrev / pageAlways, the banner
   says the page for a moment when it changes. Tested with made-up controller messages; no real controller was
   used. Push 2 keeps its own handling and has no part in this. 320 checks, quick tier.
+- 2026-10-06: v0.99.38. Effect Rack. Source/FxRack.h: pulse::ChainOut (level, balance, mute at the end of a
+  chain) and namespace FxRack (a te::RackType flagged "pulseFxRack"; chains listed in a "PULSECHAINS" child;
+  devices tagged with their chain and order; rewire() rebuilds every connection; create / addChain /
+  removeChain / addEffect / moveEffect / removeEffect / setSolo / wrap). Source/FxRackCard.h: its card.
+  In the effects menu and the browser list as "Effect Rack" (description plugin:builtin:fxrack).
+  Found on the way: te::RackInstance::isSynth() is true for every rack, so a track with an Effect Rack would
+  have been an instrument track to the header, the track naming, importing and the place new devices go.
+  EngineHelpers::isInstrument / isEffectRack (Common.h) now answer that question at the track-level checks
+  (ArrangementView, ClipImport, PluginMenu, trackHasInstrument); the per-card colour checks were left.
+  Measured by rendering: two empty chains +6.02 dB; a chain with a 128 ms linear-phase EQ beside a dry chain
+  still sums to +6 dB, so the engine keeps chains in step inside a rack. Limits: a chain's effects are rows
+  with an Edit button, not full cards; no rack inside a rack; no instruments in chains; listen-alone is not
+  saved; no macros of its own (the track's macros reach the devices inside). 321 checks, quick tier.
+  Left in group 6: video track. Left in group 4: per-note pitch and time editing of audio.

@@ -54,7 +54,7 @@ namespace PluginMenu
     inline Kind kindOf (te::Plugin& p)
     {
         if (dynamic_cast<pulse::PulseMidiEffect*> (&p) != nullptr) return Kind::midiEffect;
-        if (p.isSynth()) return Kind::instrument;
+        if (EngineHelpers::isInstrument (&p)) return Kind::instrument;
         if (auto ri = dynamic_cast<te::RackInstance*> (&p); ri != nullptr && ri->type != nullptr && (bool) ri->type->state.getProperty ("pulseDrumRack"))
             return Kind::instrument;
         return Kind::audioEffect;
@@ -161,6 +161,7 @@ namespace PluginMenu
         addBuiltIn<pulse::Vocoder> (effects, edit, cb);
         addBuiltIn<pulse::PitchCorrect> (effects, edit, cb);
         addBuiltIn<pulse::Utility> (effects, edit, cb);
+        effects.addItem ("Effect Rack (chains side by side)", [&edit, cb] { if (auto p = FxRack::create (edit)) cb (p); });
         addBuiltIn<pulse::Tuner> (effects, edit, cb);
         addBuiltIn<pulse::Spectrum> (effects, edit, cb);
         effects.addSeparator();
@@ -247,12 +248,12 @@ namespace PluginMenu
         {
             int index = isReturn ? 1 : 0;
             for (int i = 0; i < list.size(); ++i)
-                if (list[i]->isSynth()) { index = i; break; }   // just before the instrument
+                if (EngineHelpers::isInstrument (list[i])) { index = i; break; }   // just before the instrument
                 else if (dynamic_cast<pulse::PulseMidiEffect*> (list[i]) != nullptr) index = i + 1;
             list.insertPlugin (p, index, sm);
             return true;
         }
-        list.insertPlugin (p, p->isSynth() ? (isReturn ? 1 : 0) : insertIndexFor (list, track), sm);
+        list.insertPlugin (p, EngineHelpers::isInstrument (p.get()) ? (isReturn ? 1 : 0) : insertIndexFor (list, track), sm);
         if (onInserted && p != nullptr) onInserted (*p);
         return true;
     }

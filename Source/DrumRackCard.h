@@ -38,7 +38,7 @@ public:
         g.fillRoundedRectangle (r, 3.0f);
         const float v = (float) valueToProportionOfLength (getValue());
         g.setColour (Theme::accent.withAlpha (isMouseOverOrDragging() ? 0.55f : 0.38f));
-        if (getMinimum() < 0.0 && getMaximum() > 0.0)   // bipolar (pan): fill from the centre
+        if (getMinimum() < 0.0 && std::abs (getMinimum() + getMaximum()) < 1.0e-6)   // two-sided (pan): fill from the centre; a level fills from the left
         {
             const float c = r.getX() + r.getWidth() * (float) valueToProportionOfLength (0.0), x = r.getX() + r.getWidth() * v;
             g.fillRect (Rectangle<float> (jmin (c, x), r.getY(), jmax (2.0f, std::abs (x - c)), r.getHeight()));

@@ -440,6 +440,15 @@ private:
                 DeviceTools::apply (*pp, DeviceTools::clipboard().values);
             });
         }
+        if (! plugin->isSynth() && plugin->getOwnerList() != nullptr)
+        {
+            m.addSeparator();
+            m.addItem ("Put this device in an Effect Rack (to add chains beside it)", [p = plugin]
+            {
+                p->edit.getUndoManager().beginNewTransaction ("Put in a rack");
+                FxRack::wrap (*p);
+            });
+        }
         m.showMenuAsync (PopupMenu::Options().withTargetComponent (&presetBtn));
     }
 
@@ -808,6 +817,7 @@ private:
 
 //==============================================================================
 #include "DrumRackCard.h"
+#include "FxRackCard.h"
 
 //==============================================================================
 /** Standalone Sampler: one sample played chromatically across a key range. */
@@ -1180,7 +1190,9 @@ private:
         for (auto p : shown)
         {
             Component* c = nullptr;
-            if (DrumRack::isDrumRack (p))
+            if (FxRack::isFxRack (p))
+                c = new FxRackCard (evs, *dynamic_cast<te::RackInstance*> (p));
+            else if (DrumRack::isDrumRack (p))
                 c = new DrumRackCard (evs, *dynamic_cast<te::RackInstance*> (p));
             else if (auto s = dynamic_cast<te::SamplerPlugin*> (p))
                 c = new SamplerCard (evs, *s);

@@ -2,6 +2,11 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.38 - 2026-10-06
+
+- Effect Rack: chains of effects side by side, each with level, mute and listen-alone
+- Drum Rack mixer: the level bars fill from the left (they filled from 0 dB, so a pad at 0 dB looked empty)
+
 ## 0.99.37 - 2026-10-06
 
 - Controller mapping pages: eight pages of MIDI mappings, a mappings window, and page buttons learned from the controller

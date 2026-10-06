@@ -569,7 +569,7 @@ namespace SelfTest
 
             for (auto& b : ClipImport::builtIns())
             {
-                if (b.synth || b.midiFx) continue;
+                if (b.synth || b.midiFx || String (b.type) == "fxrack") continue;   // (the Effect Rack is not one device: it has its own check)
                 rep.step (String ("auditing ") + b.name);
                 auto p = edit->getPluginCache().createNewPlugin (b.type, {});
                 PluginMenu::insertPlugin (auditTrack, auditTrack->pluginList, p, nullptr);
@@ -2237,6 +2237,114 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
                        note + (kept ? "" : "not kept in the project; ") + (windowOk ? "" : "window wrong; ") + "ok");
             edit->state.removeChild (edit->state.getChildWithName ("PULSEMIDIMAP"), nullptr);
             edit->deleteTrack (pt);
+            edit->getUndoManager().clearUndoHistory();
+        }
+
+        // --- v0.99.38: Effect Rack (chains side by side) -------------------------------------------------------
+        {
+            rep.step ("effect rack");
+            auto rt = ClipImport::createContentTrack (*edit, "RackTest", false);
+            ClipImport::importFile (*rt, *edit, writeTestWav (dir.getChildFile ("rack.wav"), 2.0, 220.0), te::TimePosition());
+            const te::TimeRange range { te::TimePosition(), te::TimePosition::fromSeconds (2.0) };
+            int n = 0;
+            auto level = [&] { return peakDb (engine, EditingOps::renderTrack (*rt, range, "rack" + String (++n))); };
+            const float plain = level();
+            auto rp = FxRack::create (*edit);
+            rt->pluginList.insertPlugin (rp, 0, nullptr);
+            auto* rack = FxRack::rackOf (rp.get());
+            StringArray wrong;
+            auto expect = [&] (bool ok, const String& what) { if (! ok) wrong.add (what); };
+            auto nearDb = [] (float a, float b, float tol = 0.25f) { return std::abs (a - b) < tol; };
+            if (rack == nullptr) wrong.add ("no rack");
+            else
+            {
+                expect (FxRack::isFxRack (rp.get()) && ! FxRack::isInstrumentRack (rp.get()) && ! DrumRack::isDrumRack (rp.get()) && ! EngineHelpers::trackHasInstrument (*rt), "it counts as an instrument");
+                auto first = FxRack::chains (*rack);
+                expect (first.size() == 1 && first[0].name == "Chain 1" && FxRack::effects (*rack, first[0].id).isEmpty(), "does not start with one empty chain");
+                const float one = level();
+                expect (nearDb (one, plain), "one empty chain is not the sound itself (" + String (one - plain, 2) + " dB)");
+                // a second empty chain: the same sound twice, 6 dB more
+                edit->getUndoManager().beginNewTransaction ("chain");
+                const int c2 = FxRack::addChain (*rack);
+                const float two = level();
+                expect (FxRack::chains (*rack).size() == 2 && nearDb (two, plain + 6.02f), "two empty chains are not +6 dB (" + String (two - plain, 2) + ")");
+                auto* out2 = FxRack::output (*rack, c2);
+                if (out2 == nullptr) wrong.add ("the chain has no mixer");
+                else
+                {
+                    out2->set (pulse::ChainOut::pVol, -6.02f);
+                    expect (nearDb (level(), plain + 3.52f), "a chain at -6 dB beside the dry one is not +3.5 dB");
+                    out2->set (pulse::ChainOut::pVol, 0.0f); out2->set (pulse::ChainOut::pMute, 1.0f);
+                    expect (nearDb (level(), plain), "a muted chain is still heard");
+                    out2->set (pulse::ChainOut::pMute, 0.0f);
+                    // listening to the first chain alone silences the second
+                    FxRack::setSolo (*rack, first[0].id);
+                    expect (nearDb (level(), plain) && FxRack::soloed (*rack) == first[0].id, "solo does not silence the other chain");
+                    FxRack::setSolo (*rack, -1);
+                    // an effect on the second chain: 12 dB down there, so the sum is 1 + 0.25
+                    auto util = edit->getPluginCache().createNewPlugin (pulse::Utility::xmlTypeName, {});
+                    expect (FxRack::addEffect (*rack, c2, util) && FxRack::effects (*rack, c2).size() == 1 && FxRack::effects (*rack, first[0].id).isEmpty(), "the effect did not go on its chain");
+                    dynamic_cast<pulse::PulsePlugin*> (util.get())->set (pulse::Utility::pGain, -12.04f);
+                    expect (nearDb (level(), plain + 1.94f), "an effect on one chain is not heard on that chain only");
+                    // a chain whose device delays the sound (a linear-phase EQ, 128 ms) stays in step with the dry chain
+                    auto eqp = edit->getPluginCache().createNewPlugin (pulse::PrismEQ::xmlTypeName, {});
+                    FxRack::addEffect (*rack, c2, eqp);
+                    auto* eq = dynamic_cast<pulse::PrismEQ*> (eqp.get());
+                    for (int b = 0; b < pulse::PrismEQ::numBands; ++b) eq->set (pulse::PrismEQ::idx (b, pulse::PrismEQ::pOn), 0.0f);
+                    eq->set (eq->g (pulse::PrismEQ::gPhase), 1.0f);
+                    eq->syncPhaseMode();
+                    dynamic_cast<pulse::PulsePlugin*> (util.get())->set (pulse::Utility::pGain, 0.0f);
+                    const float aligned = level();
+                    expect (nearDb (aligned, plain + 6.02f, 0.4f), "a delaying device puts its chain out of step with the others (" + String (aligned - plain, 2) + " dB where +6 is in step)");
+                    // order within a chain, and removing
+                    FxRack::moveEffect (*rack, *eqp, -1);
+                    expect (FxRack::effects (*rack, c2).getFirst() == eqp.get(), "moving an effect earlier did nothing");
+                    FxRack::removeEffect (*rack, *eqp);
+                    FxRack::removeEffect (*rack, *util);
+                    expect (FxRack::effects (*rack, c2).isEmpty() && nearDb (level(), plain + 6.02f), "removing the effects did not leave an empty chain");
+                }
+                FxRack::renameChain (*rack, c2, " Crushed ");
+                expect (FxRack::chains (*rack)[1].name == "Crushed", "rename wrong");
+                // the card
+                {
+                    PulseLookAndFeel laf;
+                    LookAndFeel::setDefaultLookAndFeel (&laf);
+                    EditViewState evs (*edit, sm);
+                    auto fx = edit->getPluginCache().createNewPlugin (pulse::Saturator::xmlTypeName, {});
+                    FxRack::addEffect (*rack, c2, fx);
+                    FxRackCard card (evs, *dynamic_cast<te::RackInstance*> (rp.get()));
+                    card.setSize (560, 300);
+                    expect (card.numChainRows() == 2 && card.numFxRows() == 0 && card.selectedChain() == first[0].id, "the card does not show the chains");
+                    card.selectChain (c2);
+                    expect (card.numFxRows() == 1, "the card does not show the chosen chain's effects");
+                    auto img = card.createComponentSnapshot (card.getLocalBounds());
+                    auto f = dir.getChildFile ("fx_rack.png");
+                    f.deleteFile();
+                    if (auto os = f.createOutputStream()) { PNGImageFormat png; png.writeImageToStream (img, *os); }
+                    LookAndFeel::setDefaultLookAndFeel (nullptr);
+                }
+                // removing a chain takes its effects along; the last chain stays; undo brings a chain back
+                edit->getUndoManager().beginNewTransaction ("remove chain");
+                expect (FxRack::removeChain (*rack, c2) && FxRack::chains (*rack).size() == 1 && FxRack::output (*rack, c2) == nullptr && ! FxRack::removeChain (*rack, first[0].id), "removing chains wrong");
+                expect (nearDb (level(), plain), "after removing the second chain the sound is not as it was");
+                // a copy of the rack is its own rack
+                auto copy = DragDrop::duplicate (*rp);
+                expect (copy != nullptr && FxRack::isFxRack (copy.get()) && FxRack::rackOf (copy.get()) != rack && FxRack::chains (*FxRack::rackOf (copy.get())).size() == 1, "a copy is not a rack of its own");
+            }
+            rp->deleteFromParent();
+            // putting a device into a rack: it stays where it was and sounds the same
+            auto util2 = edit->getPluginCache().createNewPlugin (pulse::Utility::xmlTypeName, {});
+            rt->pluginList.insertPlugin (util2, 0, nullptr);
+            dynamic_cast<pulse::PulsePlugin*> (util2.get())->set (pulse::Utility::pGain, -6.02f);
+            const float before = level();
+            edit->getUndoManager().beginNewTransaction ("wrap");
+            auto wrapped = FxRack::wrap (*util2);
+            const bool inPlace = wrapped != nullptr && rt->pluginList.indexOf (wrapped.get()) == 0 && util2->getOwnerRackType() == FxRack::rackOf (wrapped.get());
+            expect (inPlace && FxRack::chains (*FxRack::rackOf (wrapped.get())).front().name == "Utility", "putting a device in a rack: not in its place, or the chain is not named after it");
+            expect (nearDb (level(), before) && nearDb (before, plain - 6.02f), "a device put in a rack sounds different");
+            rep.check (wrong.isEmpty(), "Effect Rack (chains side by side are added together; level, mute, listen alone; effects per chain; a delaying chain stays in step; put a device in a rack)",
+                       wrong.isEmpty() ? "dry " + String (plain, 1) + " dBFS, two chains " + String (plain + 6.0f, 1) : wrong.joinIntoString ("; "));
+            edit->deleteTrack (rt);
             edit->getUndoManager().clearUndoHistory();
         }
 
@@ -4068,7 +4176,7 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
             for (auto& b : ClipImport::builtIns())
             {
                 const String t (b.type);
-                if (t == pulse::Tuner::xmlTypeName || t == pulse::Spectrum::xmlTypeName) continue;
+                if (t == pulse::Tuner::xmlTypeName || t == pulse::Spectrum::xmlTypeName || t == "fxrack") continue;
                 auto test = edit->getPluginCache().createNewPlugin (t, {});
                 if (dynamic_cast<pulse::PulsePlugin*> (test.get()) == nullptr) continue;
                 if (FactoryPresets::forType (t).size() < 4) thin.add (b.name);
