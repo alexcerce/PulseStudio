@@ -155,6 +155,15 @@ public:
             *p = 42;
         }
 
+        // --video-probe <video> <report.txt> : how Windows' media player gets on with a video file, then exit
+        if (auto i = args.indexOf ("--video-probe"); i >= 0 && i + 2 < args.size())
+        {
+            const auto f = File::getCurrentWorkingDirectory().getChildFile (args[i + 1].unquoted());
+            File::getCurrentWorkingDirectory().getChildFile (args[i + 2].unquoted()).replaceWithText (VideoPlayerWin::probe (f.getFullPathName()));
+            quit();
+            return;
+        }
+
         // --device-shots <dir> : pictures of the graph-first device editors, then exit
         if (auto i = args.indexOf ("--device-shots"); i >= 0 && i + 1 < args.size())
         {

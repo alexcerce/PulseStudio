@@ -2,6 +2,11 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.39 - 2026-10-06
+
+- Video: a window that shows the project's film in step with the song (File menu)
+- File menu: Notes
+
 ## 0.99.38 - 2026-10-06
 
 - Effect Rack: chains of effects side by side, each with level, mute and listen-alone

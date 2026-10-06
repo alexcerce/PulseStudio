@@ -3,6 +3,7 @@
 #include "Mastering.h"
 #include "Layouts.h"
 #include "MidiMapView.h"
+#include "Video.h"
 #include "About.h"
 #include "UndoSync.h"
 #include "Common.h"
@@ -353,6 +354,7 @@ public:
         c.add ("midi.pageNext", "Controller mappings: next page", "MIDI", {}, [this] { if (midiLearn != nullptr) midiLearn->stepPage (true); });
         c.add ("midi.pagePrev", "Controller mappings: previous page", "MIDI", {}, [this] { if (midiLearn != nullptr) midiLearn->stepPage (false); });
         c.add ("midi.pageAlways", "Controller mappings: no page (only what is always mapped)", "MIDI", {}, [this] { if (midiLearn != nullptr) midiLearn->setPage (0); });
+        c.add ("view.video", "Video: the film this project is written to", "View", {}, [this] { if (edit != nullptr && ! About::isCapturing()) Video::show (*edit); });
         c.add ("view.notes", "Notes for the project and its tracks", "View", {}, [this] { if (edit != nullptr && ! About::isCapturing()) Notes::show (*edit); });
         c.add ("view.steps", "Piano roll: step grid on / off", "View", {}, [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->showSteps (! pianoRoll->stepGrid().isVisible()); } });
         c.add ("midi.fitChords", "MIDI: fit to the chord track", "MIDI", {}, [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("fitchords"); } });
@@ -484,6 +486,8 @@ private:
         };
         a.checkUpdates   = [this] { checkForUpdates (true); };
         a.about          = [this] { About::show (this); };
+        a.video          = [this] { if (edit != nullptr && ! About::isCapturing()) Video::show (*edit); };
+        a.notes          = [this] { if (edit != nullptr && ! About::isCapturing()) Notes::show (*edit); };
         a.userGuide      = [this] { About::showUserGuide (this); };
         a.setMidiRecordMode = [this] (int m)
         {
@@ -1137,6 +1141,7 @@ private:
         DeviceEditors::closeAll();
         UndoHistory::closeAll();
         Notes::close();
+        Video::close();
         pianoRoll = nullptr;
         mixer = nullptr;
         deviceChain = nullptr;

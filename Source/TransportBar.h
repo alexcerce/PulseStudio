@@ -24,7 +24,7 @@ public:
         std::function<void()> clearRecent;
         std::function<StringArray()> backups;
         std::function<void (const File&)> restoreBackup;
-        std::function<void()> welcome, exportZip, importZip, crashReports, checkUpdates, about, userGuide;
+        std::function<void()> welcome, exportZip, importZip, crashReports, checkUpdates, about, userGuide, video, notes;
         std::function<int()> midiRecordMode;
         std::function<void (int)> setMidiRecordMode;
         std::function<String()> controllerStatus;
@@ -184,6 +184,9 @@ public:
             add ("Export audio / stems...", "Ctrl+Shift+R", actions.exportWav);
             add ("Export selection...", "Ctrl+Shift+E", actions.exportSelection);
             add ("Export MIDI...", "Ctrl+Shift+M", actions.exportMidi);
+            m.addSeparator();
+            add ("Video (the film this project is written to)...", {}, actions.video);
+            add ("Notes for the project and its tracks...", {}, actions.notes);
             m.addSeparator();
             add ("Command palette...", "Ctrl+P", actions.openPalette);
             add ("Keyboard shortcuts...", {}, actions.editShortcuts);

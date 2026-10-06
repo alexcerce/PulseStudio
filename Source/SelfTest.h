@@ -23,6 +23,7 @@
 #include "PulseLookAndFeel.h"
 #include "MidiLearn.h"
 #include "MidiMapView.h"
+#include "Video.h"
 #include "SessionView.h"
 #include "Browser.h"
 #include "PluginWindow.h"
@@ -2345,6 +2346,83 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
             rep.check (wrong.isEmpty(), "Effect Rack (chains side by side are added together; level, mute, listen alone; effects per chain; a delaying chain stays in step; put a device in a rack)",
                        wrong.isEmpty() ? "dry " + String (plain, 1) + " dBFS, two chains " + String (plain + 6.0f, 1) : wrong.joinIntoString ("; "));
             edit->deleteTrack (rt);
+            edit->getUndoManager().clearUndoHistory();
+        }
+
+        // --- v0.99.39: the project's video -------------------------------------------------------------------
+        {
+            rep.step ("video");
+            const bool none = ! Video::has (*edit) && Video::file (*edit) == File() && Video::start (*edit) == 0.0;
+            // where the song is in the video, and when the picture is put right
+            const bool sums = Video::videoTimeAt (12.0, 10.0) == 2.0 && Video::videoTimeAt (4.0, 10.0) == -6.0 && Video::covers (2.0, 30.0) && ! Video::covers (-0.1, 30.0) && ! Video::covers (30.0, 30.0)
+                              && Video::covers (500.0, 0.0) && ! Video::needsJump (5.0, 5.08, true) && Video::needsJump (5.0, 5.2, true) && Video::needsJump (5.0, 5.05, false) && ! Video::needsJump (5.0, 5.01, false)
+                              && Video::isVideoFile (File::getCurrentWorkingDirectory().getChildFile ("Film.MP4")) && ! Video::isVideoFile (File::getCurrentWorkingDirectory().getChildFile ("song.wav"));
+            // kept in the project, undoable
+            const auto film = File ("C:\\Windows\\SystemApps\\Microsoft.Windows.CloudExperienceHost_cw5n1h2txyewy\\media\\oobe-intro.mp4");
+            const auto missing = dir.getChildFile ("not there.mp4");
+            edit->getUndoManager().beginNewTransaction ("video");
+            Video::setFile (*edit, missing);
+            Video::setStart (*edit, 8.5);
+            Video::setSound (*edit, true);
+            const bool kept = Video::has (*edit) && Video::file (*edit) == missing && Video::start (*edit) == 8.5 && Video::sound (*edit) && edit->state.toXmlString().contains ("PULSEVIDEO");
+            String windowNote = "no Windows sample video on this machine: opening one was not checked";
+            bool windowOk = true;
+            {
+                PulseLookAndFeel laf;
+                LookAndFeel::setDefaultLookAndFeel (&laf);
+                Video::Panel panel (*edit);
+                panel.setSize (720, 441);
+                // a file that is not there is said, not shown
+                const bool says = ! panel.isOpen() && panel.noteShown().contains ("not there");
+                windowOk = says;
+                if (! says) windowNote = "a missing file is not reported";
+                else if (film.existsAsFile())
+                {
+                    panel.addToDesktop (0);
+                    panel.setVisible (true);
+                    Video::setFile (*edit, film);
+                    Video::setStart (*edit, 2.0);
+                    edit->getTransport().setPosition (te::TimePosition::fromSeconds (0.0));
+                    panel.refreshNow();   // (starts opening it: that happens on threads of its own)
+                    for (int tries = 0; tries < 160 && ! panel.isOpen() && ! panel.noteShown().contains ("cannot"); ++tries) { VideoPlayerWin::pump (50); panel.refreshNow(); }
+                    const bool opened = panel.isOpen() && panel.duration() > 1.0;
+                    const bool waits = panel.noteShown().contains ("begins at 0:02");
+                    edit->getTransport().setPosition (te::TimePosition::fromSeconds (3.0));
+                    panel.refreshNow();
+                    for (int tries = 0; tries < 60 && ! panel.currentPicture().isValid(); ++tries) { VideoPlayerWin::pump (50); panel.refreshNow(); }   // (the frame for that place arrives a moment later)
+                    for (int tries = 0; tries < 20; ++tries) { VideoPlayerWin::pump (50); panel.refreshNow(); }   // (and the one asked for replaces the first one)
+                    const auto& pic = panel.currentPicture();
+                    float brightest = 0.0f;
+                    if (pic.isValid())
+                        for (int y = 0; y < pic.getHeight(); y += jmax (1, pic.getHeight() / 24))
+                            for (int x = 0; x < pic.getWidth(); x += jmax (1, pic.getWidth() / 32)) brightest = jmax (brightest, pic.getPixelAt (x, y).getBrightness());
+                    const bool shows = panel.noteShown().isEmpty() && pic.isValid() && pic.getWidth() > 16 && pic.getHeight() > 16 && brightest > 0.2f;
+                    if (pic.isValid())
+                    {
+                        auto shot = panel.createComponentSnapshot (panel.getLocalBounds());
+                        auto f = dir.getChildFile ("video.png");
+                        f.deleteFile();
+                        if (auto os = f.createOutputStream()) { PNGImageFormat png; png.writeImageToStream (shot, *os); }
+                    }
+                    edit->getTransport().setPosition (te::TimePosition::fromSeconds (2.0 + panel.duration() + 5.0));
+                    panel.refreshNow();
+                    const bool ended = panel.noteShown().contains ("ended");
+                    edit->getTransport().setPosition (te::TimePosition());
+                    windowOk = opened && waits && shows && ended;
+                    windowNote = opened ? "a " + String (panel.duration(), 1) + " s video opened, picture " + String (pic.getWidth()) + " x " + String (pic.getHeight()) + " (brightest point " + String (roundToInt (brightest * 100.0f)) + "%), " + panel.playerState().upToFirstOccurrenceOf (", network", false, false) + String (waits ? "" : "; the wait before it is not said") + (shows ? "" : "; not shown inside its range") + (ended ? "" : "; its end is not said")
+                                        : "Windows did not open its own sample video (" + panel.noteShown().replaceCharacter ('\n', ' ') + "; " + panel.playerState() + ")";
+                    panel.removeFromDesktop();
+                }
+                LookAndFeel::setDefaultLookAndFeel (nullptr);
+            }
+            edit->getUndoManager().beginNewTransaction ("remove video");
+            Video::setFile (*edit, {});
+            const bool removed = ! Video::has (*edit);
+            edit->getUndoManager().undo();
+            const bool undone = Video::has (*edit);
+            Video::setFile (*edit, {});
+            rep.check (none && sums && kept && windowOk && removed && undone, "Video (the song's place in the film, kept in the project, the window says what it cannot show and follows the song)",
+                       String (none ? "" : "a project without video is wrong; ") + (sums ? "" : "sums wrong; ") + (kept ? "" : "not kept; ") + (removed && undone ? "" : "remove / undo wrong; ") + windowNote);
             edit->getUndoManager().clearUndoHistory();
         }
 

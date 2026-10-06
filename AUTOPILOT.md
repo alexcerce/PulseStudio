@@ -175,7 +175,7 @@ well EVERYWHERE." So, besides the list:
    [x] sidechain picker on every device
 6. Workflow: [x] device racks with parallel chains  [x] track alternatives  [x] project and track notes
    [x] browser preview in time and in key  [x] macros on the track header  [x] toolbar / window layouts
-   [x] controller mapping pages  [ ] video track
+   [x] controller mapping pages  [x] video track
 
 Not attempted (told the owner why): content libraries and AI session players (large downloads / trained models),
 a scripting environment like Max for Live, surround / Atmos, a score editor. Still owed from before: rerun the
@@ -629,3 +629,17 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   project now carries Effect Racks (every seventh track: a dry chain beside one with two effects), so the
   random-input runs click through the rack's card. Still open in the Programme: video track (group 6) and
   per-note pitch and time editing of audio (group 4); then the quality-of-life list.
+- 2026-10-06: v0.99.39. Video. Source/Video.h (the project's video as a "PULSEVIDEO" child: file, start,
+  sound; Video::Panel / Window; videoTimeAt / covers / needsJump) and Source/VideoPlayerWin.cpp (Windows'
+  Media Foundation media engine on a thread of its own, with no window: each new frame is handed over through
+  a WIC bitmap, made no bigger than 1920 x 1200 on the way, and the panel draws it). JUCE's own video
+  component was tried first and dropped: on Windows it goes through DirectShow, which cannot open an MP4
+  ("Unsupported stream"). Things learned the slow way: the engine wants a plain path (file:// gives 8007007b);
+  the address string must stay alive until the video is closed; and an hour went on a wait loop in my own
+  test that never ran. --video-probe <video> <report.txt> stays as a way to see how Windows gets on with a
+  file. Checked on the 4-second clip that ships with Windows: it opens, a second of playing hands over about
+  35 frames, and stopped at a place it shows that place's frame. Not seen: a long film following a playing
+  song (the correction of drift is only tested as arithmetic); other formats than MP4. Not there: a lane for
+  the video in the arrangement, its sound in the mixer, export of picture with music. 322 checks, quick tier.
+  The Programme's group 6 is complete. Left: per-note pitch and time editing of audio (group 4), then the
+  quality-of-life list.
