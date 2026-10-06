@@ -67,6 +67,38 @@ namespace About
         return false;
     }
 
+    //==============================================================================
+    // Recovery after a crash: the autosaved version of a project that was not closed cleanly.
+
+    /** What to do about an autosave found beside a project. */
+    enum class AutosaveState { none, stale, damaged, offer };
+
+    /** none: there is no autosave. stale: it is older than the saved project (nothing to recover). damaged: it is
+        not a project that can be opened. offer: it is newer than what was saved, and can be opened. */
+    inline AutosaveState autosaveState (const File& project, const File& autosave)
+    {
+        if (! autosave.existsAsFile()) return AutosaveState::none;
+        if (project.existsAsFile() && autosave.getLastModificationTime() <= project.getLastModificationTime()) return AutosaveState::stale;
+        return isProjectFile (autosave) ? AutosaveState::offer : AutosaveState::damaged;
+    }
+
+    /** Makes the autosaved version the project. What was last saved is not thrown away: it is kept beside the
+        project as "<name> (before recovery)", so the choice can be gone back on. `keptAs` is that file (or no file
+        when there was no saved version to keep). False, with nothing changed, when it could not be done. */
+    inline bool recoverAutosave (const File& project, const File& autosave, File& keptAs)
+    {
+        keptAs = File();
+        if (! isProjectFile (autosave)) return false;
+        if (project.existsAsFile())
+        {
+            keptAs = project.getParentDirectory().getNonexistentChildFile (project.getFileNameWithoutExtension() + " (before recovery)", project.getFileExtension(), true);
+            if (! project.copyFileTo (keptAs)) { keptAs = File(); return false; }
+        }
+        if (! autosave.copyFileTo (project)) return false;
+        autosave.deleteFile();
+        return true;
+    }
+
     /** True for command lines that must not be handed to an already running Pulse Studio: helper
         processes and test / development runs all carry an option that starts with "--". */
     inline bool wantsOwnInstance (const String& commandLine) { return commandLine.contains ("--"); }

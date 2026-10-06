@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.48 - 2026-10-06
+
+- Recovering an autosave after a crash keeps the last saved version beside the project; Escape no longer deletes the autosave; a damaged autosave is not offered
+
 ## 0.99.47 - 2026-10-06
 
 - Welcome screen: a sound check (device, rate, delay, and what to do when something is wrong) and a tour of the window

@@ -2861,6 +2861,48 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
                        String (checks ? "" : "sound check wrong (" + good.line + " | " + late.line + "); ") + (tourOk ? "" : "tour wrong: " + tourNote) + "ok");
         }
 
+        // --- v0.99.48: recovery after a crash ---------------------------------------------------------------------
+        {
+            rep.step ("recovery");
+            auto rdir = dir.getChildFile ("recovery_test");
+            rdir.deleteRecursively();
+            rdir.createDirectory();
+            auto project = rdir.getChildFile ("Song.tracktionedit"), autosave = rdir.getChildFile ("Song.autosave");
+            const String savedText = "<EDIT name=\"saved\"/>", autosavedText = "<EDIT name=\"autosaved\"/>";
+            const bool nothing = About::autosaveState (project, autosave) == About::AutosaveState::none;
+            project.replaceWithText (savedText);
+            autosave.replaceWithText (autosavedText);
+            // older than what was saved: nothing to recover
+            autosave.setLastModificationTime (Time::getCurrentTime() - RelativeTime::minutes (10));
+            project.setLastModificationTime (Time::getCurrentTime() - RelativeTime::minutes (5));
+            const bool stale = About::autosaveState (project, autosave) == About::AutosaveState::stale;
+            // newer: offered; newer but not a project: damaged, never offered
+            autosave.setLastModificationTime (Time::getCurrentTime());
+            const bool offered = About::autosaveState (project, autosave) == About::AutosaveState::offer;
+            autosave.replaceWithText ("half a file <EDI");
+            const bool damaged = About::autosaveState (project, autosave) == About::AutosaveState::damaged;
+            File kept;
+            const bool refuses = ! About::recoverAutosave (project, autosave, kept) && project.loadFileAsString() == savedText && autosave.existsAsFile() && kept == File();
+            // recovering puts the autosave in place and keeps what was saved beside it, twice over if need be
+            autosave.replaceWithText (autosavedText);
+            const bool first = About::recoverAutosave (project, autosave, kept) && project.loadFileAsString() == autosavedText && ! autosave.existsAsFile()
+                               && kept.getFileName() == "Song (before recovery).tracktionedit" && kept.loadFileAsString() == savedText;
+            autosave.replaceWithText ("<EDIT name=\"autosaved again\"/>");
+            File kept2;
+            const bool second = About::recoverAutosave (project, autosave, kept2) && kept2 != kept && kept2.loadFileAsString() == autosavedText && kept.loadFileAsString() == savedText
+                                && project.loadFileAsString().contains ("autosaved again");
+            // a project that was never saved: there is nothing to keep, and it still recovers
+            auto fresh = rdir.getChildFile ("New.tracktionedit"), freshAuto = rdir.getChildFile ("New.autosave");
+            freshAuto.replaceWithText (autosavedText);
+            File kept3;
+            const bool neverSaved = About::autosaveState (fresh, freshAuto) == About::AutosaveState::offer && About::recoverAutosave (fresh, freshAuto, kept3) && kept3 == File() && fresh.loadFileAsString() == autosavedText;
+            rep.check (nothing && stale && offered && damaged && refuses && first && second && neverSaved,
+                       "Recovery after a crash (an autosave is offered only when newer and openable; recovering keeps what was last saved beside the project)",
+                       String (nothing && stale && offered ? "" : "offered at the wrong time; ") + (damaged && refuses ? "" : "a damaged autosave is offered or used; ") + (first ? "" : "recover wrong; ")
+                       + (second ? "" : "a second recovery loses the first kept version; ") + (neverSaved ? "" : "a project never saved does not recover; ") + "ok");
+            rdir.deleteRecursively();
+        }
+
         // --- sharing: collect all, templates -----------------------------------------------------------
         {
             auto outside = File::getSpecialLocation (File::tempDirectory).getChildFile ("PulseStudioSelfTestOutside");

@@ -154,7 +154,7 @@ well EVERYWHERE." So, besides the list:
   than 20 entries  [ ] drag any device, clip, preset or sample anywhere it could sensibly go
   [ ] consistent modifier keys (fine, snap off, copy-drag) across arrangement, piano roll, automation and devices
   [x] collect-all-and-save, missing-file finder  [x] undo history list  [x] default track / device presets
-  [x] zoom to selection / fit, and remembered zoom per view  [ ] crash-safe autosave restore prompt reviewed
+  [x] zoom to selection / fit, and remembered zoom per view  [x] crash-safe autosave restore prompt reviewed
   [ ] every list sortable and keyboard-navigable  [ ] nothing blocks the UI for more than 100 ms (progress
   shown instead)  [x] first-run experience: audio set-up check, demo project, short tour
 - Nothing that already works is taken away, and a rough edge found on the way is fixed then, or written here.
@@ -722,3 +722,10 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   MainComponent: startTour / tourSteps (six steps), command app.tour. The demo song and the welcome screen
   were there already. The tour was drawn and stepped in a test with made-up parts; it has not been seen over
   the real window (the automated runs skip it). 331 checks, quick tier.
+- 2026-10-06: v0.99.48. The recovery prompt, reviewed. Three things were wrong with it: Recover copied the
+  autosave over the saved project (the last saved version was gone for good if the autosave turned out worse);
+  Escape or closing the box counted as Discard and deleted the autosave; and an autosave that was not a
+  readable project was offered all the same. About.h: autosaveState (none / stale / damaged / offer) and
+  recoverAutosave (keeps the saved version as "<name> (before recovery)" first). MainComponent: a box with
+  Recover / Discard / Ask me next time, both dates in its text; a damaged autosave is renamed aside. Tested
+  with files (the box itself is not driven by a test). 332 checks, quick tier.

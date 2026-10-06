@@ -747,37 +747,43 @@ private:
     void offerRecoveryIfNeeded (const File& file)
     {
         auto temp = te::EditFileOperations::getTempVersionOfEditFile (file);
-
-        if (! temp.existsAsFile())
-            return;
-
-        if (file.existsAsFile() && temp.getLastModificationTime() <= file.getLastModificationTime())
+        const auto state = About::autosaveState (file, temp);
+        if (state == About::AutosaveState::none) return;
+        if (state == About::AutosaveState::stale) { temp.deleteFile(); return; }
+        if (state == About::AutosaveState::damaged)
         {
-            temp.deleteFile();
+            // an autosave that cannot be opened is not offered, and not thrown away either: it is put aside
+            temp.moveFileTo (temp.getParentDirectory().getNonexistentChildFile (temp.getFileNameWithoutExtension() + " (damaged autosave)", temp.getFileExtension(), true));
             return;
         }
+        if (About::isCapturing()) return;
 
         MessageManager::callAsync ([this, file, temp, sp = SafePointer<MainComponent> (this)]
         {
             if (sp == nullptr) return;
-            AlertWindow::showOkCancelBox (MessageBoxIconType::QuestionIcon, "Recover unsaved changes?",
-                                          "Pulse Studio didn't close cleanly last time. An autosaved version of \""
-                                            + file.getFileNameWithoutExtension() + "\" from "
-                                            + temp.getLastModificationTime().toString (true, true) + " is available.",
-                                          "Recover", "Discard", nullptr,
-                                          ModalCallbackFunction::create ([this, file, temp, sp] (int result)
-                                          {
-                                              if (sp == nullptr) return;
-                                              if (result == 1 && temp.copyFileTo (file))
-                                              {
-                                                  temp.deleteFile();
-                                                  loadEdit (file, false);
-                                              }
-                                              else
-                                              {
-                                                  temp.deleteFile();
-                                              }
-                                          }));
+            // three answers: closing the box or pressing Escape decides nothing, and the question comes again next time
+            auto* w = new AlertWindow ("Recover unsaved changes?",
+                                       "Pulse Studio did not close cleanly last time. There is an autosaved version of \"" + file.getFileNameWithoutExtension() + "\" from "
+                                           + temp.getLastModificationTime().toString (true, true) + ", newer than what you last saved ("
+                                           + (file.existsAsFile() ? file.getLastModificationTime().toString (true, true) : String ("never")) + ").\n\n"
+                                           "Recover opens the autosaved version. What you last saved is kept beside it, as \"" + file.getFileNameWithoutExtension() + " (before recovery)\".\n"
+                                           "Discard opens the project as you last saved it and deletes the autosaved version.",
+                                       MessageBoxIconType::QuestionIcon);
+            w->addButton ("Recover", 1, KeyPress (KeyPress::returnKey));
+            w->addButton ("Discard", 2);
+            w->addButton ("Ask me next time", 0, KeyPress (KeyPress::escapeKey));
+            w->enterModalState (true, ModalCallbackFunction::create ([this, file, temp, sp] (int result)
+            {
+                if (sp == nullptr) return;
+                if (result == 1)
+                {
+                    File kept;
+                    if (About::recoverAutosave (file, temp, kept)) loadEdit (file, false);
+                    else AlertWindow::showMessageBoxAsync (MessageBoxIconType::WarningIcon, "Recover unsaved changes", "The autosaved version could not be put in place. Nothing was changed: the project is as you last saved it, and the autosave is still there.");
+                }
+                else if (result == 2)
+                    temp.deleteFile();
+            }), true);
         });
     }
 
