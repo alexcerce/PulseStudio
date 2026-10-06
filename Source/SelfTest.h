@@ -1965,6 +1965,55 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
             edit->getUndoManager().clearUndoHistory();
         }
 
+        // --- v0.99.34: a track's macros on its header -------------------------------------------------------------
+        {
+            rep.step ("header macros");
+            auto mt = ClipImport::createContentTrack (*edit, "Macro Track", true);
+            Macros::ensure (*mt);
+            const bool noneYet = HeaderMacros::used (*mt).isEmpty();
+            te::AutomatableParameter::Ptr target;
+            for (auto pl : mt->pluginList)
+                if (pl != mt->getVolumePlugin() && pl != mt->getLevelMeterPlugin() && ! pl->getAutomatableParameters().isEmpty()) { target = pl->getAutomatableParameters()[0]; break; }
+            auto ms = Macros::get (*mt);
+            bool ok = false;
+            String note = "no instrument parameter to map (" + String (mt->pluginList.size()) + " devices, " + String (ms.size()) + " macros)";
+            if (target != nullptr && ms.size() >= 3)
+            {
+                PulseLookAndFeel laf;
+                LookAndFeel::setDefaultLookAndFeel (&laf);
+                ms[2]->macroName = "Bright";
+                Macros::toggleMapping (*target, *ms[2]);
+                const bool one = HeaderMacros::used (*mt).size() == 1 && HeaderMacros::used (*mt)[0] == ms[2];
+                EditViewState evs (*edit, sm);
+                TrackHeader head (evs, mt);
+                head.setSize (220, 150);
+                const bool shown = head.macros().isVisible() && head.macros().numDials() == 1 && head.macros().getBottom() <= 150;
+                // turning the dial turns the macro; it is drawn; a short track has no room for it
+                if (auto* d = head.macros().dial (0)) d->turnTo (0.8f);
+                const bool turns = std::abs (ms[2]->getCurrentNormalisedValue() - 0.8f) < 0.01f;
+                auto img = head.createComponentSnapshot (head.getLocalBounds());
+                auto f = dir.getChildFile ("header_macros.png");
+                f.deleteFile();
+                if (auto os = f.createOutputStream()) { PNGImageFormat png; png.writeImageToStream (img, *os); }
+                head.setSize (220, 74);
+                const bool hiddenWhenShort = ! head.macros().isVisible();
+                head.setSize (220, 40);
+                const bool hiddenWhenCompact = ! head.macros().isVisible();
+                // unmapped again, the dial goes
+                head.setSize (220, 150);
+                Macros::toggleMapping (*target, *ms[2]);
+                head.macros().refresh();
+                const bool gone = head.macros().numDials() == 0 && ! head.macros().isVisible();
+                ok = noneYet && one && shown && turns && hiddenWhenShort && hiddenWhenCompact && gone;
+                note = String (noneYet ? "" : "unmapped macros counted; ") + (one ? "" : "mapped macro not found; ") + (shown ? "" : "not shown; ") + (turns ? "" : "dial does not turn the macro; ")
+                       + (hiddenWhenShort && hiddenWhenCompact ? "" : "shown without room; ") + (gone ? "" : "stays after unmapping; ") + "ok";
+                LookAndFeel::setDefaultLookAndFeel (nullptr);
+            }
+            rep.check (ok, "Macros on the track header (a dial for each mapped macro when the track is tall enough; it turns the macro)", note);
+            edit->deleteTrack (mt);
+            edit->getUndoManager().clearUndoHistory();
+        }
+
         // --- sharing: collect all, templates -----------------------------------------------------------
         {
             auto outside = File::getSpecialLocation (File::tempDirectory).getChildFile ("PulseStudioSelfTestOutside");

@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.34 - 2026-10-06
+
+- A track's mapped macros appear as dials on its header when the track is made taller
+
 ## 0.99.33 - 2026-10-06
 
 - Browser: previews in the song's key (Key button), beside previews in time

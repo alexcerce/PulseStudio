@@ -174,7 +174,7 @@ well EVERYWHERE." So, besides the list:
    [x] match EQ  [x] linear-phase EQ mode  [x] loudness report on export  [x] automatic freeze under load
    [x] sidechain picker on every device
 6. Workflow: [ ] device racks with parallel chains  [ ] track alternatives  [x] project and track notes
-   [x] browser preview in time and in key  [ ] macros on the track header  [ ] toolbar / window layouts
+   [x] browser preview in time and in key  [x] macros on the track header  [ ] toolbar / window layouts
    [ ] controller mapping pages  [ ] video track
 
 Not attempted (told the owner why): content libraries and AI session players (large downloads / trained models),
@@ -586,3 +586,7 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   the sums, the project key and undo. Not tested: the sound of a shifted preview (it plays through the audio
   device, which the offline rig does not have). Only files up to 40 s are shifted. Nothing else uses the song's
   key yet (the piano roll's scale and the chord track could). 315 checks, quick tier.
+- 2026-10-06: v0.99.34. Macros on the track header. Source/HeaderMacros.h (used = the macros with at least
+  one target; Dial; Row, which rebuilds itself when the mapped set or a name changes). TrackHeader lays the
+  row out under the volume when 40 px are left (a track about 120 px tall), and hides it otherwise. Folder
+  (group) headers do not have it. 316 checks, quick tier.

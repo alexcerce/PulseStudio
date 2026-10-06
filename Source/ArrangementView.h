@@ -18,6 +18,7 @@
 #include "Meters.h"
 #include "DragDrop.h"
 #include "Notes.h"
+#include "HeaderMacros.h"
 
 //==============================================================================
 /** Draws a bar/beat grid between x positions for the given view. */
@@ -1313,6 +1314,11 @@ public:
         name.setInterceptsMouseClicks (false, false);
         addAndMakeVisible (name);
 
+        // the track's mapped macros, as small dials (they appear when the track is tall enough)
+        macroRow = std::make_unique<HeaderMacros::Row> (*track);
+        macroRow->onChange = [this] { resized(); };
+        addChildComponent (*macroRow);
+
         type.setFont (FontOptions (11.5f));
         type.setColour (Label::textColourId, Theme::muted);
         type.setInterceptsMouseClicks (false, false);   // the header handles clicks on it (opens the instrument)
@@ -1422,6 +1428,7 @@ public:
             c->setVisible (! compact);
         if (compact)
         {
+            macroRow->setVisible (false);
             auto top = r.removeFromTop (jmin (22, r.getHeight()));
             numberArea = top.removeFromLeft (20).reduced (0, 1);
             top.removeFromLeft (5);
@@ -1445,7 +1452,14 @@ public:
             row.removeFromLeft (3);
         }
         volume.setBounds (row.reduced (2, 0));
+        r.removeFromTop (5);
+        const bool room = macroRow->numDials() > 0 && r.getHeight() >= HeaderMacros::Row::height;
+        macroRow->setVisible (room);
+        if (room) macroRow->setBounds (r.removeFromTop (HeaderMacros::Row::height));
     }
+
+    /** The row of macro dials (for the self-test). */
+    HeaderMacros::Row& macros() { return *macroRow; }
 
     bool onResizeEdge (int y) const { return y >= getHeight() - 5; }
 
@@ -1723,6 +1737,7 @@ public:
 
 private:
     bool hadNote = false;
+    std::unique_ptr<HeaderMacros::Row> macroRow;
     void timerCallback() override { refresh(); }
 
     void refresh()
