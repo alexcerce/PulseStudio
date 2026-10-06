@@ -5,6 +5,8 @@
 #include "Meters.h"
 #include "UndoHistory.h"
 #include "FactorySounds.h"
+#include "AutoFreeze.h"
+#include "About.h"
 
 /** Top bar: transport, tempo, position display and app actions. */
 class TransportBar : public Component,
@@ -108,6 +110,8 @@ public:
             l->setColour (Label::textColourId, Theme::muted);
             addAndMakeVisible (l);
         }
+
+        cpuLabel.addMouseListener (this, false);   // a click on the load readout: what to do about it
 
         auto addAction = [this] (Button& b, std::function<void()>& fn, const String& tip)
         {
@@ -340,8 +344,38 @@ public:
         fileBtn.setBounds (r.removeFromRight (70));
     }
 
+    /** The menu of the load readout: freeze the heaviest track now, and what to do when the processor is overloaded. */
+    void showLoadMenu()
+    {
+        if (edit == nullptr) return;
+        PopupMenu m;
+        const auto heavy = LoadGuard::heaviest (*edit);
+        m.addSectionHeader ("Processor: " + String (roundToInt (engine.getDeviceManager().getCpuUsage() * 100.0)) + "%" + (loadGuard.overloaded() ? "  (overloaded)" : ""));
+        m.addItem (heavy.track != nullptr ? "Freeze \"" + heavy.track->getName() + "\" (the heaviest track, " + String (roundToInt (heavy.cpu * 100.0)) + "%)"
+                                          : String ("Freeze the heaviest track (none is using the processor)"),
+                   heavy.track != nullptr, false, [this] { freezeHeaviestNow(); });
+        m.addSectionHeader ("When the processor is overloaded");
+        const auto mode = LoadGuard::mode (engine);
+        auto choice = [&] (LoadGuard::Mode which, const String& text) { m.addItem (text, true, mode == which, [this, which] { LoadGuard::setMode (engine, which); }); };
+        choice (LoadGuard::ask, "Tell me here (this readout turns red)");
+        choice (LoadGuard::automatic, "Freeze the heaviest track the next time playback stops");
+        choice (LoadGuard::off, "Do nothing");
+        m.showMenuAsync (PopupMenu::Options().withTargetComponent (&cpuLabel));
+    }
+
+    /** Freezes the track whose devices cost the most, and says so in the load readout for a few seconds. */
+    void freezeHeaviestNow()
+    {
+        if (edit == nullptr) return;
+        const auto name = LoadGuard::freezeHeaviest (*edit);
+        if (name.isEmpty()) return;
+        loadNote = "Froze " + name;
+        loadNoteUntil = Time::getMillisecondCounter() + 6000;
+    }
+
     void mouseDown (const MouseEvent& e) override
     {
+        if (e.eventComponent == &cpuLabel) { showLoadMenu(); return; }
         if ((e.eventComponent == &undoBtn || e.eventComponent == &redoBtn) && e.mods.isPopupMenu() && edit != nullptr)
         {
             UndoHistory::showMenu (*edit, *e.eventComponent, e.eventComponent == &redoBtn);
@@ -464,9 +498,29 @@ private:
         cpuLabel.setText ("CPU " + String (roundToInt (cpu * 100.0)) + "%", dontSendNotification);
 
         auto status = actions.controllerStatus ? actions.controllerStatus() : String();
-        cpuLabel.setTooltip (status.isNotEmpty() ? status : "No Push 2 connected");
         if (status.isNotEmpty())
             cpuLabel.setText ("PUSH  CPU " + String (roundToInt (cpu * 100.0)) + "%", dontSendNotification);
+
+        // the load guard: a few seconds of overload in a row turn the readout red; in the automatic mode the heaviest
+        // track is frozen once playback has stopped (never in the middle of the music)
+        const auto nowMs = Time::getMillisecondCounter();
+        loadGuard.tick (cpu, jlimit (0.0, 0.5, (nowMs - lastLoadMs) * 0.001));
+        lastLoadMs = nowMs;
+        const auto guardMode = LoadGuard::mode (engine);
+        const bool warn = loadGuard.overloaded() && guardMode != LoadGuard::off;
+        if (guardMode == LoadGuard::automatic && loadGuard.hasRequest() && ! tc.isPlaying() && ! tc.isRecording() && ! shown && ! About::isCapturing())
+        {
+            loadGuard.takeRequest();
+            freezeHeaviestNow();
+        }
+        else if (guardMode != LoadGuard::automatic)
+            loadGuard.takeRequest();
+        const bool noting = loadNote.isNotEmpty() && nowMs < loadNoteUntil;
+        if (noting) cpuLabel.setText (loadNote, dontSendNotification);
+        cpuLabel.setColour (Label::textColourId, warn ? Theme::red : noting ? Theme::accent : Theme::muted);
+        cpuLabel.setTooltip ((warn ? String ("The processor is overloaded: click to freeze the heaviest track. ")
+                                   : String ("How much of the processor the audio is using. Click to freeze the heaviest track, or to choose what happens when it is overloaded. "))
+                             + (status.isNotEmpty() ? status : String ("No Push 2 connected")));
     }
 
     te::Engine& engine;
@@ -491,6 +545,9 @@ public:
     std::unique_ptr<LevelMeter> masterMeter;
     te::LevelMeterPlugin* meterPlugin = nullptr;
     int meterCheck = 0;
+    LoadGuard::Monitor loadGuard;
+    uint32 lastLoadMs = Time::getMillisecondCounter(), loadNoteUntil = 0;
+    String loadNote;
     public:
     void clickPunch() { punchBtn.onClick(); }
     private:

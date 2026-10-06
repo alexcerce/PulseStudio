@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.30 - 2026-10-06
+
+- Freeze under load: the CPU readout warns of an overload and freezes the heaviest track on a click, or by itself when playback stops
+
 ## 0.99.29 - 2026-10-06
 
 - New device: Match EQ (learns this track and a reference, and applies the difference in linear phase)

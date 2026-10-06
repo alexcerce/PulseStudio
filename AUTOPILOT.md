@@ -171,7 +171,7 @@ well EVERYWHERE." So, besides the list:
 4. Audio editing: [x] warp by dragging transients on the waveform, follow-tempo per clip  [ ] per-note pitch and time
    editing of audio  [x] reverse / crop / consolidate clips  [x] clip launch recorded into the arrangement with quantised punch
 5. Mixing: [x] VCA faders  [ ] reference track A/B with loudness match  [x] mastering chain preset + assistant
-   [x] match EQ  [x] linear-phase EQ mode  [x] loudness report on export  [ ] automatic freeze under load
+   [x] match EQ  [x] linear-phase EQ mode  [x] loudness report on export  [x] automatic freeze under load
    [x] sidechain picker on every device
 6. Workflow: [ ] device racks with parallel chains  [ ] track alternatives  [ ] project and track notes
    [ ] browser preview in time and in key  [ ] macros on the track header  [ ] toolbar / window layouts
@@ -553,3 +553,10 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   come out as the curve says. Not tested: learning from the key input (the offline test rig has no key input);
   not judged by ear. 310 checks, quick tier.
   Left in group 5: reference track A/B with loudness match, automatic freeze under load.
+- 2026-10-06: v0.99.30. Freeze under load. Source/AutoFreeze.h (namespace LoadGuard: mode in the settings as
+  "overloadMode", cpuOf / canFreeze / heaviest / freezeHeaviest, Monitor = over 85% for 3 s in a row, reset
+  under 70%). TransportBar: the CPU readout is clickable (menu: freeze the heaviest track, and the three
+  modes), turns red when overloaded, and in the automatic mode freezes once playback has stopped. Command
+  mixer.freezeHeaviest (kept out of the command fuzz: it renders). Tested with made-up costs (the offline rig
+  has no real load); the real path from device-manager load to the red readout has not been seen happening.
+  311 checks, quick tier. Left in group 5: reference track A/B with loudness match.

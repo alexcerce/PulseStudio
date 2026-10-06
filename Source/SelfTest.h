@@ -4,6 +4,7 @@
 #include "Routing.h"
 #include "ClipImport.h"
 #include "EditingOps.h"
+#include "AutoFreeze.h"
 #include "DrumRack.h"
 #include "Presets.h"
 #include "Macros.h"
@@ -1655,6 +1656,52 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
                        + "top " + String (aTop, 1) + " / " + String (bTop, 1) + " dB, bottom " + String (aLow, 1) + " / " + String (bLow, 1) + " dB");
             while (! Vca::all (*edit).empty()) Vca::remove (*edit, 0);
             edit->deleteTrack (va); edit->deleteTrack (vb); edit->deleteTrack (vc);
+            edit->getUndoManager().clearUndoHistory();
+        }
+
+        // --- v0.99.30: the load guard (freeze the heaviest track when the processor is overloaded) -----------
+        {
+            rep.step ("load guard");
+            // a spike is not an overload; three seconds in a row are; a dip that stays high does not start the count again
+            LoadGuard::Monitor mon;
+            for (int i = 0; i < 29; ++i) mon.tick (0.95, 0.1);
+            const bool notYet = ! mon.overloaded() && ! mon.hasRequest();
+            mon.tick (0.75, 0.1);
+            mon.tick (0.95, 0.1); mon.tick (0.95, 0.1);
+            const bool nowOver = mon.overloaded() && mon.hasRequest();
+            const bool once = mon.takeRequest() && ! mon.takeRequest() && mon.overloaded();
+            mon.tick (0.5, 0.1);
+            const bool cleared = ! mon.overloaded();
+            for (int i = 0; i < 31; ++i) mon.tick (0.9, 0.1);
+            const bool again = mon.hasRequest();
+            LoadGuard::Monitor spiky;
+            for (int i = 0; i < 100; ++i) spiky.tick (i % 2 == 0 ? 0.99 : 0.2, 0.1);
+            const bool spikesIgnored = ! spiky.overloaded();
+
+            // the heaviest track that can be frozen: not an empty one, not a frozen one, whatever they cost
+            auto ta = ClipImport::createContentTrack (*edit, "Light", true), tb = ClipImport::createContentTrack (*edit, "Heavy", true), tc2 = ClipImport::createContentTrack (*edit, "Empty", true);
+            for (auto* tr : { ta, tb })
+            {
+                auto mc = tr->insertMIDIClip ("x", { te::TimePosition(), te::TimePosition::fromSeconds (2.0) }, nullptr);
+                mc->getSequence().addNote (60, te::BeatPosition(), te::BeatDuration::fromBeats (2.0), 100, 0, nullptr);
+            }
+            auto cost = [&] (te::AudioTrack& tr) { return &tr == ta ? 0.1 : &tr == tb ? 0.4 : &tr == tc2 ? 0.9 : 0.0; };
+            const auto h = LoadGuard::heaviest (*edit, cost);
+            const bool picked = h.track == tb && std::abs (h.cpu - 0.4) < 1.0e-9;
+            const auto frozenName = LoadGuard::freezeHeaviest (*edit, cost);
+            const bool froze = frozenName == "Heavy" && tb->isFrozen (te::Track::individualFreeze) && ! ta->isFrozen (te::Track::anyFreeze);
+            const bool next = LoadGuard::heaviest (*edit, cost).track == ta;   // the frozen one is no longer offered
+            (void) tb->setFrozen (false, te::Track::individualFreeze);
+            // the choice of what to do is kept
+            const auto was = LoadGuard::mode (edit->engine);
+            LoadGuard::setMode (edit->engine, LoadGuard::automatic);
+            const bool kept = LoadGuard::mode (edit->engine) == LoadGuard::automatic;
+            LoadGuard::setMode (edit->engine, was);
+            rep.check (notYet && nowOver && once && cleared && again && spikesIgnored && picked && froze && next && kept,
+                       "Load guard (overload is seconds in a row and not spikes, the heaviest track that can be frozen is found and frozen, the choice is kept)",
+                       String (notYet ? "" : "too early; ") + (nowOver ? "" : "not noticed; ") + (once ? "" : "asked twice; ") + (cleared ? "" : "not cleared; ") + (again ? "" : "not noticed again; ")
+                       + (spikesIgnored ? "" : "spikes counted; ") + (picked ? "" : "wrong track; ") + (froze ? "" : "not frozen (" + frozenName + "); ") + (next ? "" : "frozen track offered again; ") + (kept ? "" : "mode not kept; ") + "ok");
+            edit->deleteTrack (ta); edit->deleteTrack (tb); edit->deleteTrack (tc2);
             edit->getUndoManager().clearUndoHistory();
         }
 

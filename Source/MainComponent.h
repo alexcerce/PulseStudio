@@ -239,6 +239,10 @@ public:
             auto tracks = selectionManager.getItemsOfType<te::AudioTrack>();
             if (! tracks.isEmpty()) { um ("Group tracks"); EditingOps::groupTracks (*edit, tracks, "Group"); }
         });
+        c.add ("mixer.freezeHeaviest", "Freeze the heaviest track (the one whose devices use the most processor)", "Mixer", {}, [this]
+        {
+            if (edit != nullptr) transport.freezeHeaviestNow();
+        });
         c.add ("mixer.masteringChain", "Mastering: put the mastering chain on the master", "Mixer", {}, [this]
         {
             if (edit == nullptr) return;
@@ -671,7 +675,7 @@ public:
         for (auto& c : commands->all())
         {
             const bool needsAPerson = c.id.startsWith ("file.") || c.id.startsWith ("app.") || c.name.contains ("...")
-                                      || c.id == "view.palette" || c.id == "transport.record" || c.id == "edit.bounce" || c.id == "edit.consolidate" || c.id == "mixer.masterAssist" || c.id == "edit.undoHistory";
+                                      || c.id == "view.palette" || c.id == "transport.record" || c.id == "edit.bounce" || c.id == "edit.consolidate" || c.id == "mixer.masterAssist" || c.id == "mixer.freezeHeaviest" || c.id == "edit.undoHistory";
             if (! needsAPerson) ids.add (c.id);   // (nothing that changes saved settings, such as the theme)
         }
         return ids;
