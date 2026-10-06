@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.22 - 2026-10-06
+
+- Step grid: the piano roll can show a drum clip as a grid of steps, a row per drum pad
+
 ## 0.99.21 - 2026-10-06
 
 - Chord track: a strip of chords above the arrangement, progressions in any key, chords written out as notes, notes fitted to the chords, and the Scale effect can follow them

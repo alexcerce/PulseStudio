@@ -1318,6 +1318,67 @@ namespace SelfTest
             edit->getUndoManager().clearUndoHistory();
         }
 
+        // --- v0.99.22: the step grid ------------------------------------------------------------------------
+        {
+            rep.step ("steps");
+            auto st = ClipImport::createContentTrack (*edit, "Step test", false);
+            auto rackPlugin = DrumRack::create (*edit, true);   // with the synthesised kit on its pads
+            st->pluginList.insertPlugin (rackPlugin, 0, nullptr);
+            auto mc = te::insertMIDIClip (*st, "beat", { EngineHelpers::beatToTime (*edit, 0.0), EngineHelpers::beatToTime (*edit, 8.0) });
+            EditViewState sevs (*edit, sm);
+            StepGrid grid (sevs);
+            grid.setSize (1100, 400);
+            grid.setClip (mc.get());
+            const auto rws = grid.rows();
+            const int kick = rws.empty() ? 36 : rws.back().note;   // the lowest pad
+            // 8 beats of sixteenths = 32 steps; a click puts a hit in, another takes it out
+            const bool sized = grid.numSteps() == 32 && rws.size() >= 4 && rws.front().note > rws.back().note && rws.back().name.isNotEmpty();
+            grid.toggle (kick, 4);
+            const auto* hit = grid.noteAt (kick, 4);
+            const bool put = hit != nullptr && std::abs (hit->getStartBeat().inBeats() - 1.0) < 1e-6 && hit->getVelocity() == 100 && mc->getSequence().getNumNotes() == 1;
+            grid.toggle (kick, 4);
+            const bool taken = grid.noteAt (kick, 4) == nullptr && mc->getSequence().getNumNotes() == 0;
+            // rows: on every beat, on 2 and 4, shifted, cleared; and undo takes a fill away in one go
+            grid.fillRow (kick, 4);
+            const bool onBeats = mc->getSequence().getNumNotes() == 8 && grid.noteAt (kick, 0) != nullptr && grid.noteAt (kick, 4) != nullptr && grid.noteAt (kick, 2) == nullptr;
+            grid.shiftRow (kick, 1);
+            const bool shifted = grid.noteAt (kick, 0) == nullptr && grid.noteAt (kick, 1) != nullptr && mc->getSequence().getNumNotes() == 8;
+            grid.shiftRow (kick, -2);
+            const bool wrapped = grid.noteAt (kick, 31) != nullptr && mc->getSequence().getNumNotes() == 8;
+            const int snare = rws.size() >= 2 ? rws[rws.size() - 2].note : 38;
+            grid.fillRow (snare, 8, 4);
+            const bool backbeat = grid.noteAt (snare, 4) != nullptr && grid.noteAt (snare, 12) != nullptr && grid.noteAt (snare, 0) == nullptr && grid.noteAt (snare, 8) == nullptr;
+            edit->getUndoManager().undo();
+            const bool undone = grid.noteAt (snare, 4) == nullptr && mc->getSequence().getNumNotes() == 8;
+            grid.clearRow (kick);
+            const bool cleared = mc->getSequence().getNumNotes() == 0;
+            // a triplet grid has its own number of steps, and the picture draws
+            grid.setStep (1.0 / 3.0);
+            const bool triplets = grid.numSteps() == 24;
+            grid.setStep (0.25);
+            grid.fillRow (kick, 4);
+            grid.fillRow (snare, 8, 4);
+            if (rws.size() >= 3) { grid.fillRow (rws[rws.size() - 3].note, 2, 1); grid.setHit (rws[rws.size() - 3].note, 3, 50); grid.setHit (rws[rws.size() - 3].note, 7, 127); }
+            Image img (Image::ARGB, 1100, 400, true);
+            { PulseLookAndFeel laf; LookAndFeel::setDefaultLookAndFeel (&laf); Graphics g (img); grid.paint (g); LookAndFeel::setDefaultLookAndFeel (nullptr); }
+            { auto f = dir.getChildFile ("steps.png"); f.deleteFile(); if (auto os = f.createOutputStream()) { PNGImageFormat png; png.writeImageToStream (img, *os); } }
+            // inside the piano roll: the Steps button swaps it in, with the same clip
+            PianoRoll roll (sevs);
+            roll.setSize (1100, 500);
+            roll.setClip (mc.get());
+            roll.showSteps (true);
+            const bool swapped = roll.stepGrid().isVisible() && roll.stepGrid().numSteps() == 32 && roll.stepGrid().noteAt (kick, 4) != nullptr;
+            roll.showSteps (false);
+            roll.setClip (nullptr);
+            rep.check (sized && put && taken && onBeats && shifted && wrapped && backbeat && undone && cleared && triplets && swapped && ! roll.stepGrid().isVisible(),
+                       "Step grid for drum clips (a row per pad, hits in and out, fill / shift / clear a row, undo, triplet steps, inside the piano roll)",
+                       String ((int) rws.size()) + " rows, " + String (grid.numSteps()) + " steps"
+                       + (sized ? "" : "; size wrong") + (put && taken ? "" : "; toggling wrong") + (onBeats && shifted && wrapped && backbeat ? "" : "; row tools wrong") + (undone ? "" : "; undo wrong") + (swapped ? "" : "; not shown in the piano roll"));
+            grid.setClip (nullptr);
+            edit->deleteTrack (st);
+            edit->getUndoManager().clearUndoHistory();
+        }
+
         // --- sharing: collect all, templates -----------------------------------------------------------
         {
             auto outside = File::getSpecialLocation (File::tempDirectory).getChildFile ("PulseStudioSelfTestOutside");

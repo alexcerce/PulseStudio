@@ -157,6 +157,7 @@ Plug it in and it connects automatically (hot-plug supported). The Push's area i
   - **Arpeggiator:** up, down, up/down, as played, random or chord. Rate is 1/4-1/32 or triplets, over 1-4 octaves, with gate and velocity. It locks to the song grid while playing.
   - **Chord:** up to four added intervals.
   - **Scale:** snaps everything to a key, with transpose.
+  - **Step grid:** the *Steps* button in the piano roll shows the clip as a drum machine would: a row for each pad of the track's Drum Rack (or each pitch the clip uses), a column for each step of the grid setting (triplets too). Click to put a hit in or take it out, drag to paint, Shift-click to go round normal / accent / ghost, and turn the wheel over a hit for how hard it hits. Right-click a row's name to fill it (every step, every second, on the beats, the off-beats, 2 and 4), move it a step earlier or later, scatter hits at random, or clear it. The step being played lights up.
   - **Chord track:** a *CHORDS* strip above the arrangement holds the song's chords. Double-click to add one, click one to change it (17 kinds, from major and minor to ninths), drag its right edge for its length. Right-click for whole **progressions** in any major or minor key, a bar a chord (pop, ballad, fifties, rock, jazz ii-V-I, canon, minor epic, Andalusian, twelve-bar blues and more). The chords can be **written out as notes** into the selected MIDI clip or as a new clip; in the piano roll *Tools > Fit to the chord track* moves notes to the chord sounding where each starts; and the **Scale** MIDI effect has *Follow the chord track*, so whatever is played lands on a note of the current chord.
   - **Note Echo:** tempo-synced MIDI echoes with velocity feedback and a pitch step. The level of each repeat can be drawn instead (*Repeats* in its window): any repeat can be louder, quieter or left out.
   - **Drawn arpeggio patterns:** the Arpeggiator's window has a *Pattern* of up to 16 steps to draw: how hard each step plays, with a bar pulled to the bottom being a rest (the notes wait, so the melody is not skipped). *Pattern length* sets how many steps repeat, and *Swing* makes every second step late.
@@ -368,7 +369,7 @@ All of these can be changed in *File → Keyboard shortcuts*. New: **Ctrl+P** co
 ## Command line
 
 - `--render out.wav` renders the last project offline and exits.
-- `--selftest report.txt` builds a scratch project and runs 300 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--selftest report.txt` builds a scratch project and runs 301 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
 - `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
 
 ## Code layout

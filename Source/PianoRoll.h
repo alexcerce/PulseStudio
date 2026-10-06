@@ -7,6 +7,7 @@
 #include "EditViewState.h"
 #include "Scales.h"
 #include "Chords.h"
+#include "StepSequencer.h"
 #include "ClipEnvelopes.h"
 
 /** Piano roll editor for a te::MidiClip. X positions are in the clip's content beats. */
@@ -15,9 +16,17 @@ class PianoRoll : public Component,
                   private te::ValueTreeAllEventListener
 {
 public:
-    explicit PianoRoll (EditViewState& e) : evs (e)
+    explicit PianoRoll (EditViewState& e) : evs (e), steps (e)
     {
         setWantsKeyboardFocus (true);
+
+        // the step grid: the same clip as a drum machine would show it (the Steps button swaps it in over the notes)
+        stepsBtn.setClickingTogglesState (true);
+        stepsBtn.setTooltip ("Step grid: a row for each drum pad, a column for each step. Click to put a hit in or take it out");
+        stepsBtn.setColour (TextButton::buttonOnColourId, Theme::accentDim);
+        stepsBtn.onClick = [this] { showSteps (stepsBtn.getToggleState()); };
+        addAndMakeVisible (stepsBtn);
+        addChildComponent (steps);
 
         gridBox.addItemList ({ "1/4", "1/8", "1/16", "1/32", "1/8T", "1/16T", "Off" }, 1);
         gridBox.setSelectedId (3, dontSendNotification);
@@ -26,6 +35,7 @@ public:
             const double v[] = { 1.0, 0.5, 0.25, 0.125, 1.0 / 3.0, 1.0 / 6.0, 0.0 };
             snap = v[gridBox.getSelectedId() - 1];
             if (snap > 0) noteLen = snap;
+            steps.setStep (snap > 0 ? snap : 0.25);
         };
         addAndMakeVisible (gridBox);
 
@@ -101,6 +111,7 @@ public:
             clip->state.removeListener (this);
 
         clip = mc;
+        steps.setClip (mc);
         selected.clear();
         scrollX = 0.0;
 
@@ -120,6 +131,16 @@ public:
     }
 
     te::MidiClip* getClip() const { return clip.get(); }
+
+    /** Shows the step grid in place of the notes (or the notes again). */
+    void showSteps (bool on)
+    {
+        stepsBtn.setToggleState (on, dontSendNotification);
+        steps.setVisible (on);
+        if (on) steps.toFront (false);
+        resized();
+    }
+    StepGrid& stepGrid() { return steps; }
 
     /** The clip on show can be taken out of the project behind the piano roll's back (undo, deleting its
         track, cutting the section it is in). Everything that draws or edits asks this first. */
@@ -162,6 +183,9 @@ public:
         paintBtn.setBounds (r.removeFromLeft (54));
         r.removeFromLeft (4);
         ghostBtn.setBounds (r.removeFromLeft (60));
+        r.removeFromLeft (4);
+        stepsBtn.setBounds (r.removeFromLeft (56));
+        steps.setBounds (getLocalBounds().withTrimmedTop (toolbarH));
         r.removeFromLeft (6);
         laneBox.setBounds (r.removeFromLeft (140));
         r.removeFromLeft (10);
@@ -1171,6 +1195,7 @@ private:
     mutable std::vector<int> rows;
     mutable std::array<int, 128> rowOf {};
     mutable String rowsKey;
-    TextButton quantizeBtn { "Quantize" }, toolsBtn { "Tools" }, paintBtn { "Draw" }, ghostBtn { "Ghosts" };
+    TextButton quantizeBtn { "Quantize" }, toolsBtn { "Tools" }, paintBtn { "Draw" }, ghostBtn { "Ghosts" }, stepsBtn { "Steps" };
+    StepGrid steps;
     Label title, hint;
 };

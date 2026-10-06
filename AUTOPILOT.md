@@ -167,7 +167,7 @@ well EVERYWHERE." So, besides the list:
    zones)  [x] analogue-style subtractive synth  [x] physical-modelling instrument (string / mallet)
    [x] electric piano  [x] tonewheel organ
 3. MIDI: [x] note length  [x] pitch  [x] random  [x] velocity  [x] drawable arpeggiator / note-echo patterns
-   [x] chord track + chord progressions (piano roll and MIDI effects follow it)  [ ] step sequencer view for drum clips
+   [x] chord track + chord progressions (piano roll and MIDI effects follow it)  [x] step sequencer view for drum clips
 4. Audio editing: [ ] warp by dragging transients on the waveform, follow-tempo per clip  [ ] per-note pitch and time
    editing of audio  [ ] reverse / crop / consolidate clips  [ ] clip launch recorded into the arrangement with quantised punch
 5. Mixing: [ ] VCA faders  [ ] reference track A/B with loudness match  [ ] mastering chain preset + assistant
@@ -491,3 +491,8 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   Still to do for this item: shade the chord's notes in the piano roll's rows as the scale shading does (per
   chord span along the time axis), and let chords be dragged to move them. Chords do not yet move with sections.
   Next: step sequencer view for drum clips (last item of group 3), then the slow tier for v0.99.18 to here.
+- 2026-10-06: v0.99.22. Step grid: Source/StepSequencer.h (StepGrid), shown inside the piano roll by its Steps
+  button (PianoRoll::showSteps, command view.steps). It redraws only when the notes or the playing step change.
+  301 checks, quick tier. Programme group 3 (MIDI) is complete. The slow tier is owed for v0.99.18 to v0.99.22.
+  Next: group 4 (audio editing: warp by dragging transients, per-note pitch and time, reverse / crop /
+  consolidate, clip launch recorded into the arrangement).
