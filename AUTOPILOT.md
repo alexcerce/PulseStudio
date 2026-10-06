@@ -161,8 +161,8 @@ well EVERYWHERE." So, besides the list:
 
 1. Effects: [x] transient shaper  [x] de-esser  [x] gate / expander  [x] convolution reverb (built-in spaces)
    [x] shimmer reverb  [ ] spectral (freeze / blur / shift / spectral delay)  [x] chorus / flanger / phaser
-   [x] tremolo / auto-pan  [x] frequency shifter  [x] bit reduction  [x] amp + cabinet  [x] exciter  [ ] beat repeat
-   [x] grain delay  [ ] looper  [x] resonators
+   [x] tremolo / auto-pan  [x] frequency shifter  [x] bit reduction  [x] amp + cabinet  [x] exciter  [x] beat repeat
+   [x] grain delay  [x] looper  [x] resonators
 2. Instruments: [ ] Wavetable third oscillator + wavetable import from audio  [ ] sampler (slices, per-slice stretch,
    zones)  [ ] analogue-style subtractive synth  [ ] physical-modelling instrument (string / mallet)
    [ ] electric piano  [ ] tonewheel organ
@@ -430,3 +430,8 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   shifter, used by Shimmer), TimeFxDisplay.h. 8 / 8 / 9 presets. 277 checks, quick tier only. The device fuzz found
   the Resonators getting far too loud at long decays (input now scaled by sqrt(1 - g^2), and each string is
   limited); Shimmer's fed-back level is scaled down with decay. Left in group 1: spectral, beat repeat, looper.
+- 2026-10-06: v0.99.13. Beat Repeat and Looper: Source/LoopFx.h, LoopFxDisplay.h. 8 / 7 presets. 282 checks, quick
+  tier only. The Looper's audio lives in memory only (not saved with the project: say so wherever it comes up);
+  saving it as a file beside the project, and dragging the loop out as a clip, would be the next steps.
+  Note for tests: the engine rounds samples under about a millionth to zero, so "output equals input" checks
+  need a tolerance of 1e-5, not 1e-6. Left in group 1: spectral; then the slow tier for everything since v0.99.9.

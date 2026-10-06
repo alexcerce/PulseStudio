@@ -1888,6 +1888,7 @@ namespace pulse
 #include "ColourFx.h"
 #include "AmpFx.h"
 #include "TimeFx.h"
+#include "LoopFx.h"
 
 namespace pulse
 {
@@ -1920,6 +1921,8 @@ namespace pulse
         pm.createBuiltInType<Resonators>();
         pm.createBuiltInType<Shimmer>();
         pm.createBuiltInType<GrainDelay>();
+        pm.createBuiltInType<BeatRepeat>();
+        pm.createBuiltInType<Looper>();
         pm.createBuiltInType<Arpeggiator>();
         pm.createBuiltInType<ChordFx>();
         pm.createBuiltInType<ScaleFx>();

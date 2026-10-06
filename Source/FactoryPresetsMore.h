@@ -322,6 +322,30 @@ namespace FactoryPresetsMore
                 { "Send (100% wet hall)", { { "space", 6 }, { "predelay", 20 }, { "lowcut", 150 }, { "mix", 1.0f } } } } },
 
             //----------------------------------------------------------------------------------
+            // Beat Repeat: interval 0 1/4, 1 1/2, 2 1 bar, 3 2 bars, 4 4 bars; grid 0 1/32, 1 1/16T, 2 1/16, 3 1/8T, 4 1/8, 5 1/4, 6 1/2;
+            // gate 0 1/8, 1 1/4, 2 1/2, 3 1 bar, 4 2 bars; mode 0 mix, 1 insert, 2 gate
+            { "pulseBeatRepeat", {
+                { "Classic Stutter (every bar)", { { "interval", 2 }, { "grid", 2 }, { "gate", 1 }, { "chance", 1.0f }, { "mode", 1 } } },
+                { "End-of-Phrase Fill", { { "interval", 4 }, { "grid", 2 }, { "gate", 2 }, { "chance", 1.0f }, { "variation", 0.3f }, { "mode", 1 } } },
+                { "Now and Then", { { "interval", 2 }, { "grid", 4 }, { "gate", 1 }, { "chance", 0.4f }, { "mode", 1 } } },
+                { "Machine Gun Roll", { { "interval", 3 }, { "grid", 0 }, { "gate", 1 }, { "decay", 0.2f }, { "mode", 1 } } },
+                { "Falling Tape Stop", { { "interval", 3 }, { "grid", 4 }, { "gate", 3 }, { "pitch", -12 }, { "pitchdecay", 1.0f }, { "decay", 0.3f }, { "mode", 1 } } },
+                { "Triplet Shuffle", { { "interval", 2 }, { "grid", 3 }, { "gate", 2 }, { "chance", 0.7f }, { "mode", 1 } } },
+                { "Fading Echo (mix)", { { "interval", 2 }, { "grid", 5 }, { "gate", 3 }, { "decay", 0.6f }, { "mode", 0 } } },
+                { "Chopped (gate)", { { "interval", 1 }, { "grid", 2 }, { "gate", 1 }, { "chance", 1.0f }, { "variation", 0.5f }, { "mode", 2 } } } } },
+
+            //----------------------------------------------------------------------------------
+            // Looper: length 0 free, 1 1 bar, 2 2 bars, 3 4 bars, 4 8 bars (the state is never stored in a preset: it starts stopped)
+            { "pulseLooper", {
+                { "Free Loop", { { "length", 0 }, { "feedback", 1.0f }, { "monitor", 1 } } },
+                { "One-Bar Loop", { { "length", 1 }, { "feedback", 1.0f }, { "monitor", 1 } } },
+                { "Four-Bar Loop", { { "length", 3 }, { "feedback", 1.0f }, { "monitor", 1 } } },
+                { "Fading Layers", { { "length", 2 }, { "feedback", 0.7f }, { "monitor", 1 } } },
+                { "Half Speed", { { "length", 2 }, { "speed", 0.5f }, { "monitor", 1 } } },
+                { "Backwards", { { "length", 2 }, { "reverse", 1 }, { "monitor", 1 } } },
+                { "Loop Only (no monitor)", { { "length", 0 }, { "monitor", 0 } } } } },
+
+            //----------------------------------------------------------------------------------
             // Resonators: chord 0 octaves, 1 fifths, 2 major, 3 minor, 4 sus 4, 5 major 7, 6 minor 7, 7 harmonics; note = MIDI note of the lowest string
             { "pulseResonators", {
                 { "Drums to Chords (A minor)", { { "note", 45 }, { "chord", 3 }, { "decay", 1.2f }, { "mix", 0.5f } } },

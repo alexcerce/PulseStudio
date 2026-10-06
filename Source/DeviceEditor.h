@@ -1632,6 +1632,10 @@ namespace DeviceEditors
             add ("Reverb", std::make_unique<SpaceUI::ReverbPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::ConvolutionReverb*> (&p))
             add ("Space", std::make_unique<SpaceUI::ConvolutionPanel> (evs, *s));
+        else if (auto s = dynamic_cast<pulse::BeatRepeat*> (&p))
+            add ("Beat Repeat", std::make_unique<LoopUI::BeatRepeatPanel> (evs, *s));
+        else if (auto s = dynamic_cast<pulse::Looper*> (&p))
+            add ("Looper", std::make_unique<LoopUI::LooperPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::Resonators*> (&p))
             add ("Resonators", std::make_unique<TimeUI::ResonatorsPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::Shimmer*> (&p))

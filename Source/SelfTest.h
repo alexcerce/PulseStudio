@@ -203,6 +203,8 @@ namespace SelfTest
         shoot (pulse::Resonators::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Resonators::pChord, 5); p.set (pulse::Resonators::pDecay, 3.0f); }, "shot_resonators.png");
         shoot (pulse::Shimmer::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Shimmer::pShimmer, 0.7f); }, "shot_shimmer.png");
         shoot (pulse::GrainDelay::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::GrainDelay::pPitch, 7); p.set (pulse::GrainDelay::pSpray, 150); p.set (pulse::GrainDelay::pRandomPitch, 0.3f); p.set (pulse::GrainDelay::pFeedback, 0.6f); }, "shot_grain.png");
+        shoot (pulse::BeatRepeat::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::BeatRepeat::pDecay, 0.4f); p.set (pulse::BeatRepeat::pGate, 3); p.set (pulse::BeatRepeat::pPitch, -7); p.set (pulse::BeatRepeat::pPitchDecay, 1.0f); }, "shot_beatrepeat.png");
+        shoot (pulse::Looper::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Looper::pState, 1); p.set (pulse::Looper::pLength, 1); }, "shot_looper.png");
         shoot (pulse::Gate::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Gate::pThreshold, -22); p.set (pulse::Gate::pRange, 40); p.set (pulse::Gate::pHysteresis, 6); }, "shot_gate.png");
         shoot (pulse::TransientShaper::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::TransientShaper::pAttack, 0.6f); p.set (pulse::TransientShaper::pSustain, -0.4f); }, "shot_transient.png");
         shoot (pulse::DeEsser::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::DeEsser::pThreshold, -36); p.set (pulse::DeEsser::pRange, 10); }, "shot_deesser.png");
@@ -4518,6 +4520,128 @@ namespace SelfTest
                     LookAndFeel::setDefaultLookAndFeel (nullptr);
                 }
                 rp3 = nullptr; sp3 = nullptr; gp3 = nullptr;
+            }
+
+            // --- beat repeat, looper ----------------------------------------------------------------------
+            {
+                auto mk = [&] (const char* type) { auto pl = edit->getPluginCache().createNewPlugin (type, {}); t->pluginList.insertPlugin (pl, 0, nullptr); return pl; };
+                auto bp4 = mk (pulse::BeatRepeat::xmlTypeName), lp4 = mk (pulse::Looper::xmlTypeName);
+                auto* beatRep = dynamic_cast<pulse::BeatRepeat*> (bp4.get());
+                auto* looper = dynamic_cast<pulse::Looper*> (lp4.get());
+                using BR = pulse::BeatRepeat;
+                using LO = pulse::Looper;
+                AudioBuffer<float> out;
+                const double bpmNow = edit->tempoSequence.getTempo (0)->getBpm(), beatSec = 60.0 / bpmNow;
+                // a sound that never repeats by itself: a rising tone
+                auto rising = [] (int, double tm) { return 0.3f * (float) std::sin (MathConstants<double>::twoPi * (200.0 + 150.0 * tm) * tm); };
+                auto against = [&] (const AudioBuffer<float>& b, double from, double to, std::function<float (double)> want)
+                {
+                    float worst = 0;
+                    for (int i = (int) (from * sr); i < (int) (to * sr); ++i) worst = jmax (worst, std::abs (b.getSample (0, i) - want (i / sr)));
+                    return worst;
+                };
+
+                // beat repeat, every bar, 1/8 slices for half a bar, gate mode: the second eighth is the first one again; after the gate, silence
+                beatRep->set (BR::pInterval, 2); beatRep->set (BR::pGrid, 4); beatRep->set (BR::pGate, 2); beatRep->set (BR::pChance, 1.0f); beatRep->set (BR::pMode, 2);
+                const double eighthSec = beatSec * 0.5;
+                runFx (*beatRep, rising, beatSec * 4.0, &out);
+                const float firstPass = against (out, 0.01, eighthSec - 0.01, [&] (double tm) { return rising (0, tm); });
+                const float secondPass = against (out, eighthSec + 0.01, 2.0 * eighthSec - 0.01, [&] (double tm) { return rising (0, tm - eighthSec); });
+                const float fourthPass = against (out, 3.0 * eighthSec + 0.01, 4.0 * eighthSec - 0.01, [&] (double tm) { return rising (0, tm - 3.0 * eighthSec); });
+                const float afterGate = against (out, beatSec * 2.0 + 0.02, beatSec * 3.9, [] (double) { return 0.0f; });
+                // insert mode: the sound itself comes back after the gate; chance 0: nothing is touched; decay: later repeats are quieter
+                beatRep->set (BR::pMode, 1);
+                runFx (*beatRep, rising, beatSec * 4.0, &out);
+                const float insertBack = against (out, beatSec * 2.0 + 0.02, beatSec * 3.9, [&] (double tm) { return rising (0, tm); });
+                beatRep->set (BR::pChance, 0.0f);
+                runFx (*beatRep, rising, beatSec * 4.0, &out);
+                const float untouched = against (out, 0.0, beatSec * 3.9, [&] (double tm) { return rising (0, tm); });
+                beatRep->set (BR::pChance, 1.0f); beatRep->set (BR::pDecay, 1.0f); beatRep->set (BR::pMode, 2);
+                runFx (*beatRep, rising, beatSec * 4.0, &out);
+                const float rep1 = Decibels::gainToDecibels (out.getRMSLevel (0, (int) ((eighthSec + 0.02) * sr), (int) ((eighthSec - 0.04) * sr)));
+                const float rep3 = Decibels::gainToDecibels (out.getRMSLevel (0, (int) ((3.0 * eighthSec + 0.02) * sr), (int) ((eighthSec - 0.04) * sr)));
+                beatRep->set (BR::pDecay, 0.0f); beatRep->set (BR::pMode, 1);
+                const bool brOk = firstPass < 0.02f && secondPass < 1.0e-4f && fourthPass < 1.0e-4f && afterGate < 1.0e-3f && insertBack < 1.0e-3f && untouched < 1.0e-5f &&   /* (the engine rounds values under a millionth to zero) */ rep3 < rep1 - 10.0f;
+                rep.check (brOk, "Beat Repeat (the slice comes round again exactly, silence or the sound after the gate, chance, decay)",
+                           "second time round off by " + String (secondPass, 6) + ", fourth " + String (fourthPass, 6) + "; after the gate " + String (afterGate, 5) + " (gate) / " + String (insertBack, 5)
+                           + " (insert); chance 0 off by " + String (untouched, 7) + "; decay: repeat 1 " + String (rep1, 1) + " dB, repeat 3 " + String (rep3, 1) + " dB");
+
+                // looper: record a second, play it back twice over; overdub adds to it; a set length closes the loop by itself; stop is silent; clear empties it
+                auto silence = [] (int, double) { return 0.0f; };
+                looper->set (LO::pMonitor, 0.0f); looper->set (LO::pLength, 0); looper->set (LO::pState, (float) LO::recording);
+                runFx (*looper, rising, 1.0);
+                looper->set (LO::pState, (float) LO::playing);
+                runFx (*looper, silence, 2.0, &out);
+                const float loopA = against (out, 0.02, 0.98, [&] (double tm) { return rising (0, tm); }), loopB = against (out, 1.02, 1.98, [&] (double tm) { return rising (0, tm - 1.0); });
+                const double recorded = looper->loopSeconds();
+                looper->set (LO::pState, (float) LO::overdubbing);
+                runFx (*looper, sine (1000, 0.2f), 1.0);
+                looper->set (LO::pState, (float) LO::playing);
+                runFx (*looper, silence, 1.0, &out);
+                const float both = against (out, 0.02, 0.98, [&] (double tm) { return 1.5f * std::tanh ((rising (0, tm) + 0.2f * (float) std::sin (MathConstants<double>::twoPi * 1000.0 * tm)) / 1.5f); });
+                looper->set (LO::pSpeed, 2.0f);
+                runFx (*looper, silence, 1.0, &out);
+                const float fast = against (out, 0.02, 0.48, [&] (double tm) { return 1.5f * std::tanh ((rising (0, tm * 2.0) + 0.2f * (float) std::sin (MathConstants<double>::twoPi * 1000.0 * tm * 2.0)) / 1.5f); });
+                looper->set (LO::pSpeed, 1.0f); looper->set (LO::pState, (float) LO::stopped);
+                const float stoppedDb = runFx (*looper, silence, 0.3);
+                // a set length of one bar: recording for longer than that closes the loop and plays it
+                looper->set (LO::pLength, 1); looper->set (LO::pState, (float) LO::recording);
+                const double barSec = beatSec * 4.0;
+                runFx (*looper, rising, barSec + 1.0, &out);
+                const double barLen = looper->loopSeconds();
+                const float autoPlay = against (out, barSec + 0.02, barSec + 0.98, [&] (double tm) { return rising (0, tm - barSec); });
+                looper->clear();
+                looper->set (LO::pState, (float) LO::playing);
+                const float clearedDb = runFx (*looper, silence, 0.3);
+                const double clearedLen = looper->loopSeconds();
+                looper->set (LO::pState, (float) LO::stopped); looper->set (LO::pLength, 0); looper->set (LO::pMonitor, 1.0f);
+                auto tone6 = sine (440, 0.25f);
+                runFx (*looper, tone6, 0.2, &out);
+                const float monitorErr = against (out, 0.0, 0.19, [&] (double tm) { return tone6 (0, tm); });
+                const bool looperOk = loopA < 1.0e-5f && loopB < 1.0e-5f && std::abs (recorded - 1.0) < 0.001 && both < 1.0e-4f && fast < 0.02f && stoppedDb < -150.0f
+                                      && std::abs (barLen - barSec) < 0.001 && autoPlay < 1.0e-5f && clearedDb < -150.0f && clearedLen == 0.0 && monitorErr < 1.0e-6f;
+                rep.check (looperOk, "Looper (plays back what was recorded, overdub, double speed, set length, stop, clear, monitor)",
+                           "loop of " + String (recorded, 3) + " s plays back off by " + String (loopA, 7) + " / " + String (loopB, 7) + "; with an overdub " + String (both, 6) + "; at double speed " + String (fast, 4)
+                           + "; one bar set: " + String (barLen, 3) + " s, then plays off by " + String (autoPlay, 7) + "; cleared: " + String (clearedLen, 2) + " s");
+
+                // their windows
+                {
+                    PulseLookAndFeel laf;
+                    LookAndFeel::setDefaultLookAndFeel (&laf);
+                    EditViewState evs (*edit, sm);
+                    LoopUI::BeatRepeatView bv (*beatRep);
+                    LoopUI::LooperView lv (*looper);
+                    Image img (Image::ARGB, 1000, 520, true);
+                    for (Component* c : { (Component*) &bv, (Component*) &lv }) { c->setSize (1000, 520); Graphics g (img); c->paint (g); }
+                    const int g0 = beatRep->getInt (BR::pGrid), ga0 = beatRep->getInt (BR::pGate);
+                    bv.dragHandle (0, 120.0f, 0.0f);
+                    bv.dragHandle (1, 300.0f, 0.0f);
+                    bv.dragHandle (2, 0.0f, 80.0f);
+                    const bool handlesOk = beatRep->getInt (BR::pGrid) > g0 && beatRep->getInt (BR::pGate) > ga0 && beatRep->get (BR::pDecay) > 0.1f;
+                    StringArray missing;
+                    for (auto* pp : std::initializer_list<pulse::PulsePlugin*> { beatRep, looper })
+                    {
+                        DeviceEditors::Editor ed (evs, *pp);
+                        ed.setSize (1100, 760);
+                        std::set<te::AutomatableParameter*> seen;
+                        std::function<void (Component&)> walk = [&] (Component& c)
+                        {
+                            if (auto* k = dynamic_cast<ParamKnob*> (&c)) seen.insert (&k->getParameter());
+                            if (auto* k = dynamic_cast<ParamChoice*> (&c)) seen.insert (&k->getParameter());
+                            if (auto* k = dynamic_cast<ParamCombo*> (&c)) seen.insert (&k->getParameter());
+                            if (auto* k = dynamic_cast<ParamToggle*> (&c)) seen.insert (&k->getParameter());
+                            for (auto* chd : c.getChildren()) walk (*chd);
+                        };
+                        walk (ed);
+                        for (int i = 0; i < pp->numParams(); ++i) if (! seen.count (&*pp->param (i))) missing.add (pp->getName() + ": " + pp->param (i)->paramID);
+                        if (! DeviceEditors::hasFullEditor (*pp)) missing.add (pp->getName() + ": no full window");
+                    }
+                    rep.check (handlesOk && missing.isEmpty(), "Beat Repeat and Looper windows: grid, gate and decay are points on the graph, and every parameter has a control",
+                               missing.isEmpty() ? "grid " + BR::gridNames[g0] + " -> " + beatRep->param (BR::pGrid)->getCurrentValueAsString() + ", gate " + BR::gateNames[ga0] + " -> " + beatRep->param (BR::pGate)->getCurrentValueAsString()
+                                                 : missing.joinIntoString ("; "));
+                    LookAndFeel::setDefaultLookAndFeel (nullptr);
+                }
+                bp4 = nullptr; lp4 = nullptr;
             }
 
             // displays build

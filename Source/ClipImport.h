@@ -98,6 +98,8 @@ namespace ClipImport
             { "Shimmer",      pulse::Shimmer::xmlTypeName,         false },
             { "Grain Delay",  pulse::GrainDelay::xmlTypeName,      false },
             { "Resonators",   pulse::Resonators::xmlTypeName,      false },
+            { "Beat Repeat",  pulse::BeatRepeat::xmlTypeName,      false },
+            { "Looper",       pulse::Looper::xmlTypeName,          false },
             { "Pulse Chorus", pulse::Chorus::xmlTypeName,          false },
             { "Phaser-Flanger", pulse::PhaserFlanger::xmlTypeName, false },
             { "Auto Pan",     pulse::AutoPan::xmlTypeName,         false },

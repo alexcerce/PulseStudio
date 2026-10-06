@@ -2,7 +2,7 @@
 ; Build:  ISCC.exe installer\PulseStudio.iss
 ; Override the build folder with  /DBuildDir=..\build-dev
 #define AppName "Pulse Studio"
-#define AppVersion "0.99.12"
+#define AppVersion "0.99.13"
 #define AppStage "1.0 RC 1"
 #ifndef BuildDir
   #define BuildDir "..\build"
