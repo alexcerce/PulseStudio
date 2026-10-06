@@ -69,6 +69,145 @@ namespace Sharing
         }
     };
 
+    /** Goes through every file the project points at: audio clips and their takes, the samples of Simpler, the
+        Drum Rack's pads and the sampler, a Pulse Space's own impulse response, the reference song, the video.
+        `visit` is given each file and returns the file to point at from now on (the same one to leave it be). */
+    inline void forEachFile (te::Edit& e, const std::function<File (const File&)>& visit)
+    {
+        for (auto w : allAudioClips (e))
+        {
+            const auto src = w->getOriginalFile();
+            const auto dst = visit (src);
+            if (dst != src) w->getSourceFileReference().setToFile (dst, te::SourceFileReference::PathStyle::chooseBest, false);
+
+            auto takes = w->state.getChildWithName (Timeline::pulseTakesID);
+            for (auto t : takes)
+            {
+                File tf (t["file"].toString());
+                auto nf = visit (tf);
+                if (nf != tf) t.setProperty ("file", nf.getFullPathName(), nullptr);
+            }
+        }
+
+        for (auto p : allPlugins (e))
+        {
+            if (auto s = dynamic_cast<pulse::Simpler*> (p))
+            {
+                File f (s->state[pulse::Simpler::sampleFileID].toString());
+                auto nf = visit (f);
+                if (nf != f && f != File()) s->setSampleFile (nf);
+                for (auto z : s->state)
+                    if (z.hasType (pulse::Simpler::zoneType))
+                    {
+                        File zf (z[pulse::Simpler::zFile].toString());
+                        auto nz = visit (zf);
+                        if (nz != zf) z.setProperty (pulse::Simpler::zFile, nz.getFullPathName(), nullptr);
+                    }
+            }
+            else if (auto dp = dynamic_cast<pulse::DrumPad*> (p))
+            {
+                for (auto layer : dp->state)
+                    if (layer.hasType (pulse::DrumPad::layerType))
+                    {
+                        File f (layer[pulse::DrumPad::fileID].toString());
+                        auto nf = visit (f);
+                        if (nf != f) layer.setProperty (pulse::DrumPad::fileID, nf.getFullPathName(), nullptr);
+                    }
+            }
+            else if (auto sp = dynamic_cast<te::SamplerPlugin*> (p))
+            {
+                for (int i = 0; i < sp->getNumSounds(); ++i)
+                {
+                    auto f = sp->getSoundFile (i).getFile();
+                    auto nf = visit (f);
+                    if (nf != f) sp->setSoundMedia (i, nf.getFullPathName());
+                }
+                sp->flushPendingUpdates();   // the sampler applies sound changes asynchronously
+            }
+            else if (auto space = dynamic_cast<pulse::ConvolutionReverb*> (p))
+            {
+                const auto f = space->getFile();
+                if (f != File()) if (auto nf = visit (f); nf != f) space->state.setProperty ("irFile", nf.getFullPathName(), nullptr);
+            }
+            else if (auto song = dynamic_cast<pulse::Reference*> (p))
+            {
+                const auto f = song->getFile();
+                if (f != File()) if (auto nf = visit (f); nf != f) song->state.setProperty ("referenceFile", nf.getFullPathName(), nullptr);
+            }
+        }
+
+        if (auto video = e.state.getChildWithName ("PULSEVIDEO"); video.isValid() && video["file"].toString().isNotEmpty())
+        {
+            File f (video["file"].toString());
+            if (auto nf = visit (f); nf != f) video.setProperty ("file", nf.getFullPathName(), nullptr);
+        }
+    }
+
+    //==============================================================================
+    // Missing files
+    /** Every file the project points at that is not there (each once). */
+    inline StringArray missingFiles (te::Edit& e)
+    {
+        StringArray missing;
+        forEachFile (e, [&] (const File& f)
+        {
+            if (f != File() && f.getFullPathName().isNotEmpty() && ! f.existsAsFile()) missing.addIfNotAlreadyThere (f.getFullPathName());
+            return f;
+        });
+        return missing;
+    }
+
+    struct Relinked
+    {
+        int found = 0;
+        StringArray stillMissing;
+        String summary() const
+        {
+            String s = found == 0 ? String ("None of the missing files is in that folder.") : String (found) + (found == 1 ? " file was found, and the project now uses it." : " files were found, and the project now uses them.");
+            if (! stillMissing.isEmpty()) s << "\n\nStill missing:\n" << stillMissing.joinIntoString ("\n");
+            return s;
+        }
+    };
+
+    /** Looks in a folder and everything under it for the missing files, by name, and points the project at the ones
+        found. When a name is there more than once, the one whose folders are most like the old path's is taken. */
+    inline Relinked relink (te::Edit& e, const File& folder)
+    {
+        Relinked r;
+        const auto missing = missingFiles (e);
+        if (missing.isEmpty() || ! folder.isDirectory()) { r.stillMissing = missing; return r; }
+        StringArray wantedNames;
+        for (auto& m : missing) wantedNames.addIfNotAlreadyThere (File (m).getFileName().toLowerCase());
+        std::map<String, Array<File>> byName;
+        int looked = 0;
+        for (const auto& entry : RangedDirectoryIterator (folder, true, "*", File::findFiles))
+        {
+            if (++looked > 400000) break;   // (a whole disk was chosen: enough)
+            const auto name = entry.getFile().getFileName().toLowerCase();
+            if (wantedNames.contains (name)) byName[name].add (entry.getFile());
+        }
+        auto likeness = [] (const File& a, const File& b)   // how many folders the two paths share, counted from the file upwards
+        {
+            int n = 0;
+            for (auto pa = a.getParentDirectory(), pb = b.getParentDirectory(); pa.getFileName().isNotEmpty() && pa.getFileName().equalsIgnoreCase (pb.getFileName()); pa = pa.getParentDirectory(), pb = pb.getParentDirectory()) ++n;
+            return n;
+        };
+        StringArray done;
+        forEachFile (e, [&] (const File& f)
+        {
+            if (f == File() || f.getFullPathName().isEmpty() || f.existsAsFile()) return f;
+            auto it = byName.find (f.getFileName().toLowerCase());
+            if (it == byName.end() || it->second.isEmpty()) return f;
+            File best = it->second.getFirst();
+            for (auto& c : it->second) if (likeness (c, f) > likeness (best, f)) best = c;
+            done.addIfNotAlreadyThere (f.getFullPathName());
+            return best;
+        });
+        r.found = done.size();
+        r.stillMissing = missingFiles (e);
+        return r;
+    }
+
     /** Copies every sample the project uses into "<project> Samples" next to it and points the
         project at the copies (so the folder can be zipped and opened anywhere). */
     inline CollectResult collectAll (te::Edit& e)
@@ -97,57 +236,7 @@ namespace Sharing
             return dest;
         };
 
-        for (auto w : allAudioClips (e))
-        {
-            const auto src = w->getOriginalFile();
-            const auto dst = bring (src);
-            if (dst != src) w->getSourceFileReference().setToFile (dst, te::SourceFileReference::PathStyle::chooseBest, false);
-
-            auto takes = w->state.getChildWithName (Timeline::pulseTakesID);
-            for (auto t : takes)
-            {
-                File tf (t["file"].toString());
-                auto nf = bring (tf);
-                if (nf != tf) t.setProperty ("file", nf.getFullPathName(), nullptr);
-            }
-        }
-
-        for (auto p : allPlugins (e))
-        {
-            if (auto s = dynamic_cast<pulse::Simpler*> (p))
-            {
-                File f (s->state[pulse::Simpler::sampleFileID].toString());
-                auto nf = bring (f);
-                if (nf != f && f != File()) s->setSampleFile (nf);
-                for (auto z : s->state)
-                    if (z.hasType (pulse::Simpler::zoneType))
-                    {
-                        File zf (z[pulse::Simpler::zFile].toString());
-                        auto nz = bring (zf);
-                        if (nz != zf) z.setProperty (pulse::Simpler::zFile, nz.getFullPathName(), nullptr);
-                    }
-            }
-            else if (auto dp = dynamic_cast<pulse::DrumPad*> (p))
-            {
-                for (auto layer : dp->state)
-                    if (layer.hasType (pulse::DrumPad::layerType))
-                    {
-                        File f (layer[pulse::DrumPad::fileID].toString());
-                        auto nf = bring (f);
-                        if (nf != f) layer.setProperty (pulse::DrumPad::fileID, nf.getFullPathName(), nullptr);
-                    }
-            }
-            else if (auto sp = dynamic_cast<te::SamplerPlugin*> (p))
-            {
-                for (int i = 0; i < sp->getNumSounds(); ++i)
-                {
-                    auto f = sp->getSoundFile (i).getFile();
-                    auto nf = bring (f);
-                    if (nf != f) sp->setSoundMedia (i, nf.getFullPathName());
-                }
-                sp->flushPendingUpdates();   // the sampler applies sound changes asynchronously
-            }
-        }
+        forEachFile (e, bring);
 
         te::EditFileOperations (e).save (true, true, false);
         return r;

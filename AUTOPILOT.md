@@ -153,7 +153,7 @@ well EVERYWHERE." So, besides the list:
   [x] "what does this do" hover help everywhere, with a status-bar line  [x] search in every menu that has more
   than 20 entries  [ ] drag any device, clip, preset or sample anywhere it could sensibly go
   [ ] consistent modifier keys (fine, snap off, copy-drag) across arrangement, piano roll, automation and devices
-  [ ] collect-all-and-save, missing-file finder  [x] undo history list  [ ] default track / device presets
+  [x] collect-all-and-save, missing-file finder  [x] undo history list  [ ] default track / device presets
   [ ] zoom to selection / fit, and remembered zoom per view  [ ] crash-safe autosave restore prompt reviewed
   [ ] every list sortable and keyboard-navigable  [ ] nothing blocks the UI for more than 100 ms (progress
   shown instead)  [ ] first-run experience: audio set-up check, demo project, short tour
@@ -684,3 +684,10 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   preset levels failed once on "Dark Cinematic Drone" at -30.3 dBFS against a floor of -30 (its slow attack and
   free-running LFOs put it on the edge; it had passed every earlier run); the preset is 4 dB louder now.
   327 checks, quick tier.
+- 2026-10-06: v0.99.44. Missing files. Sharing.h: forEachFile() is now the one walk over every file a project
+  points at (it was written out inside collectAll), with three more kinds added: a Pulse Space's impulse
+  response, the Reference device's song, the project's video. On it: missingFiles(), relink (folder) and
+  collectAll itself. MainComponent::findMissingFiles: asked after a project loads (only when something is
+  missing) and from File > Find missing files / the command file.findMissing. The folder dialog itself was
+  not driven in a test; relink was, with a clip and a device file. Not covered: files of outside (VST)
+  plugins, which keep their own paths. 328 checks, quick tier.

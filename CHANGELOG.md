@@ -2,6 +2,11 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.44 - 2026-10-06
+
+- Missing files are reported when a project opens and can be found again by folder (File > Find missing files...)
+- Collect all and save also collects a Pulse Space's response, the reference song and the video
+
 ## 0.99.43 - 2026-10-06
 
 - Search in long menus (more than twenty entries): type to find an entry in the menu or its submenus

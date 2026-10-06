@@ -2640,6 +2640,47 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
                        String (paths ? "" : "entries wrong (" + String ((int) all.size()) + "); ") + (words ? "" : "matching wrong; ") + (order ? "" : "order wrong; ") + (added && leftAlone ? "" : "search entry wrong; ") + (boxOk ? "" : "box wrong; ") + "ok");
         }
 
+        // --- v0.99.44: missing files, and finding them again --------------------------------------------------
+        {
+            rep.step ("missing files");
+            auto home = dir.getChildFile ("missing_home"), away = dir.getChildFile ("missing_away");
+            home.deleteRecursively(); away.deleteRecursively();
+            // the files are where the folder was moved to; the project still points at where it used to be
+            const auto newHome = away.getChildFile ("Session 12").getChildFile ("missing_home");
+            newHome.createDirectory();
+            writeTestWav (newHome.getChildFile ("Lead Vocal.wav"), 1.0, 330.0);
+            writeTestWav (newHome.getChildFile ("Finished Song.wav"), 1.0, 220.0);
+            const int before = Sharing::missingFiles (*edit).size();
+            auto mt = ClipImport::createContentTrack (*edit, "MissingTest", false);
+            ClipImport::importFile (*mt, *edit, writeTestWav (dir.getChildFile ("missing_seed.wav"), 1.0, 330.0), te::TimePosition());
+            for (auto c : mt->getClips())
+                if (auto w = dynamic_cast<te::WaveAudioClip*> (c)) w->getSourceFileReference().setToFile (home.getChildFile ("Lead Vocal.wav"), te::SourceFileReference::PathStyle::chooseBest, false);
+            auto refp = edit->getPluginCache().createNewPlugin (pulse::Reference::xmlTypeName, {});
+            mt->pluginList.insertPlugin (refp, 0, nullptr);
+            dynamic_cast<pulse::Reference*> (refp.get())->state.setProperty ("referenceFile", home.getChildFile ("Finished Song.wav").getFullPathName(), nullptr);
+            const bool moved = ! home.exists();
+            const auto missing = Sharing::missingFiles (*edit);
+            const bool noticed = moved && missing.size() == before + 2 && missing.joinIntoString ("|").contains ("Lead Vocal.wav") && missing.joinIntoString ("|").contains ("Finished Song.wav");
+            // looking in the wrong place finds nothing; looking above the new place finds both
+            auto elsewhere = dir.getChildFile ("missing_elsewhere");
+            elsewhere.createDirectory();
+            const auto none = Sharing::relink (*edit, elsewhere);
+            const bool stillGone = none.found == 0 && none.stillMissing.size() == before + 2 && none.summary().contains ("None of the missing");
+            // a file of the same name in another folder is passed over for the one whose folders match the old path
+            writeTestWav (away.getChildFile ("Other").getChildFile ("Lead Vocal.wav"), 0.5, 100.0);
+            const auto found = Sharing::relink (*edit, away);
+            te::WaveAudioClip* clip = nullptr;
+            for (auto c : mt->getClips()) if (auto w = dynamic_cast<te::WaveAudioClip*> (c)) clip = w;
+            const bool relinked = found.found == 2 && Sharing::missingFiles (*edit).size() == before && clip != nullptr && clip->getOriginalFile().existsAsFile()
+                                  && clip->getOriginalFile().getParentDirectory().getFileName() == "missing_home" && dynamic_cast<pulse::Reference*> (refp.get())->getFile().existsAsFile()
+                                  && found.summary().contains ("2 files were found");
+            rep.check (noticed && stillGone && relinked, "Missing files (a moved folder is noticed, a clip's file and a device's file are found again by name, the likeliest of two same-named files is taken)",
+                       String (noticed ? "" : "not noticed (" + String (missing.size() - before) + " missing); ") + (stillGone ? "" : "found where it is not; ") + (relinked ? "" : "not found again (" + String (found.found) + " found, " + String (found.stillMissing.size() - before) + " still missing); ") + "ok");
+            edit->deleteTrack (mt);
+            away.deleteRecursively(); elsewhere.deleteRecursively();
+            edit->getUndoManager().clearUndoHistory();
+        }
+
         // --- sharing: collect all, templates -----------------------------------------------------------
         {
             auto outside = File::getSpecialLocation (File::tempDirectory).getChildFile ("PulseStudioSelfTestOutside");

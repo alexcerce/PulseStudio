@@ -24,7 +24,7 @@ public:
         std::function<void()> clearRecent;
         std::function<StringArray()> backups;
         std::function<void (const File&)> restoreBackup;
-        std::function<void()> welcome, exportZip, importZip, crashReports, checkUpdates, about, userGuide, video, notes;
+        std::function<void()> welcome, exportZip, importZip, crashReports, checkUpdates, about, userGuide, video, notes, findMissing;
         std::function<int()> midiRecordMode;
         std::function<void (int)> setMidiRecordMode;
         std::function<String()> controllerStatus;
@@ -192,6 +192,7 @@ public:
             add ("Keyboard shortcuts...", {}, actions.editShortcuts);
             add ("Welcome screen...", {}, actions.welcome);
             m.addSeparator();
+            add ("Find missing files...", {}, actions.findMissing);
             add ("Export project as .zip...", {}, actions.exportZip);
             add ("Open project from .zip...", {}, actions.importZip);
             add ("Collect crash reports...", {}, actions.crashReports);

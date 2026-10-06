@@ -357,6 +357,7 @@ public:
         c.add ("midi.pageNext", "Controller mappings: next page", "MIDI", {}, [this] { if (midiLearn != nullptr) midiLearn->stepPage (true); });
         c.add ("midi.pagePrev", "Controller mappings: previous page", "MIDI", {}, [this] { if (midiLearn != nullptr) midiLearn->stepPage (false); });
         c.add ("midi.pageAlways", "Controller mappings: no page (only what is always mapped)", "MIDI", {}, [this] { if (midiLearn != nullptr) midiLearn->setPage (0); });
+        c.add ("file.findMissing", "Find missing files", "File", {}, [this] { if (! About::isCapturing()) findMissingFiles (true); });
         c.add ("view.video", "Video: the film this project is written to", "View", {}, [this] { if (edit != nullptr && ! About::isCapturing()) Video::show (*edit); });
         c.add ("view.notes", "Notes for the project and its tracks", "View", {}, [this] { if (edit != nullptr && ! About::isCapturing()) Notes::show (*edit); });
         c.add ("view.steps", "Piano roll: step grid on / off", "View", {}, [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->showSteps (! pianoRoll->stepGrid().isVisible()); } });
@@ -490,6 +491,7 @@ private:
         a.checkUpdates   = [this] { checkForUpdates (true); };
         a.about          = [this] { About::show (this); };
         a.video          = [this] { if (edit != nullptr && ! About::isCapturing()) Video::show (*edit); };
+        a.findMissing    = [this] { findMissingFiles (true); };
         a.notes          = [this] { if (edit != nullptr && ! About::isCapturing()) Notes::show (*edit); };
         a.userGuide      = [this] { About::showUserGuide (this); };
         a.setMidiRecordMode = [this] (int m)
@@ -1064,6 +1066,9 @@ private:
         updateWindowTitle();
         resized();
         offerRecoveryIfNeeded (file);
+        // files the project points at that are gone (moved, renamed, a drive not connected): say so, and offer to look for them
+        if (! About::isCapturing())
+            MessageManager::callAsync ([sp = SafePointer<MainComponent> (this)] { if (sp != nullptr) sp->findMissingFiles (false); });
     }
 
     /** The views of the open project (arrangement, session, browser, devices, mixer, piano roll). */
@@ -1581,6 +1586,41 @@ private:
                                   }
                               });
     }
+
+    /** Says which files the project points at are not there, and offers to look for them in a folder. `always`:
+        say so too when nothing is missing (asked for from the menu); otherwise only when something is. */
+    void findMissingFiles (bool always)
+    {
+        if (edit == nullptr) return;
+        const auto missing = Sharing::missingFiles (*edit);
+        if (missing.isEmpty())
+        {
+            if (always) AlertWindow::showMessageBoxAsync (MessageBoxIconType::InfoIcon, "Find missing files", "Nothing is missing: every file this project uses is where it should be.");
+            return;
+        }
+        StringArray first;
+        for (int i = 0; i < jmin (8, missing.size()); ++i) first.add (missing[i]);
+        auto* w = new AlertWindow (String (missing.size()) + (missing.size() == 1 ? " file is missing" : " files are missing"),
+                                   "The project points at files that are not there any more (moved, renamed, or on a drive that is not connected):\n\n" + first.joinIntoString ("\n")
+                                       + (missing.size() > first.size() ? "\n... and " + String (missing.size() - first.size()) + " more" : String())
+                                       + "\n\nChoose a folder to look in: it and everything under it is searched for files of the same names.",
+                                   MessageBoxIconType::WarningIcon);
+        w->addButton ("Look in a folder...", 1, KeyPress (KeyPress::returnKey));
+        w->addButton ("Not now", 0, KeyPress (KeyPress::escapeKey));
+        w->enterModalState (true, ModalCallbackFunction::create ([sp = SafePointer<MainComponent> (this)] (int result)
+        {
+            if (sp == nullptr || result != 1 || sp->edit == nullptr) return;
+            sp->missingChooser = std::make_shared<FileChooser> ("Look for the missing files in...", File::getSpecialLocation (File::userMusicDirectory));
+            sp->missingChooser->launchAsync (FileBrowserComponent::openMode | FileBrowserComponent::canSelectDirectories, [sp] (const FileChooser& fc)
+            {
+                if (sp == nullptr || sp->edit == nullptr || fc.getResult() == File()) return;
+                const auto r = Sharing::relink (*sp->edit, fc.getResult());
+                if (r.found > 0) sp->edit->restartPlayback();
+                AlertWindow::showMessageBoxAsync (r.stillMissing.isEmpty() ? MessageBoxIconType::InfoIcon : MessageBoxIconType::WarningIcon, "Find missing files", r.summary());
+            });
+        }), true);
+    }
+    std::shared_ptr<FileChooser> missingChooser;
 
     void collectAll()
     {
