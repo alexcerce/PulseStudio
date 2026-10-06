@@ -160,7 +160,7 @@ well EVERYWHERE." So, besides the list:
 - Nothing that already works is taken away, and a rough edge found on the way is fixed then, or written here.
 
 1. Effects: [x] transient shaper  [x] de-esser  [x] gate / expander  [x] convolution reverb (built-in spaces)
-   [x] shimmer reverb  [ ] spectral (freeze / blur / shift / spectral delay)  [x] chorus / flanger / phaser
+   [x] shimmer reverb  [x] spectral (freeze / blur / shift / spectral delay)  [x] chorus / flanger / phaser
    [x] tremolo / auto-pan  [x] frequency shifter  [x] bit reduction  [x] amp + cabinet  [x] exciter  [x] beat repeat
    [x] grain delay  [x] looper  [x] resonators
 2. Instruments: [ ] Wavetable third oscillator + wavetable import from audio  [ ] sampler (slices, per-slice stretch,
@@ -435,3 +435,7 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   saving it as a file beside the project, and dragging the loop out as a clip, would be the next steps.
   Note for tests: the engine rounds samples under about a millionth to zero, so "output equals input" checks
   need a tolerance of 1e-5, not 1e-6. Left in group 1: spectral; then the slow tier for everything since v0.99.9.
+- 2026-10-06: v0.99.14. Pulse Spectral (Source/SpectralFx.h, SpectralFxDisplay.h): 2048-point transform, quarter
+  overlap, phase-vocoder shift, freeze that settles on the loudest of the first 12 steps, blur that keeps each
+  frequency's pitch while it rings on, a ring of past steps for the per-frequency delay. 11 presets. 285 checks.
+  Programme group 1 (effects) is complete: 21 new devices since v0.99.6.

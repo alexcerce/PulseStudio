@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.14 - 2026-10-06
+
+- New effect: Pulse Spectral (freeze, blur, pitch shift and a delay per frequency)
+
 ## 0.99.13 - 2026-10-06
 
 - New effects: Beat Repeat and Looper, each with its own window and presets

@@ -322,6 +322,20 @@ namespace FactoryPresetsMore
                 { "Send (100% wet hall)", { { "space", 6 }, { "predelay", 20 }, { "lowcut", 150 }, { "mix", 1.0f } } } } },
 
             //----------------------------------------------------------------------------------
+            { "pulseSpectral", {
+                { "Hold That Sound", { { "freeze", 1 }, { "mix", 1.0f } } },
+                { "Frozen Pad Under It", { { "freeze", 1 }, { "blur", 0.5f }, { "mix", 0.5f } } },
+                { "Smear", { { "blur", 0.8f }, { "mix", 0.7f } } },
+                { "Ghost Wash", { { "blur", 1.0f }, { "delay", 250 }, { "feedback", 0.5f }, { "mix", 0.5f } } },
+                { "Rainbow Up (highs later)", { { "delay", 700 }, { "tilt", 1.0f }, { "mix", 0.6f } } },
+                { "Rainbow Down (lows later)", { { "delay", 700 }, { "tilt", -1.0f }, { "mix", 0.6f } } },
+                { "Spectral Echoes", { { "delay", 375 }, { "tilt", 0.3f }, { "feedback", 0.6f }, { "mix", 0.4f } } },
+                { "Octave Up", { { "shift", 12 }, { "mix", 1.0f } } },
+                { "Fifth Harmony", { { "shift", 7 }, { "mix", 0.5f } } },
+                { "Sub Octave Layer", { { "shift", -12 }, { "mix", 0.5f } } },
+                { "Rising Echoes", { { "shift", 5 }, { "delay", 300 }, { "feedback", 0.4f }, { "mix", 0.5f } } } } },
+
+            //----------------------------------------------------------------------------------
             // Beat Repeat: interval 0 1/4, 1 1/2, 2 1 bar, 3 2 bars, 4 4 bars; grid 0 1/32, 1 1/16T, 2 1/16, 3 1/8T, 4 1/8, 5 1/4, 6 1/2;
             // gate 0 1/8, 1 1/4, 2 1/2, 3 1 bar, 4 2 bars; mode 0 mix, 1 insert, 2 gate
             { "pulseBeatRepeat", {

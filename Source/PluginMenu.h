@@ -139,6 +139,7 @@ namespace PluginMenu
         addBuiltIn<pulse::Shimmer> (effects, edit, cb);
         addBuiltIn<pulse::GrainDelay> (effects, edit, cb);
         addBuiltIn<pulse::Resonators> (effects, edit, cb);
+        addBuiltIn<pulse::Spectral> (effects, edit, cb);
         addBuiltIn<pulse::BeatRepeat> (effects, edit, cb);
         addBuiltIn<pulse::Looper> (effects, edit, cb);
         addBuiltIn<pulse::Chorus> (effects, edit, cb);

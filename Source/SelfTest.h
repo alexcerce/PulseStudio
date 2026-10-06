@@ -205,6 +205,7 @@ namespace SelfTest
         shoot (pulse::GrainDelay::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::GrainDelay::pPitch, 7); p.set (pulse::GrainDelay::pSpray, 150); p.set (pulse::GrainDelay::pRandomPitch, 0.3f); p.set (pulse::GrainDelay::pFeedback, 0.6f); }, "shot_grain.png");
         shoot (pulse::BeatRepeat::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::BeatRepeat::pDecay, 0.4f); p.set (pulse::BeatRepeat::pGate, 3); p.set (pulse::BeatRepeat::pPitch, -7); p.set (pulse::BeatRepeat::pPitchDecay, 1.0f); }, "shot_beatrepeat.png");
         shoot (pulse::Looper::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Looper::pState, 1); p.set (pulse::Looper::pLength, 1); }, "shot_looper.png");
+        shoot (pulse::Spectral::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Spectral::pDelay, 900); p.set (pulse::Spectral::pTilt, 0.7f); p.set (pulse::Spectral::pShift, 7); }, "shot_spectral.png");
         shoot (pulse::Gate::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Gate::pThreshold, -22); p.set (pulse::Gate::pRange, 40); p.set (pulse::Gate::pHysteresis, 6); }, "shot_gate.png");
         shoot (pulse::TransientShaper::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::TransientShaper::pAttack, 0.6f); p.set (pulse::TransientShaper::pSustain, -0.4f); }, "shot_transient.png");
         shoot (pulse::DeEsser::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::DeEsser::pThreshold, -36); p.set (pulse::DeEsser::pRange, 10); }, "shot_deesser.png");
@@ -4642,6 +4643,99 @@ namespace SelfTest
                     LookAndFeel::setDefaultLookAndFeel (nullptr);
                 }
                 bp4 = nullptr; lp4 = nullptr;
+            }
+
+            // --- Pulse Spectral ----------------------------------------------------------------------------
+            {
+                auto sp5 = edit->getPluginCache().createNewPlugin (pulse::Spectral::xmlTypeName, {});
+                t->pluginList.insertPlugin (sp5, 0, nullptr);
+                auto* spec = dynamic_cast<pulse::Spectral*> (sp5.get());
+                using SP = pulse::Spectral;
+                AudioBuffer<float> out;
+                const int late = SP::size;
+                auto partAt = [&] (const AudioBuffer<float>& b, double hz, double from, double len)
+                {
+                    const int a = (int) (from * sr), n = (int) (len * sr);
+                    double re = 0, im = 0;
+                    for (int i = 0; i < n; ++i)
+                    {
+                        const double ph = MathConstants<double>::twoPi * hz * (a + i) / sr;
+                        re += b.getSample (0, a + i) * std::cos (ph); im += b.getSample (0, a + i) * std::sin (ph);
+                    }
+                    return Decibels::gainToDecibels ((float) (2.0 * std::sqrt (re * re + im * im) / n), -140.0f);
+                };
+                auto rmsAt = [&] (const AudioBuffer<float>& b, double from, double len) { return Decibels::gainToDecibels (b.getRMSLevel (0, (int) (from * sr), (int) (len * sr)), -140.0f); };
+                // with nothing switched on, what comes out is what went in (2048 samples late, which it reports)
+                auto rising2 = [] (int, double tm) { return 0.3f * (float) std::sin (MathConstants<double>::twoPi * (200.0 + 300.0 * tm) * tm); };
+                runFx (*spec, rising2, 1.0, &out);
+                float through = 0;
+                for (int i = late * 2; i < out.getNumSamples(); ++i) through = jmax (through, std::abs (out.getSample (0, i) - rising2 (0, (i - late) / sr)));
+                // shift: an octave up really is
+                spec->set (SP::pShift, 12.0f);
+                runFx (*spec, sine (440, 0.25f), 1.0, &out);
+                const float up880 = partAt (out, 880.0, 0.5, 0.4), left440 = partAt (out, 440.0, 0.5, 0.4);
+                spec->set (SP::pShift, 0.0f);
+                // freeze: a short note is held long after it has stopped
+                auto shortNote = [] (int, double tm) { return tm > 0.2 && tm < 0.6 ? 0.25f * (float) std::sin (MathConstants<double>::twoPi * 440.0 * tm) : 0.0f; };
+                spec->set (SP::pFreeze, 1.0f);
+                runFx (*spec, shortNote, 3.0, &out);
+                const float heldLate = rmsAt (out, 2.5, 0.4), heldTone = partAt (out, 440.0, 2.5, 0.4);
+                spec->set (SP::pFreeze, 0.0f);
+                runFx (*spec, shortNote, 3.0, &out);
+                const float notHeld = rmsAt (out, 2.5, 0.4);
+                // blur: the note rings on for a while after it stops, then dies
+                spec->set (SP::pBlur, 1.0f);
+                runFx (*spec, shortNote, 3.0, &out);
+                const float blurSoon = rmsAt (out, 0.75, 0.1), blurLater = rmsAt (out, 2.6, 0.3);
+                spec->set (SP::pBlur, 0.0f);
+                // the spectral delay: the note comes out half a second later; with full tilt the lows are not delayed at all
+                spec->set (SP::pDelay, 500.0f);
+                runFx (*spec, shortNote, 2.0, &out);
+                const float beforeDelay = rmsAt (out, 0.3, 0.3), afterDelay = rmsAt (out, 0.85, 0.25);
+                spec->set (SP::pTilt, 1.0f);
+                auto lowNote = [] (int, double tm) { return tm > 0.2 && tm < 0.6 ? 0.25f * (float) std::sin (MathConstants<double>::twoPi * 60.0 * tm) : 0.0f; };
+                runFx (*spec, lowNote, 2.0, &out);
+                const float lowSoon = rmsAt (out, 0.35, 0.25);
+                spec->set (SP::pTilt, 0.0f); spec->set (SP::pFeedback, 0.95f); spec->set (SP::pBlur, 1.0f);
+                Random srng (21);
+                const float specLoud = runFx (*spec, [&srng] (int, double) { return (srng.nextFloat() * 2.0f - 1.0f) * 0.25f; }, 6.0);
+                spec->set (SP::pFeedback, 0.0f); spec->set (SP::pBlur, 0.0f); spec->set (SP::pDelay, 0.0f);
+                const bool specOk = through < 2.0e-3f && up880 > left440 + 20.0f && up880 > -22.0f && heldLate > -40.0f && heldTone > -45.0f && notHeld < -100.0f
+                                    && blurSoon > -50.0f && blurLater < blurSoon - 25.0f && beforeDelay < -80.0f && afterDelay > -30.0f && lowSoon > -30.0f && specLoud < 12.0f
+                                    && std::abs (spec->getLatencySeconds() * sr - SP::size) < 0.01;
+                rep.check (specOk, "Pulse Spectral (nothing on = nothing changed, octave up, freeze holds, blur rings on, each frequency delayed, stable)",
+                           "round trip off by " + String (through, 5) + "; +12: 880 Hz " + String (up880, 1) + " dB, 440 Hz " + String (left440, 1) + "; a note 2 s after it stopped: frozen " + String (heldLate, 1)
+                           + " dB, not frozen " + String (notHeld, 0) + "; blur " + String (blurSoon, 1) + " -> " + String (blurLater, 1) + "; 500 ms delay: before " + String (beforeDelay, 0) + ", after " + String (afterDelay, 1)
+                           + ", lows with full tilt " + String (lowSoon, 1) + "; loudest " + String (specLoud, 1) + " dBFS");
+                {
+                    PulseLookAndFeel laf;
+                    LookAndFeel::setDefaultLookAndFeel (&laf);
+                    EditViewState evs (*edit, sm);
+                    SpectralUI::SpectralView view (*spec);
+                    view.setSize (1000, 520);
+                    Image img (Image::ARGB, 1000, 520, true);
+                    { Graphics g (img); view.paint (g); }
+                    view.dragHandle (0, 80.0f, 0.0f);
+                    view.dragHandle (2, 0.0f, -100.0f);
+                    const bool handlesOk = spec->get (SP::pShift) > 3.0f && spec->get (SP::pDelay) > 200.0f && spec->get (SP::pTilt) > 0.9f && view.getNumHandles() == 3;
+                    DeviceEditors::Editor ed (evs, *spec);
+                    ed.setSize (1100, 760);
+                    std::set<te::AutomatableParameter*> seen;
+                    std::function<void (Component&)> walk = [&] (Component& c)
+                    {
+                        if (auto* k = dynamic_cast<ParamKnob*> (&c)) seen.insert (&k->getParameter());
+                        if (auto* k = dynamic_cast<ParamToggle*> (&c)) seen.insert (&k->getParameter());
+                        for (auto* chd : c.getChildren()) walk (*chd);
+                    };
+                    walk (ed);
+                    StringArray missing;
+                    for (int i = 0; i < spec->numParams(); ++i) if (! seen.count (&*spec->param (i))) missing.add (spec->param (i)->paramID);
+                    rep.check (handlesOk && missing.isEmpty() && DeviceEditors::hasFullEditor (*spec), "Pulse Spectral window: shift and the delay line are points on the graph, and every parameter has a control",
+                               missing.isEmpty() ? "shift -> " + String (spec->get (SP::pShift), 1) + " st, highs delayed by " + String (roundToInt (spec->delayAt (1.0f))) + " ms, lows by " + String (roundToInt (spec->delayAt (0.0f)))
+                                                 : missing.joinIntoString (", "));
+                    LookAndFeel::setDefaultLookAndFeel (nullptr);
+                }
+                sp5 = nullptr;
             }
 
             // displays build
