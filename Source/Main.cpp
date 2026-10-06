@@ -164,6 +164,30 @@ public:
             return;
         }
 
+        // --render-demo <out.wav> : build the demo song in a project of its own, play it into a file, then exit
+        if (auto i = args.indexOf ("--render-demo"); i >= 0 && i + 1 < args.size())
+        {
+            engine = std::make_unique<te::Engine> ("Pulse Studio Test", std::make_unique<PulseUIBehaviour>(), std::make_unique<PulseEngineBehaviour>());
+            pulse::registerDevices (*engine);
+            const auto out = File::getCurrentWorkingDirectory().getChildFile (args[i + 1].unquoted());
+            auto projectFile = File::getSpecialLocation (File::tempDirectory).getChildFile ("pulse-demo-render.tracktionedit");
+            projectFile.deleteFile();
+            bool ok = false;
+            {
+                auto demo = te::createEmptyEdit (*engine, projectFile);
+                te::EditFileOperations (*demo).save (true, true, false);
+                DemoSong::build (*demo);
+                te::EditFileOperations (*demo).save (true, true, false);
+                demo->getTransport().ensureContextAllocated();
+                out.deleteFile();
+                ok = EditingOps::renderDetached (*demo, out) && out.existsAsFile();
+            }
+            projectFile.deleteFile();
+            setApplicationReturnValue (ok ? 0 : 1);
+            quit();
+            return;
+        }
+
         // --device-shots <dir> : pictures of the graph-first device editors, then exit
         if (auto i = args.indexOf ("--device-shots"); i >= 0 && i + 1 < args.size())
         {

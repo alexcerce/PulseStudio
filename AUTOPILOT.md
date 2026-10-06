@@ -754,3 +754,8 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   -12.5, breakdown -21.3, drop II -12.0 LUFS, true peak -3.4 dB). My first settings had every synth about
   25 dB under the drums; nothing but the numbers showed it. Whether it is a GOOD techno track only ears can
   say: the user should play it and say what to change. 333 checks, quick tier.
+- 2026-10-06: --render-demo <out.wav> builds the demo song in a project of its own and plays it into a file
+  (Main.cpp), so the track can be heard without opening the app. Rendered once to
+  "dist/Pulse Studio demo - techno.wav" (3:38, 58 MB; dist is not in the repository) for the user to listen to.
+  A random-input run on the new demo (Release, 3000 events, seed 361) ended clean with 2 stalls over 100 ms
+  (259 and 282 ms, both on a mixer strip).
