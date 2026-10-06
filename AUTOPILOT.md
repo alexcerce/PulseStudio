@@ -496,3 +496,7 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   301 checks, quick tier. Programme group 3 (MIDI) is complete. The slow tier is owed for v0.99.18 to v0.99.22.
   Next: group 4 (audio editing: warp by dragging transients, per-note pitch and time, reverse / crop /
   consolidate, clip launch recorded into the arrangement).
+- 2026-10-06: slow tier for v0.99.18 to v0.99.22 (Simpler slices, four MIDI effects, drawn patterns, chord track,
+  step grid): Debug self-test 301 pass; monkey seed 2201 on the demo project and 2202 on the 30-track project;
+  command fuzz 2201 (468 commands, including the new view.steps and midi.fitChords): all clean, no crash report.
+  Installer built. Nothing owed. Programme groups 1, 2 and 3 are complete.
