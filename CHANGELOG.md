@@ -2,6 +2,11 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.42 - 2026-10-06
+
+- Help line in the lower tab bar: what the thing under the mouse does
+- Every control in every device window has help text
+
 ## 0.99.41 - 2026-10-06
 
 - Device windows: undo / redo, copy A to B, input and output meters, gain match for every effect

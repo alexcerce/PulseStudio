@@ -150,7 +150,7 @@ well EVERYWHERE." So, besides the list:
 - **Quality-of-life list** (add to it whenever something is noticed; do one or two with every version):
   [x] typed value entry on every knob and readout  [x] A/B compare and copy A>B in every device window
   [x] undo/redo inside device windows shown in the window  [x] per-device input/output meters and gain match
-  [ ] "what does this do" hover help everywhere, with a status-bar line  [ ] search in every menu that has more
+  [x] "what does this do" hover help everywhere, with a status-bar line  [ ] search in every menu that has more
   than 20 entries  [ ] drag any device, clip, preset or sample anywhere it could sensibly go
   [ ] consistent modifier keys (fine, snap off, copy-drag) across arrangement, piano roll, automation and devices
   [ ] collect-all-and-save, missing-file finder  [x] undo history list  [ ] default track / device presets
@@ -666,3 +666,12 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   Measured: a +12 dB Utility comes out at the -20 dBFS that went in, matchDb -12.0. Instruments and outside
   (VST) plugins have no meters or match. The cost is two more passes over each block for every effect; the
   audio of every device test is unchanged. 324 checks, quick tier.
+- 2026-10-06: v0.99.42. Help line. Source/HelpLine.h (textFor = a component's own tooltip or the nearest above
+  it; Line polls the component under the mouse eight times a second) in the lower tab bar between the tabs
+  and the Layout button. A new check opens the window of every built-in device and walks every button,
+  slider and box: 155 of 1925 had no help. Fixed: Randomise and Reset (in every window), ParamKnob (a default
+  from its name and how a knob is used), ParamChoice and ParamCombo and the Prism EQ's rows (parameter name
+  and choice), the Wavetable's tabs, envelope tabs, LFO tabs and drawing tools, the FM algorithm arrows, the
+  EQ's band switch. The check now fails on any silent control. "Everywhere" is true of device windows; the
+  arrangement, mixer, piano roll, session view and browser are not audited this way yet (they have tooltips
+  on most controls, but nothing proves all). 326 checks, quick tier.

@@ -4,6 +4,7 @@
 #include "Layouts.h"
 #include "MidiMapView.h"
 #include "Video.h"
+#include "HelpLine.h"
 #include "About.h"
 #include "UndoSync.h"
 #include "Common.h"
@@ -57,6 +58,7 @@ public:
         layoutBtn.setTooltip ("Window layouts: ready-made arrangements of the window for arranging, mixing, editing and playing clips, and your own");
         layoutBtn.onClick = [this] { showLayoutMenu(); };
         addAndMakeVisible (layoutBtn);
+        addAndMakeVisible (helpLine);   // what the thing under the mouse does, in the free part of the tab bar
 
         for (auto* b : { &devicesTab, &mixerTab, &pianoTab })
         {
@@ -139,6 +141,7 @@ public:
         tabBar = bottom.removeFromTop (30);
         auto tb = tabBar.reduced (8, 3);
         layoutBtn.setBounds (tb.removeFromRight (84));
+        helpLine.setBounds (tb.withTrimmedLeft (3 * 102 + 10).withTrimmedRight (8));
         for (auto* b : { &devicesTab, &mixerTab, &pianoTab })
         {
             b->setBounds (tb.removeFromLeft (100));
@@ -1699,6 +1702,7 @@ private:
     std::unique_ptr<CommandPalette> palette;
     Label learnBanner;
     int bannerShows = 0;
+    HelpLine::Line helpLine;
 
     std::unique_ptr<Push2Controller> push;   // declared before transport: transport polls its status
     TransportBar transport;

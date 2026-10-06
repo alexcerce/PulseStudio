@@ -376,6 +376,7 @@ namespace WavetableUI
             for (int l = 0; l < W::numLfos; ++l)
             {
                 auto* b = tabs.add (new TextButton ("LFO " + String (l + 1)));
+                b->setTooltip ("Show LFO " + String (l + 1) + ": its shape, rate and what it moves");
                 b->setClickingTogglesState (false);
                 b->setColour (TextButton::buttonColourId, Colours::transparentBlack);
                 b->setColour (TextButton::buttonOnColourId, sourceColour (l + 1).withAlpha (0.28f));

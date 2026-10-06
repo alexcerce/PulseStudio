@@ -594,6 +594,7 @@ namespace PrismUI
                 b->setColour (TextButton::textColourOnId, Colour (0xff111317));
                 b->setConnectedEdges ((i > 0 ? Button::ConnectedOnLeft : 0) | (i < labels.size() - 1 ? Button::ConnectedOnRight : 0));
                 b->onClick = [this, i] { param->getEdit().getUndoManager().beginNewTransaction ("Change " + param->getParameterName()); param->setParameter ((float) i, sendNotificationSync); };
+                b->setTooltip (p.getParameterName() + ": " + p.valueToString ((float) i));
                 addAndMakeVisible (b);
             }
             startTimerHz (10);

@@ -695,6 +695,8 @@ namespace DeviceEditors
             for (int i = 0; i < 4; ++i)
             {
                 auto* b = tabs.add (new LineTab (tabNames[i]));
+                const char* tabTips[] = { "The oscillators, filters, envelopes and LFOs", "The synth's own effects", "The modulation matrix: what moves what, and by how much", "Draw your own wavetable" };
+                b->setTooltip (tabTips[i]);
                 b->onClick = [this, i] { showTab (i); };
                 addAndMakeVisible (b);
                 addChildComponent (pages.add (new Component()));
@@ -759,6 +761,8 @@ namespace DeviceEditors
             for (int i = 0; i < 3; ++i)
             {
                 auto* b = envTabs.add (new LineTab (envNames[i]));
+                const char* envTips[] = { "The envelope of the level: how each note starts, holds and dies away", "The envelope that moves the filter", "A third envelope, to be used in the matrix" };
+                b->setTooltip (envTips[i]);
                 b->colour = i == 0 ? env : i == 1 ? filt : lfo;
                 b->onClick = [this, i] { showEnv (i); };
                 cEnv->addAndMakeVisible (b);
@@ -1343,6 +1347,8 @@ namespace DeviceEditors
             cAlgo = card ("ALGORITHM", Theme::orange);
             algo = std::make_unique<AlgoView> (f); cAlgo->addAndMakeVisible (*algo);
             algoBox = combo (*cAlgo, F::pAlgorithm);
+            prevAlgo.setTooltip ("The algorithm before this one (how the operators feed each other)");
+            nextAlgo.setTooltip ("The next algorithm (how the operators feed each other)");
             for (auto* b : { &prevAlgo, &nextAlgo })
             {
                 cAlgo->addAndMakeVisible (b);
@@ -1967,6 +1973,8 @@ namespace DeviceEditors
                 windowBtn.onClick = [sb] { sb->showEditor(); };
                 addAndMakeVisible (windowBtn);
             }
+            randomBtn.setTooltip ("Nudge every setting a little at random: a variation of the sound (undo brings the old one back)");
+            resetBtn.setTooltip ("Put every setting of this device back to where it starts");
             randomBtn.onClick = [this] { plugin->edit.getUndoManager().beginNewTransaction ("Randomise"); Random r; DeviceTools::randomise (*plugin, r, 0.3f); };
             resetBtn.onClick = [this] { plugin->edit.getUndoManager().beginNewTransaction ("Reset device"); DeviceTools::resetToDefaults (*plugin); };
             presetBtn.onClick = [this]

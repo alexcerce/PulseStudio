@@ -24,6 +24,7 @@
 #include "MidiLearn.h"
 #include "MidiMapView.h"
 #include "Video.h"
+#include "HelpLine.h"
 #include "SessionView.h"
 #include "Browser.h"
 #include "PluginWindow.h"
@@ -2490,6 +2491,93 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
             rep.check (wrong.isEmpty(), "Typing a value (units as the knobs show them, bare numbers in the unit shown, choices by name, more exact than the display, nonsense refused)",
                        wrong.isEmpty() ? String ("14 readings, 17 typed values on an EQ and a compressor") : wrong.joinIntoString ("; "));
             edit->deleteTrack (vt);
+            edit->getUndoManager().clearUndoHistory();
+        }
+
+        // --- v0.99.42: the help line ---------------------------------------------------------------------------
+        {
+            rep.step ("help line");
+            struct Tipped : public Component, public SettableTooltipClient {};
+            Tipped outer, inner, silent;
+            Component plain, lonely;
+            outer.setTooltip ("Drag to move.\nShift for fine steps.");
+            inner.setTooltip ("  Mute  ");
+            outer.addAndMakeVisible (inner);
+            outer.addAndMakeVisible (plain);
+            outer.addAndMakeVisible (silent);
+            const bool own = HelpLine::textFor (&inner) == "Mute";
+            const bool fromAbove = HelpLine::textFor (&plain) == "Drag to move.  Shift for fine steps." && HelpLine::textFor (&silent) == "Drag to move.  Shift for fine steps.";
+            const bool none = HelpLine::textFor (&lonely).isEmpty() && HelpLine::textFor (nullptr).isEmpty();
+            HelpLine::Line line;
+            line.setSize (400, 24);
+            line.showFor (&inner);
+            const bool shows = line.shown() == "Mute";
+            line.showFor (nullptr);
+            const bool clears = line.shown().isEmpty();
+            // a real control: a knob's help reaches the line from the slider inside it
+            auto ht = ClipImport::createContentTrack (*edit, "Help", false);
+            bool real = false;
+            {
+                PulseLookAndFeel laf;
+                LookAndFeel::setDefaultLookAndFeel (&laf);
+                EditViewState evs (*edit, sm);
+                ParamKnob knob (evs, *ht->getVolumePlugin()->volParam);
+                knob.setTooltip ("The track's level");
+                knob.setSize (64, 78);
+                Component* deepest = knob.getChildComponent (0);
+                real = deepest != nullptr && HelpLine::textFor (deepest).isNotEmpty();
+                LookAndFeel::setDefaultLookAndFeel (nullptr);
+            }
+            rep.check (own && fromAbove && none && shows && clears && real, "Help line (says what the thing under the mouse does: its own help, or that of what it sits in)",
+                       String (own ? "" : "own help wrong; ") + (fromAbove ? "" : "help from above wrong; ") + (none ? "" : "help out of nowhere; ") + (shows && clears ? "" : "line wrong; ") + (real ? "" : "a knob's help does not reach it; ") + "ok");
+            edit->deleteTrack (ht);
+            edit->getUndoManager().clearUndoHistory();
+        }
+
+        // --- v0.99.42: every control of every device window says what it is --------------------------------------
+        {
+            rep.step ("help audit");
+            auto at = ClipImport::createContentTrack (*edit, "HelpAudit", false);
+            StringArray silent;
+            int looked = 0, devices = 0;
+            {
+                PulseLookAndFeel laf;
+                LookAndFeel::setDefaultLookAndFeel (&laf);
+                EditViewState evs (*edit, sm);
+                for (auto& b : ClipImport::builtIns())
+                {
+                    auto p = edit->getPluginCache().createNewPlugin (b.type, {});
+                    auto* pp = dynamic_cast<pulse::PulsePlugin*> (p.get());
+                    if (pp == nullptr) continue;
+                    at->pluginList.insertPlugin (p, 0, nullptr);
+                    ++devices;
+                    DeviceEditors::Editor ed (evs, *pp);
+                    ed.setSize (1100, 760);
+                    std::function<void (Component&)> walk = [&] (Component& c)
+                    {
+                        // the things one can click, turn or choose from
+                        const bool control = dynamic_cast<Button*> (&c) != nullptr || dynamic_cast<Slider*> (&c) != nullptr || dynamic_cast<ComboBox*> (&c) != nullptr;
+                        if (control && c.isVisible())
+                        {
+                            ++looked;
+                            if (HelpLine::textFor (&c).isEmpty())
+                            {
+                                String what = dynamic_cast<Button*> (&c) != nullptr ? "button \"" + dynamic_cast<Button*> (&c)->getButtonText() + "\"" : dynamic_cast<Slider*> (&c) != nullptr ? String ("slider") : String ("box");
+                                silent.addIfNotAlreadyThere (String (b.name) + ": " + what);
+                            }
+                            if (dynamic_cast<ComboBox*> (&c) != nullptr || dynamic_cast<Slider*> (&c) != nullptr) return;   // (their inner parts speak through them)
+                        }
+                        for (auto* ch : c.getChildren()) walk (*ch);
+                    };
+                    walk (ed);
+                    p->deleteFromParent();
+                }
+                LookAndFeel::setDefaultLookAndFeel (nullptr);
+            }
+            rep.check (silent.isEmpty() && devices > 40 && looked > 500, "Every control in every device window has help (so the help line and the tooltips cover them all)",
+                       silent.isEmpty() ? String (looked) + " controls in " + String (devices) + " device windows"
+                                        : String (silent.size()) + " without help of " + String (looked) + ": " + silent.joinIntoString ("; ").substring (0, 6000));
+            edit->deleteTrack (at);
             edit->getUndoManager().clearUndoHistory();
         }
 

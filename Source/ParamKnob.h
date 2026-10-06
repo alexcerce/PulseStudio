@@ -87,6 +87,13 @@ public:
         timerCallback();   // show the value straight away
     }
 
+    /** A knob that was given no help of its own still says what it is, and how a knob is used. */
+    String getTooltip() override
+    {
+        const auto own = SettableTooltipClient::getTooltip();
+        return (own.isNotEmpty() ? own : param->getParameterName()) + "  (drag or use the wheel, double-click for the default, click the value to type one, right-click for more)";
+    }
+
     /** Sets the value from typed text (what the box under the knob does). False when the text means nothing here. */
     bool typeValue (const String& text)
     {
@@ -314,6 +321,7 @@ public:
                 param->getEdit().getUndoManager().beginNewTransaction ("Change " + param->getParameterName());
                 param->setParameter ((float) i, sendNotificationSync);
             };
+            b->setTooltip (p.getParameterName() + ": " + p.valueToString ((float) i));
             addAndMakeVisible (b);
         }
         if (showName)
@@ -327,6 +335,9 @@ public:
         startTimerHz (10);
         timerCallback();
     }
+
+    /** Help for the whole row of buttons (each button otherwise says the parameter's name and its own choice). */
+    void setTooltip (const String& t) { for (auto* b : buttons) b->setTooltip (t); }
 
     void setLabel (const String& t) { name.setText (t, dontSendNotification); }
 
@@ -437,6 +448,7 @@ public:
         const auto& r = p.valueRange;
         const int n = roundToInt (r.end - r.start) + 1;
         for (int i = 0; i < n; ++i) box.addItem (p.valueToString (r.start + (float) i), i + 1);
+        box.setTooltip (p.getParameterName());
         box.onChange = [this]
         {
             const float v = param->valueRange.start + (float) (box.getSelectedId() - 1);

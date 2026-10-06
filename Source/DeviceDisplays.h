@@ -69,6 +69,7 @@ namespace DeviceDisplays
             for (int i = 0; i < 2; ++i)
             {
                 auto* b = tabs.add (new TextButton (i == 0 ? "Start (Position 0%)" : "End (Position 100%)"));
+                b->setTooltip (i == 0 ? "Draw the wave the table starts with (Position at 0%)" : "Draw the wave the table ends with (Position at 100%): the table fades from one to the other");
                 b->setClickingTogglesState (false);
                 b->onClick = [this, i] { current = i; updateTabs(); repaint(); };
                 addAndMakeVisible (b);
@@ -77,6 +78,9 @@ namespace DeviceDisplays
             for (int i = 0; i < 8; ++i)
             {
                 auto* b = tools.add (new TextButton (shapes[i]));
+                const char* toolTips[] = { "Start from a sine", "Start from a triangle", "Start from a saw", "Start from a square", "Start from noise", "Smooth the drawn wave (round off its corners)",
+                                           "Make the drawn wave as tall as it can be", "Copy this wave to the other end of the table" };
+                b->setTooltip (toolTips[i]);
                 b->onClick = [this, i] { applyTool (i); };
                 addAndMakeVisible (b);
             }
@@ -450,6 +454,7 @@ namespace DeviceDisplays
                 addAndMakeVisible (btn);
             }
             onBtn.setClickingTogglesState (false);
+            onBtn.setTooltip ("Switch the chosen band on or off");
             onBtn.setColour (TextButton::buttonOnColourId, Theme::green);
             onBtn.onClick = [this]
             {
