@@ -322,6 +322,21 @@ namespace FactoryPresetsMore
                 { "Send (100% wet hall)", { { "space", 6 }, { "predelay", 20 }, { "lowcut", 150 }, { "mix", 1.0f } } } } },
 
             //----------------------------------------------------------------------------------
+            // Pulse Amp: model 0 clean, 1 crunch, 2 lead, 3 heavy, 4 bass; cabinet 0 none, 1 1x12 open, 2 2x12, 3 4x12 closed, 4 bass 1x15
+            { "pulseAmp", {
+                { "Sparkling Clean", { { "model", 0 }, { "gain", 0.35f }, { "bass", 0.45f }, { "mid", 0.4f }, { "treble", 0.65f }, { "presence", 0.6f }, { "cabinet", 1 }, { "mic", 0.2f } } },
+                { "Edge of Breakup", { { "model", 0 }, { "gain", 0.85f }, { "bass", 0.5f }, { "mid", 0.6f }, { "treble", 0.55f }, { "cabinet", 2 } } },
+                { "Blues Crunch", { { "model", 1 }, { "gain", 0.45f }, { "bass", 0.5f }, { "mid", 0.65f }, { "treble", 0.5f }, { "cabinet", 2 }, { "mic", 0.35f } } },
+                { "Classic Rock Rhythm", { { "model", 1 }, { "gain", 0.7f }, { "bass", 0.55f }, { "mid", 0.6f }, { "treble", 0.6f }, { "presence", 0.6f }, { "cabinet", 3 } } },
+                { "Singing Lead", { { "model", 2 }, { "gain", 0.7f }, { "bass", 0.45f }, { "mid", 0.75f }, { "treble", 0.5f }, { "presence", 0.55f }, { "cabinet", 3 }, { "mic", 0.4f } } },
+                { "Scooped Heavy", { { "model", 3 }, { "gain", 0.75f }, { "bass", 0.7f }, { "mid", 0.25f }, { "treble", 0.65f }, { "presence", 0.6f }, { "cabinet", 3 }, { "mic", 0.15f }, { "level", -3 } } },
+                { "Tight Modern Rhythm", { { "model", 3 }, { "gain", 0.6f }, { "bass", 0.5f }, { "mid", 0.5f }, { "treble", 0.55f }, { "cabinet", 3 }, { "mic", 0.25f }, { "level", -3 } } },
+                { "Round Bass", { { "model", 4 }, { "gain", 0.3f }, { "bass", 0.6f }, { "mid", 0.5f }, { "treble", 0.4f }, { "cabinet", 4 } } },
+                { "Driven Bass (parallel)", { { "model", 4 }, { "gain", 0.8f }, { "bass", 0.55f }, { "mid", 0.6f }, { "cabinet", 4 }, { "mix", 0.5f } } },
+                { "Gritty Keys (no cabinet)", { { "model", 1 }, { "gain", 0.4f }, { "cabinet", 0 }, { "mix", 0.6f } } },
+                { "Lo-fi Drums in a Combo", { { "model", 1 }, { "gain", 0.55f }, { "cabinet", 1 }, { "mic", 0.8f }, { "mix", 0.5f } } } } },
+
+            //----------------------------------------------------------------------------------
             // Frequency Shifter: mode 0 shift, 1 ring mod
             { "pulseShifter", {
                 { "Slow Phasing (0.3 Hz)", { { "shift", 0 }, { "fine", 0.3f }, { "mix", 0.5f } } },

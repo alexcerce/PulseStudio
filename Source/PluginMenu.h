@@ -127,6 +127,7 @@ namespace PluginMenu
         addBuiltIn<pulse::MultibandDynamics> (effects, edit, cb);
         addBuiltIn<pulse::GlueCompressor> (effects, edit, cb);
         addBuiltIn<pulse::Saturator> (effects, edit, cb);
+        addBuiltIn<pulse::Amp> (effects, edit, cb);
         addBuiltIn<pulse::AutoFilter> (effects, edit, cb);
         addBuiltIn<pulse::Limiter> (effects, edit, cb);
         addBuiltIn<pulse::Gate> (effects, edit, cb);

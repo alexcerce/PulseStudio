@@ -199,6 +199,7 @@ namespace SelfTest
         shoot (pulse::FreqShifter::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::FreqShifter::pShift, 240); p.set (pulse::FreqShifter::pLfoAmount, 120); }, "shot_shifter.png");
         shoot (pulse::Redux::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Redux::pRate, 6000); p.set (pulse::Redux::pBits, 4); }, "shot_redux.png");
         shoot (pulse::Exciter::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Exciter::pAmount, 0.6f); p.set (pulse::Exciter::pColour, 0.6f); }, "shot_exciter.png");
+        shoot (pulse::Amp::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Amp::pModel, 2); p.set (pulse::Amp::pGain, 0.7f); p.set (pulse::Amp::pMid, 0.7f); p.set (pulse::Amp::pCabinet, 3); }, "shot_amp.png");
         shoot (pulse::Gate::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Gate::pThreshold, -22); p.set (pulse::Gate::pRange, 40); p.set (pulse::Gate::pHysteresis, 6); }, "shot_gate.png");
         shoot (pulse::TransientShaper::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::TransientShaper::pAttack, 0.6f); p.set (pulse::TransientShaper::pSustain, -0.4f); }, "shot_transient.png");
         shoot (pulse::DeEsser::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::DeEsser::pThreshold, -36); p.set (pulse::DeEsser::pRange, 10); }, "shot_deesser.png");
@@ -4281,6 +4282,103 @@ namespace SelfTest
                     LookAndFeel::setDefaultLookAndFeel (nullptr);
                 }
                 fp2 = nullptr; rp2 = nullptr; ep2 = nullptr;
+            }
+
+            // --- Pulse Amp ---------------------------------------------------------------------------------
+            {
+                auto ap3 = edit->getPluginCache().createNewPlugin (pulse::Amp::xmlTypeName, {});
+                t->pluginList.insertPlugin (ap3, 0, nullptr);
+                auto* amp = dynamic_cast<pulse::Amp*> (ap3.get());
+                using AM = pulse::Amp;
+                AudioBuffer<float> out;
+                auto partDb = [&] (const AudioBuffer<float>& b, double hz)
+                {
+                    const int len = (int) (0.2 * sr), from = b.getNumSamples() - len;
+                    double re = 0, im = 0;
+                    for (int i = 0; i < len; ++i)
+                    {
+                        const double ph = MathConstants<double>::twoPi * hz * (from + i) / sr;
+                        re += b.getSample (0, from + i) * std::cos (ph); im += b.getSample (0, from + i) * std::sin (ph);
+                    }
+                    return Decibels::gainToDecibels ((float) (2.0 * std::sqrt (re * re + im * im) / len), -120.0f);
+                };
+                auto rms = [&] (const AudioBuffer<float>& b) { const int len = (int) (0.2 * sr); return Decibels::gainToDecibels (b.getRMSLevel (0, b.getNumSamples() - len, len), -120.0f); };
+                amp->set (AM::pCabinet, 0);
+                // clean and quiet: almost no harmonics; heavy and full up: plenty, and the level stays in hand
+                amp->set (AM::pModel, 0); amp->set (AM::pGain, 0.0f);
+                runFx (*amp, sine (440, 0.1f), 0.6, &out);
+                const float cleanH3 = partDb (out, 1320) - partDb (out, 440), cleanLevel = partDb (out, 440) + 20.0f;
+                amp->set (AM::pModel, 3); amp->set (AM::pGain, 1.0f);
+                const float heavyPeak = runFx (*amp, sine (440, 0.5f), 0.6, &out);
+                const float heavyH3 = partDb (out, 1320) - partDb (out, 440);
+                // gain changes the sound more than the volume
+                amp->set (AM::pModel, 1); amp->set (AM::pGain, 0.2f);
+                runFx (*amp, sine (440, 0.25f), 0.6, &out);
+                const float quietGain = rms (out);
+                float offset = 0;
+                amp->set (AM::pGain, 1.0f);
+                runFx (*amp, sine (440, 0.25f), 0.6, &out);
+                const float loudGain = rms (out);
+                for (int i = out.getNumSamples() - 9600; i < out.getNumSamples(); ++i) offset += out.getSample (0, i);
+                offset = std::abs (offset / 9600.0f);
+                // The worst case (a full-level 5 kHz sine through four clipping stages, no cabinet): what folds back to 13 kHz stays 28 dB down.
+                // (Twice the sample rate removes the first fold; very high harmonics of so square a wave still fold. A cabinet takes off 30 dB more.)
+                amp->set (AM::pModel, 3);
+                runFx (*amp, sine (5000, 0.5f), 0.6, &out);
+                const float folded = partDb (out, 13000) - partDb (out, 5000);
+                // the cabinet takes the fizz away, the display's curve agrees, and the bass control does what it says
+                amp->set (AM::pModel, 0); amp->set (AM::pGain, 0.2f);
+                const float openTop = runFx (*amp, sine (9000, 0.1f), 0.5);
+                amp->set (AM::pCabinet, 3);
+                const float cabTop = runFx (*amp, sine (9000, 0.1f), 0.5);
+                const float drawnTop = Decibels::gainToDecibels (amp->toneResponse (9000.0), -100.0f);
+                amp->set (AM::pCabinet, 0); amp->set (AM::pBass, 1.0f);
+                const float bassUp = runFx (*amp, sine (70, 0.1f), 0.5);
+                amp->set (AM::pBass, 0.0f);
+                const float bassDown = runFx (*amp, sine (70, 0.1f), 0.5);
+                amp->set (AM::pBass, 0.5f); amp->set (AM::pMix, 0.0f);
+                auto tone4 = sine (440, 0.25f);
+                runFx (*amp, tone4, 0.2, &out);
+                float ampDry = 0;
+                for (int i = 15; i < out.getNumSamples(); ++i) ampDry = jmax (ampDry, std::abs (out.getSample (0, i) - tone4 (0, (i - 15) / sr)));   // 15 samples late: its latency
+                amp->set (AM::pMix, 1.0f); amp->set (AM::pModel, 1); amp->set (AM::pGain, 0.5f); amp->set (AM::pCabinet, 2);
+                const bool ampOk = cleanH3 < -45.0f && heavyH3 > -20.0f && heavyPeak < -3.0f && heavyPeak > -14.0f && std::abs (cleanLevel) < 3.0f && folded < -28.0f && std::abs (amp->getLatencySeconds() * sr - 15.0) < 0.01 && std::abs (loudGain - quietGain) < 14.0f && offset < 0.01f
+                                   && cabTop < openTop - 18.0f && std::abs (drawnTop - (cabTop - openTop)) < 3.0f && bassUp > bassDown + 14.0f && ampDry < 1.0e-6f;
+                rep.check (ampOk, "Pulse Amp (clean stays clean, heavy distorts without getting louder, no fold-back, cabinet and tone controls, the display agrees)",
+                           "3rd harmonic clean " + String (roundToInt (cleanH3)) + " dB (level " + String (cleanLevel, 1) + "), heavy " + String (roundToInt (heavyH3)) + " (peak " + String (heavyPeak, 1) + " dBFS); gain 2 -> 10 changes the level by " + String (loudGain - quietGain, 1)
+                           + " dB; folded harmonic " + String (roundToInt (folded)) + " dB; 9 kHz through the 4x12 " + String (cabTop - openTop, 1) + " dB (drawn " + String (drawnTop, 1) + "); bass control " + String (bassUp - bassDown, 1) + " dB at 70 Hz; standing offset " + String (offset, 4) + ", dry error " + String (ampDry, 6)
+                           + ", latency " + String (amp->getLatencySeconds() * sr, 2) + " samples");
+                {
+                    PulseLookAndFeel laf;
+                    LookAndFeel::setDefaultLookAndFeel (&laf);
+                    EditViewState evs (*edit, sm);
+                    AmpUI::AmpView view (*amp);
+                    view.setSize (1000, 520);
+                    Image img (Image::ARGB, 1000, 520, true);
+                    { Graphics g (img); view.paint (g); }
+                    const float b0 = amp->get (AM::pBass), m0 = amp->get (AM::pMid), g0 = amp->get (AM::pGain);
+                    view.dragHandle (0, 0.0f, -30.0f);
+                    view.dragHandle (1, 0.0f, 30.0f);
+                    view.dragHandle (4, 40.0f, 0.0f);
+                    const bool handlesOk = amp->get (AM::pBass) > b0 + 0.05f && amp->get (AM::pMid) < m0 - 0.05f && amp->get (AM::pGain) > g0 + 0.05f && view.getNumHandles() == 5;
+                    DeviceEditors::Editor ed (evs, *amp);
+                    ed.setSize (1100, 760);
+                    std::set<te::AutomatableParameter*> seen;
+                    std::function<void (Component&)> walk = [&] (Component& c)
+                    {
+                        if (auto* k = dynamic_cast<ParamKnob*> (&c)) seen.insert (&k->getParameter());
+                        if (auto* k = dynamic_cast<ParamChoice*> (&c)) seen.insert (&k->getParameter());
+                        if (auto* k = dynamic_cast<ParamCombo*> (&c)) seen.insert (&k->getParameter());
+                        for (auto* chd : c.getChildren()) walk (*chd);
+                    };
+                    walk (ed);
+                    StringArray missing;
+                    for (int i = 0; i < amp->numParams(); ++i) if (! seen.count (&*amp->param (i))) missing.add (amp->param (i)->paramID);
+                    rep.check (handlesOk && missing.isEmpty() && DeviceEditors::hasFullEditor (*amp), "Pulse Amp window: tone controls and gain are points on the graphs, and every parameter has a control",
+                               missing.isEmpty() ? "bass " + String (b0, 2) + " -> " + String (amp->get (AM::pBass), 2) + ", gain " + String (g0, 2) + " -> " + String (amp->get (AM::pGain), 2) : missing.joinIntoString (", "));
+                    LookAndFeel::setDefaultLookAndFeel (nullptr);
+                }
+                ap3 = nullptr;
             }
 
             // displays build

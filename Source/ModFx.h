@@ -5,6 +5,20 @@
 /** Modulation effects: Pulse Chorus (chorus, ensemble, vibrato), Phaser-Flanger and Auto Pan (auto-pan and tremolo). */
 namespace pulse
 {
+    /** A value that moves to its target without steps (for settings changed while playing). */
+    struct ParamSmooth
+    {
+        float v = 0.0f;
+        bool started = false;
+        inline float next (float target, float coeff) noexcept
+        {
+            if (! started) { v = target; started = true; }
+            v = target + (v - target) * coeff;
+            return v;
+        }
+        void reset() { started = false; }
+    };
+
     /** What the three have in common: an LFO that runs free or in time with the song, and the tempo to do it. */
     class ModEffect : public PulseEffect, private Timer
     {
@@ -35,19 +49,7 @@ namespace pulse
         }
         void lfoEnd (double phase) { freePhase = phase - std::floor (phase); lfoPhase.store ((float) freePhase); }
 
-        /** A value that moves to its target without steps (for settings changed while playing). */
-        struct Smooth
-        {
-            float v = 0.0f;
-            bool started = false;
-            inline float next (float target, float coeff) noexcept
-            {
-                if (! started) { v = target; started = true; }
-                v = target + (v - target) * coeff;
-                return v;
-            }
-            void reset() { started = false; }
-        };
+        using Smooth = ParamSmooth;
 
         double freePhase = 0.0;
         std::atomic<double> bpm { 120.0 };

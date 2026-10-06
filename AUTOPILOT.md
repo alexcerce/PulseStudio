@@ -161,7 +161,7 @@ well EVERYWHERE." So, besides the list:
 
 1. Effects: [x] transient shaper  [x] de-esser  [x] gate / expander  [x] convolution reverb (built-in spaces)
    [ ] shimmer reverb  [ ] spectral (freeze / blur / shift / spectral delay)  [x] chorus / flanger / phaser
-   [x] tremolo / auto-pan  [x] frequency shifter  [x] bit reduction  [ ] amp + cabinet  [x] exciter  [ ] beat repeat
+   [x] tremolo / auto-pan  [x] frequency shifter  [x] bit reduction  [x] amp + cabinet  [x] exciter  [ ] beat repeat
    [ ] grain delay  [ ] looper  [ ] resonators
 2. Instruments: [ ] Wavetable third oscillator + wavetable import from audio  [ ] sampler (slices, per-slice stretch,
    zones)  [ ] analogue-style subtractive synth  [ ] physical-modelling instrument (string / mallet)
@@ -421,3 +421,8 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   (one command of all three went over the 10-minute limit).
 - 2026-10-06: testing split into two tiers at the owner's request (see Testing). v0.99.10 had the Debug self-test
   (267 pass) but no monkey / command-fuzz run: owed at the end of group 1, with everything after v0.99.9.
+- 2026-10-06: v0.99.11. Pulse Amp (Source/AmpFx.h, AmpFxDisplay.h): valve stages at 2 x the sample rate through a
+  31-tap Kaiser half-band each way (taps worked out at start-up), dry path delayed to match, latency reported.
+  Known limit, written into its test: a full-level 5 kHz sine through the four-stage Heavy amp with no cabinet
+  still folds back at -30 dB (very high harmonics of a near-square wave); 4 x or anti-aliased clipping would be
+  the next step if it is ever heard. 11 presets, 270 checks. Quick tier only (slow tier owed for group 1).

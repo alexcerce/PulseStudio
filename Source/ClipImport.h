@@ -86,6 +86,7 @@ namespace ClipImport
             { "Multiband Dynamics", pulse::MultibandDynamics::xmlTypeName, false },
             { "Glue Compressor", pulse::GlueCompressor::xmlTypeName, false },
             { "Saturator",    pulse::Saturator::xmlTypeName,       false },
+            { "Pulse Amp",    pulse::Amp::xmlTypeName,             false },
             { "Auto Filter",  pulse::AutoFilter::xmlTypeName,      false },
             { "Limiter",      pulse::Limiter::xmlTypeName,         false },
             { "Pulse Gate",   pulse::Gate::xmlTypeName,            false },
