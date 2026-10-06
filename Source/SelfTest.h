@@ -192,6 +192,7 @@ namespace SelfTest
             m.set (M::idx (2, M::bThreshold), -35); m.set (M::idx (2, M::bRatio), 3);
         }, "shot_multiband.png");
         shoot (pulse::Limiter::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Limiter::pGain, 8); p.set (pulse::Limiter::pCeiling, -1); }, "shot_limiter.png");
+        shoot (pulse::ConvolutionReverb::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::ConvolutionReverb::pPredelay, 40); p.set (pulse::ConvolutionReverb::pLowCut, 180); p.set (pulse::ConvolutionReverb::pHighCut, 9000); }, "shot_space.png");
         shoot (pulse::Gate::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Gate::pThreshold, -22); p.set (pulse::Gate::pRange, 40); p.set (pulse::Gate::pHysteresis, 6); }, "shot_gate.png");
         shoot (pulse::TransientShaper::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::TransientShaper::pAttack, 0.6f); p.set (pulse::TransientShaper::pSustain, -0.4f); }, "shot_transient.png");
         shoot (pulse::DeEsser::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::DeEsser::pThreshold, -36); p.set (pulse::DeEsser::pRange, 10); }, "shot_deesser.png");
@@ -3880,6 +3881,131 @@ namespace SelfTest
                     LookAndFeel::setDefaultLookAndFeel (nullptr);
                 }
                 gp = nullptr; tp2 = nullptr; dp2 = nullptr;
+            }
+
+            // --- Pulse Space (convolution reverb) ---------------------------------------------------------
+            {
+                auto sp2 = edit->getPluginCache().createNewPlugin (pulse::ConvolutionReverb::xmlTypeName, {});
+                t->pluginList.insertPlugin (sp2, 0, nullptr);
+                auto* space = dynamic_cast<pulse::ConvolutionReverb*> (sp2.get());
+                using C = pulse::ConvolutionReverb;
+                auto click = [] (int, double tm) { return tm == 0.0 ? 1.0f : 0.0f; };
+                auto rmsDb = [&] (const AudioBuffer<float>& b, double from, double len)
+                {
+                    const int a = jlimit (0, b.getNumSamples() - 1, (int) (from * sr)), n = jlimit (1, b.getNumSamples() - a, (int) (len * sr));
+                    return Decibels::gainToDecibels (b.getRMSLevel (0, a, n), -140.0f);
+                };
+                std::array<float, C::shapeSize> shape {};
+                double secs = 0, secsBig = 0, secsShort = 0;
+                AudioBuffer<float> out;
+
+                // the Hall: a click turns into a tail that dies away; Size stretches it, Decay shortens it
+                space->set (C::pSpace, 6); space->set (C::pMix, 1.0f); space->set (C::pLowCut, 20); space->set (C::pHighCut, 20000);
+                runFx (*space, click, 3.2, &out);
+                space->getShape (shape, secs);
+                const float early = rmsDb (out, 0.1, 0.2), late = rmsDb (out, 1.6, 0.2), gone = rmsDb (out, 3.0, 0.15);
+                space->set (C::pSize, 2.0f);
+                runFx (*space, click, 0.1);
+                space->getShape (shape, secsBig);
+                space->set (C::pSize, 1.0f); space->set (C::pDecay, 0.5f);
+                runFx (*space, click, 0.1);
+                space->getShape (shape, secsShort);
+                space->set (C::pDecay, 1.0f);
+                // predelay: nothing comes out before it
+                space->set (C::pPredelay, 100.0f);
+                runFx (*space, click, 0.4, &out);
+                const float beforePre = rmsDb (out, 0.0, 0.095), afterPre = rmsDb (out, 0.1, 0.1);
+                space->set (C::pPredelay, 0.0f);
+                // reverse: it swells instead of dying away
+                space->set (C::pReverse, 1.0f);
+                runFx (*space, click, 3.2, &out);
+                const float revStart = rmsDb (out, 0.3, 0.2), revEnd = rmsDb (out, 2.4, 0.2);
+                space->set (C::pReverse, 0.0f);
+                // every space comes out about as loud as what goes in (steady noise at -20 dB)
+                String levels;
+                float worstLevel = 0;
+                for (int which : { 0, 4, 5, 6, 10 })
+                {
+                    space->set (C::pSpace, (float) which);
+                    Random rng (99);
+                    runFx (*space, [&rng] (int, double) { return (rng.nextFloat() * 2.0f - 1.0f) * 0.1732f; }, 3.6, &out);   // -20 dB RMS
+                    const float lv = rmsDb (out, 3.0, 0.6) + 20.0f;
+                    levels << pulse::SpaceIR::spaces[which].name << " " << String (lv, 1) << "  ";
+                    worstLevel = jmax (worstLevel, std::abs (lv));
+                }
+                // dry/wet at zero gives back what went in
+                space->set (C::pSpace, 6); space->set (C::pMix, 0.0f);
+                auto tone = sine (440, 0.3f);
+                runFx (*space, tone, 0.2, &out);
+                float dryErr = 0;
+                for (int i = 0; i < out.getNumSamples(); ++i) dryErr = jmax (dryErr, std::abs (out.getSample (0, i) - tone (0, i / sr)));
+                space->set (C::pMix, 1.0f);
+                // an audio file as the space; a file that is not there falls back to the Hall
+                auto irFile = dir.getChildFile ("space_test.wav");
+                irFile.deleteFile();
+                {
+                    AudioBuffer<float> ir (2, 24000);
+                    Random rng (5);
+                    for (int c = 0; c < 2; ++c) for (int i = 0; i < 24000; ++i) ir.setSample (c, i, (rng.nextFloat() * 2.0f - 1.0f) * std::exp (-i / 4000.0f));
+                    WavAudioFormat wav;
+                    if (auto os = irFile.createOutputStream())
+                        if (std::unique_ptr<AudioFormatWriter> w { wav.createWriterFor (os.release(), 48000.0, 2, 24, {}, 0) }) w->writeFromAudioSampleBuffer (ir, 0, 24000);
+                }
+                double secsFile = 0, secsMissing = 0;
+                space->setFile (irFile);
+                runFx (*space, click, 0.8, &out);
+                space->getShape (shape, secsFile);
+                const bool fileOk = space->usingFile() && std::abs (secsFile - 0.5) < 0.01 && rmsDb (out, 0.0, 0.1) > -60.0f && rmsDb (out, 0.6, 0.15) < -100.0f;
+                space->setFile (dir.getChildFile ("not_there.wav"));
+                runFx (*space, click, 0.3, &out);
+                space->getShape (shape, secsMissing);
+                const bool missingOk = ! space->usingFile() && std::abs (secsMissing - secs) < 0.01 && rmsDb (out, 0.1, 0.1) > -80.0f;
+                space->setFile ({});
+                const bool spaceOk = early > late + 12.0f && late > -90.0f && gone < late - 20.0f && std::abs (secs - 2.81) < 0.02 && std::abs (secsBig - 5.57) < 0.03 && std::abs (secsShort - 1.43) < 0.02
+                                     && beforePre < -120.0f && afterPre > -70.0f && revEnd > revStart + 10.0f && worstLevel < 1.5f && dryErr < 1.0e-6f && fileOk && missingOk
+                                     && space->getLatencySeconds() == 0.0;
+                rep.check (spaceOk, "Pulse Space (tail dies away, size, decay, predelay, reverse, even loudness, a file as the space)",
+                           "Hall " + String (secs, 2) + " s (size 200% " + String (secsBig, 2) + ", decay 50% " + String (secsShort, 2) + "), tail " + String (roundToInt (early)) + " > " + String (roundToInt (late)) + " > " + String (roundToInt (gone))
+                           + " dB, before predelay " + String (roundToInt (beforePre)) + ", reverse " + String (roundToInt (revStart)) + " -> " + String (roundToInt (revEnd)) + ", levels: " + levels.trim()
+                           + ", file " + String (secsFile, 2) + " s" + (fileOk ? "" : " WRONG") + (missingOk ? "" : ", missing file WRONG"));
+
+                // its window
+                {
+                    PulseLookAndFeel laf;
+                    LookAndFeel::setDefaultLookAndFeel (&laf);
+                    EditViewState evs (*edit, sm);
+                    SpaceUI::ConvolutionView view (*space);
+                    view.setSize (1000, 560);
+                    Image img (Image::ARGB, 1000, 560, true);
+                    { Graphics g (img); view.paint (g); }
+                    const float pre0 = space->get (C::pPredelay), size0 = space->get (C::pSize), decay0 = space->get (C::pDecay), low0 = space->get (C::pLowCut), high0 = space->get (C::pHighCut);
+                    view.dragHandle (0, 40.0f, 0.0f);
+                    view.dragHandle (1, 80.0f, 0.0f);
+                    view.dragDecay (40.0f);
+                    view.dragHandle (3, 60.0f, 0.0f);
+                    view.dragHandle (4, -60.0f, 0.0f);
+                    const bool handlesOk = space->get (C::pPredelay) > pre0 + 20.0f && space->get (C::pSize) > size0 + 0.05f && space->get (C::pDecay) < decay0 - 0.05f
+                                           && space->get (C::pLowCut) > low0 + 10.0f && space->get (C::pHighCut) < high0 - 500.0f;
+                    DeviceEditors::Editor ed (evs, *space);
+                    ed.setSize (1100, 760);
+                    std::set<te::AutomatableParameter*> seen;
+                    std::function<void (Component&)> walk = [&] (Component& c)
+                    {
+                        if (auto* k = dynamic_cast<ParamKnob*> (&c)) seen.insert (&k->getParameter());
+                        if (auto* k = dynamic_cast<ParamCombo*> (&c)) seen.insert (&k->getParameter());
+                        if (auto* k = dynamic_cast<ParamToggle*> (&c)) seen.insert (&k->getParameter());
+                        for (auto* ch : c.getChildren()) walk (*ch);
+                    };
+                    walk (ed);
+                    StringArray missing;
+                    for (int i = 0; i < space->numParams(); ++i) if (! seen.count (&*space->param (i))) missing.add (space->param (i)->paramID);
+                    rep.check (handlesOk && missing.isEmpty() && DeviceEditors::hasFullEditor (*space) && view.getNumHandles() == 5,
+                               "Pulse Space window: predelay, length, decay and tone are points on the graph, and every parameter has a control",
+                               missing.isEmpty() ? "size " + String (size0, 2) + " -> " + String (space->get (C::pSize), 2) + ", decay " + String (decay0, 2) + " -> " + String (space->get (C::pDecay), 2)
+                                                 : missing.joinIntoString (", "));
+                    LookAndFeel::setDefaultLookAndFeel (nullptr);
+                }
+                sp2 = nullptr;
             }
 
             // displays build

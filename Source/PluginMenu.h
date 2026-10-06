@@ -133,6 +133,7 @@ namespace PluginMenu
         addBuiltIn<pulse::TransientShaper> (effects, edit, cb);
         addBuiltIn<pulse::DeEsser> (effects, edit, cb);
         addBuiltIn<pulse::Reverb> (effects, edit, cb);
+        addBuiltIn<pulse::ConvolutionReverb> (effects, edit, cb);
         addBuiltIn<pulse::Delay> (effects, edit, cb);
         addBuiltIn<pulse::Vocoder> (effects, edit, cb);
         addBuiltIn<pulse::PitchCorrect> (effects, edit, cb);

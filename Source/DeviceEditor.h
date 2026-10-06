@@ -1630,6 +1630,8 @@ namespace DeviceEditors
             add ("De-esser", std::make_unique<DynamicsUI::DeEsserPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::Reverb*> (&p))
             add ("Reverb", std::make_unique<SpaceUI::ReverbPanel> (evs, *s));
+        else if (auto s = dynamic_cast<pulse::ConvolutionReverb*> (&p))
+            add ("Space", std::make_unique<SpaceUI::ConvolutionPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::Delay*> (&p))
             add ("Delay", std::make_unique<SpaceUI::DelayPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::Saturator*> (&p))
@@ -1679,6 +1681,7 @@ namespace DeviceEditors
             || dynamic_cast<pulse::DrumSynth*> (&p) != nullptr
             || dynamic_cast<pulse::Reverb*> (&p) != nullptr || dynamic_cast<pulse::Delay*> (&p) != nullptr || dynamic_cast<pulse::Saturator*> (&p) != nullptr
             || dynamic_cast<pulse::MultibandDynamics*> (&p) != nullptr || dynamic_cast<pulse::Limiter*> (&p) != nullptr
+            || dynamic_cast<pulse::ConvolutionReverb*> (&p) != nullptr
             || dynamic_cast<pulse::Gate*> (&p) != nullptr || dynamic_cast<pulse::TransientShaper*> (&p) != nullptr || dynamic_cast<pulse::DeEsser*> (&p) != nullptr;
     }
 

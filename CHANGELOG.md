@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.8 - 2026-10-06
+
+- New effect: Pulse Space, a convolution reverb with twelve built-in spaces; any audio file can be loaded as a space
+
 ## 0.99.7 - 2026-10-05
 
 - New effect: Pulse Gate (gate, expander and ducker with hysteresis, hold, lookahead and a filtered key)

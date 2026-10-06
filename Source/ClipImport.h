@@ -92,6 +92,7 @@ namespace ClipImport
             { "Transient Shaper", pulse::TransientShaper::xmlTypeName, false },
             { "De-esser",     pulse::DeEsser::xmlTypeName,         false },
             { "Pulse Reverb", pulse::Reverb::xmlTypeName,          false },
+            { "Pulse Space",  pulse::ConvolutionReverb::xmlTypeName, false },
             { "Pulse Delay",  pulse::Delay::xmlTypeName,           false },
             { "Vocoder",      pulse::Vocoder::xmlTypeName,         false },
             { "Pitch Correction", pulse::PitchCorrect::xmlTypeName, false },

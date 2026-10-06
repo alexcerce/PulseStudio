@@ -1883,6 +1883,7 @@ namespace pulse
 #include "PrismEQ.h"
 #include "Dynamics.h"
 #include "Dynamics2.h"
+#include "Convolution.h"
 
 namespace pulse
 {
@@ -1904,6 +1905,7 @@ namespace pulse
         pm.createBuiltInType<Gate>();
         pm.createBuiltInType<TransientShaper>();
         pm.createBuiltInType<DeEsser>();
+        pm.createBuiltInType<ConvolutionReverb>();
         pm.createBuiltInType<Arpeggiator>();
         pm.createBuiltInType<ChordFx>();
         pm.createBuiltInType<ScaleFx>();

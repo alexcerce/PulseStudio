@@ -303,6 +303,25 @@ namespace FactoryPresetsMore
                 { "Tape Glue (Bus)", { { "type", 1 }, { "drive", 4 }, { "tone", -0.15f }, { "mix", 1.0f } } } } },
 
             //----------------------------------------------------------------------------------
+            // Pulse Space: 0 small room, 1 tiled room, 2 studio, 3 chamber, 4 plate, 5 spring, 6 hall, 7 large hall, 8 cathedral, 9 canyon, 10 gated, 11 bloom
+            { "pulseSpace", {
+                { "Drum Room", { { "space", 0 }, { "size", 1.1f }, { "lowcut", 120 }, { "highcut", 12000 }, { "mix", 0.22f } } },
+                { "Tiled Bathroom", { { "space", 1 }, { "lowcut", 200 }, { "highcut", 16000 }, { "mix", 0.3f } } },
+                { "Vocal Booth Air", { { "space", 2 }, { "size", 0.8f }, { "predelay", 10 }, { "lowcut", 180 }, { "mix", 0.15f } } },
+                { "Echo Chamber", { { "space", 3 }, { "predelay", 25 }, { "lowcut", 150 }, { "highcut", 9000 }, { "mix", 0.3f } } },
+                { "Vocal Plate", { { "space", 4 }, { "predelay", 40 }, { "lowcut", 250 }, { "highcut", 11000 }, { "mix", 0.25f } } },
+                { "Snare Plate (short)", { { "space", 4 }, { "decay", 0.5f }, { "lowcut", 300 }, { "mix", 0.3f } } },
+                { "Guitar Spring", { { "space", 5 }, { "lowcut", 200 }, { "highcut", 6000 }, { "mix", 0.3f } } },
+                { "Concert Hall", { { "space", 6 }, { "predelay", 20 }, { "lowcut", 100 }, { "mix", 0.3f } } },
+                { "Strings Hall (wide)", { { "space", 7 }, { "predelay", 30 }, { "width", 1.4f }, { "highcut", 9000 }, { "mix", 0.35f } } },
+                { "Cathedral Pad", { { "space", 8 }, { "lowcut", 200 }, { "highcut", 7000 }, { "mix", 0.5f } } },
+                { "Canyon Echoes", { { "space", 9 }, { "size", 1.3f }, { "lowcut", 250 }, { "mix", 0.35f } } },
+                { "80s Gated Snare", { { "space", 10 }, { "size", 0.9f }, { "lowcut", 200 }, { "mix", 0.45f } } },
+                { "Reverse Swell", { { "space", 6 }, { "reverse", 1 }, { "decay", 0.6f }, { "lowcut", 200 }, { "mix", 0.5f } } },
+                { "Blooming Pad", { { "space", 11 }, { "size", 1.4f }, { "width", 1.6f }, { "lowcut", 150 }, { "mix", 0.6f } } },
+                { "Send (100% wet hall)", { { "space", 6 }, { "predelay", 20 }, { "lowcut", 150 }, { "mix", 1.0f } } } } },
+
+            //----------------------------------------------------------------------------------
             // Pulse Gate: mode 0 gate, 1 expander, 2 ducker
             { "pulseGate", {
                 { "Tight Drum Gate", { { "threshold", -30 }, { "range", 80 }, { "hysteresis", 4 }, { "attack", 0.05f }, { "hold", 20 }, { "release", 60 }, { "lookahead", 1.5f } } },

@@ -143,7 +143,7 @@ well EVERYWHERE." So, besides the list:
   shown instead)  [ ] first-run experience: audio set-up check, demo project, short tour
 - Nothing that already works is taken away, and a rough edge found on the way is fixed then, or written here.
 
-1. Effects: [x] transient shaper  [x] de-esser  [x] gate / expander  [ ] convolution reverb (built-in spaces)
+1. Effects: [x] transient shaper  [x] de-esser  [x] gate / expander  [x] convolution reverb (built-in spaces)
    [ ] shimmer reverb  [ ] spectral (freeze / blur / shift / spectral delay)  [ ] chorus / flanger / phaser
    [ ] tremolo / auto-pan  [ ] frequency shifter  [ ] bit reduction  [ ] amp + cabinet  [ ] exciter  [ ] beat repeat
    [ ] grain delay  [ ] looper  [ ] resonators
@@ -391,3 +391,8 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   the Drum Rack (buttons inside the detail rebuilt it during their own click): fixed, seeds 606 and 607 clean.
   The stalls were the PC going to sleep, not a prompt (see Lock). Not judged by ear. De-esser display could
   still get a live spectrum behind the band.
+- 2026-10-06: v0.99.8. Pulse Space (convolution reverb): Source/Convolution.h (SpaceIR makes the twelve spaces;
+  juce::dsp::Convolution, non-uniform, zero latency; the response is rebuilt on a 12 Hz message-thread timer when
+  space / size / decay / reverse / file change, and synchronously in prepare() so renders are right from the first
+  block), ConvolutionDisplay.h (five handles). A file as the space is the state property "irFile". 15 presets.
+  253 checks. Ideas left: a live spectrum behind the De-esser band; drag a file onto the Pulse Space window.
