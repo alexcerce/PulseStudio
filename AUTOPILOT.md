@@ -982,3 +982,11 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   takes the first of Replika / Phasis / Choral / Flair). Until then the Release self-test is 342 of 343.
   A mistake of mine to avoid: I stopped a test run with taskkill by NAME; only my test was running, but that
   would also close the owner's own Pulse Studio. Stop test runs by process id.
+- 2026-10-07: slow tier for v0.99.60 to v0.99.62 finished: Debug build; Debug self-test 341 pass and the one open
+  sandbox check (run before the Prism EQ change, which the Release self-test covers: 342 of 343); random input 4000
+  events on the demo (seed 611) and on the 30-track project (seed 612), no crash and no stall over 100 ms; command
+  fuzz 768 commands (seed 613) clean; installer PulseStudio-0.99.62-Setup.exe. All of the random-input and fuzz runs
+  were the Release build. Group 7 (Techno) is complete. Next: find out about the sandbox check (see above) FIRST;
+  then what is left: per-note pitch and time editing of audio (group 4), the open quality-of-life items (drag
+  anything anywhere, consistent modifier keys, sortable lists, nothing blocking over 100 ms), the one-hour --soak,
+  and whatever the owner says about the demo song, the drum machine and the Performance window.
