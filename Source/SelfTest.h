@@ -1450,6 +1450,74 @@ namespace SelfTest
                        "Step grid for drum clips (a row per pad, hits in and out, fill / shift / clear a row, undo, triplet steps, inside the piano roll)",
                        String ((int) rws.size()) + " rows, " + String (grid.numSteps()) + " steps"
                        + (sized ? "" : "; size wrong") + (put && taken ? "" : "; toggling wrong") + (onBeats && shifted && wrapped && backbeat ? "" : "; row tools wrong") + (undone ? "" : "; undo wrong") + (swapped ? "" : "; not shown in the piano roll"));
+            // --- v0.99.54: pattern rows: a length of its own, repeats inside a step, a chance of playing ---------
+            {
+                auto mc2 = te::insertMIDIClip (*st, "poly", { EngineHelpers::beatToTime (*edit, 8.0), EngineHelpers::beatToTime (*edit, 24.0) });
+                grid.setClip (mc2.get());
+                auto& seq2 = mc2->getSequence();
+                auto count = [&] (int pitch) { int c = 0; for (auto* nn : seq2.getNotes()) if (nn->getNoteNumber() == pitch) ++c; return c; };
+                auto starts = [&] (int pitch) { String s; for (int k = 0; k < grid.numSteps(); ++k) s << (grid.noteAt (pitch, k) != nullptr ? "x" : "."); return s; };
+                const int hat = rws.size() >= 3 ? rws[rws.size() - 3].note : 42;
+                grid.fillRow (kick, 4);
+                // seven steps under sixteen: hits on its steps 1 and 4 come round ten and nine times in 64 steps
+                grid.setRowLength (snare, 7);
+                grid.setHit (snare, 0, 100);
+                grid.setHit (snare, 3, 90);
+                const bool poly = grid.numSteps() == 64 && grid.rowLength (snare) == 7 && count (snare) == 19 && count (kick) == 16 && grid.noteAt (snare, 7) != nullptr
+                                  && grid.noteAt (snare, 10) != nullptr && grid.noteAt (snare, 10)->getVelocity() == 90 && grid.noteAt (snare, 8) == nullptr && ! grid.isPatternRow (kick);
+                // a click on a repeat edits the row's own step: step 9 is its step 2, heard at 2, 9, 16...
+                grid.setHit (snare, 8, 100);
+                const bool repeatEdits = grid.noteAt (snare, 1) != nullptr && grid.noteAt (snare, 15) != nullptr && count (snare) == 28;
+                // three repeats inside the kick's second beat: two notes more, each a third of a step long, and undo takes them away
+                grid.setRatchet (kick, 4, 3);
+                int inStep = 0; double shortest = 1.0;
+                for (auto* nn : seq2.getNotes())
+                    if (nn->getNoteNumber() == kick && nn->getStartBeat().inBeats() >= 1.0 - 1e-6 && nn->getStartBeat().inBeats() < 1.25 - 1e-6) { ++inStep; shortest = jmin (shortest, nn->getLengthBeats().inBeats()); }
+                const bool ratchet = count (kick) == 18 && inStep == 3 && shortest < 0.25 / 3.0 && shortest > 0.05 && grid.ratchetAt (kick, 4) == 3 && grid.isPatternRow (kick);
+                edit->getUndoManager().undo();
+                const bool ratchetUndone = count (kick) == 16 && grid.ratchetAt (kick, 4) == 1;
+                edit->getUndoManager().redo();
+                // chance: a row of sixteenths at one in two plays about half its 64 steps, differently in each bar; the
+                // dice thrown again give other steps; a chance of none plays nothing, and the pattern is still there
+                grid.fillRow (hat, 1);
+                grid.setRowLength (hat, 16);
+                for (int k = 0; k < 16; ++k) grid.setChance (hat, k, 50);
+                const auto first = starts (hat);
+                const int played = count (hat);
+                const bool half = played > 16 && played < 48 && first.substring (0, 16) != first.substring (16, 32) && grid.chanceAt (hat, 5) == 50 && grid.chanceAt (hat, 21) == 50;
+                const auto same = starts (hat);
+                grid.rollAgain();
+                const bool rolled = starts (hat) != first && same == first && count (hat) > 16 && count (hat) < 48;
+                for (int k = 0; k < 16; ++k) grid.setChance (hat, k, 0);
+                const bool never = count (hat) == 0 && grid.velocityAt (hat, 3) > 0;
+                for (int k = 0; k < 16; ++k) grid.setChance (hat, k, 100);
+                const bool always = count (hat) == 64;
+                // the pattern is kept with the clip (it is there for a grid that opens the clip afresh), a row is unfolded
+                // when it is made as long as the clip again, and "plain notes" leaves the notes and forgets the rest
+                StepGrid other (sevs);
+                other.setSize (1100, 400);
+                other.setClip (mc2.get());
+                const bool kept = other.rowLength (snare) == 7 && other.ratchetAt (kick, 4) == 3 && mc2->state.getChildWithName ("STEPROWS").getNumChildren() == 3;
+                other.setClip (nullptr);
+                Image img2 (Image::ARGB, 1100, 400, true);
+                grid.setChance (hat, 2, 50); grid.setChance (hat, 6, 25); grid.setRatchet (hat, 12, 4);
+                { PulseLookAndFeel laf; LookAndFeel::setDefaultLookAndFeel (&laf); Graphics g (img2); grid.paint (g); LookAndFeel::setDefaultLookAndFeel (nullptr); }
+                { auto f = dir.getChildFile ("steps-patterns.png"); f.deleteFile(); if (auto os = f.createOutputStream()) { PNGImageFormat png; png.writeImageToStream (img2, *os); } }
+                const auto before = starts (snare);
+                grid.setRowLength (snare, 0);
+                const bool unfolded = grid.rowLength (snare) == 64 && starts (snare) == before;
+                grid.makePlain (snare);
+                const bool plain = ! grid.isPatternRow (snare) && starts (snare) == before;
+                // the help line says what the gestures are
+                const bool helped = HelpLine::textFor (&grid).contains ("chance");
+                rep.check (poly && repeatEdits && ratchet && ratchetUndone && half && rolled && never && always && kept && unfolded && plain && helped,
+                           "Step grid pattern rows (a row with a length of its own against the others, repeats inside a step, a chance of playing with dice that can be thrown again, undo, kept with the clip, back to plain notes)",
+                           String (played) + " of 64 hats at one in two"
+                           + (poly ? "" : "; a row of seven is not repeated right (" + String (count (snare)) + " notes)") + (repeatEdits ? "" : "; a click on a repeat does not edit the row's step")
+                           + (ratchet ? "" : "; repeats wrong (" + String (inStep) + " in the step)") + (ratchetUndone ? "" : "; undo of repeats wrong") + (half ? "" : "; chance wrong")
+                           + (rolled ? "" : "; throwing the dice again changes nothing") + (never && always ? "" : "; chance of none or of all wrong") + (kept ? "" : "; not kept with the clip")
+                           + (unfolded && plain ? "" : "; unfolding or plain notes changed what is heard") + (helped ? "" : "; no help"));
+            }
             grid.setClip (nullptr);
             edit->deleteTrack (st);
             edit->getUndoManager().clearUndoHistory();

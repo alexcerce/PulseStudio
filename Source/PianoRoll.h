@@ -22,7 +22,7 @@ public:
 
         // the step grid: the same clip as a drum machine would show it (the Steps button swaps it in over the notes)
         stepsBtn.setClickingTogglesState (true);
-        stepsBtn.setTooltip ("Step grid: a row for each drum pad, a column for each step. Click to put a hit in or take it out");
+        stepsBtn.setTooltip ("Step grid: a row for each drum pad, a column for each step. Click to put a hit in or take it out; a step can have a chance of playing and repeats, a row a length of its own");
         stepsBtn.setColour (TextButton::buttonOnColourId, Theme::accentDim);
         stepsBtn.onClick = [this] { showSteps (stepsBtn.getToggleState()); };
         addAndMakeVisible (stepsBtn);

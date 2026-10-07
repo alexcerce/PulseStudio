@@ -178,7 +178,7 @@ well EVERYWHERE." So, besides the list:
    [x] controller mapping pages  [x] video track
 7. Techno (the owner, 2026-10-06: "I'd use this mostly for experimental techno music"; do this group before what is
    left of the others): [x] the demo song is a whole techno track (wait for the owner's ears on it, then change what
-   they say)  [ ] step sequencer: probability, ratchets and a length of its own for each row (polymetre)
+   they say)  [x] step sequencer: probability, ratchets and a length of its own for each row (polymetre)
    [ ] a drum machine view of the Drum Rack: 16 steps a pad, accents, swing, pattern A/B/C/D and chaining
    [ ] an acid bass preset bank for Pulse Analog, with accent and slide written as the 303 does  [ ] distortion:
    more kinds worth having on a kick (clipper, wavefolder with tone, rumble maker = reverb into low pass into
@@ -836,3 +836,14 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   NOT tried: any of them in Ableton Live itself (it is the owner's program; nothing was installed or copied
   into a system folder). Modulators and macros do nothing in a plugin (the Edit is not played). The installer
   has an unchecked task that puts dist/VST3 into {autocf}\VST3\Pulse.
+- 2026-10-06: v0.99.54. Owner said "run autopilot". Group 7 (Techno), first item: the step grid has chance,
+  ratchets and a length for each row. Decided: no playback-time dice. A row that uses any of the three becomes a
+  "pattern row": its steps (velocity:chance:repeats) are kept in the clip's state (STEPROWS / ROW, so they are
+  saved, copied with the clip and undone with everything else), and its notes are written out from them over
+  the clip's whole length, the dice thrown per step and repetition from a seed (stable until "Throw the dice
+  again"). So the notes stay ordinary notes and nothing in the engine changed; the price is that a looped clip
+  repeats the same throw each pass (said in the README). Other rows are plain notes exactly as before. A pattern
+  made on another step size is ignored and dropped at the next edit of that row. The grid re-writes pattern rows
+  when the clip's length changes while it is showing. Not done: per-pass dice at playback (would need a MIDI
+  effect that knows the clip under the playhead), micro-timing per step, a length for the grid as a whole.
+  334 checks, quick tier; steps-patterns.png looked at.
