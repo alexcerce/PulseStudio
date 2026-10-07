@@ -98,16 +98,26 @@ endif()
 # Pulse's effects as VST3 plugins for other hosts. Each is the app's own device and window, compiled from
 # Source/PulseFxPlugin.cpp with the device's type given here. pulse_fx_plugin (target type "Name" Code)
 function(pulse_fx_plugin target type name code sidechain)
+    # (a sixth word, SYNTH, makes it an instrument: notes in, no sound in)
+    if("${ARGN}" STREQUAL "SYNTH")
+        set(synth TRUE)
+        set(synthFlag 1)
+        set(categories Instrument Synth)
+    else()
+        set(synth FALSE)
+        set(synthFlag 0)
+        set(categories Fx)
+    endif()
     juce_add_plugin(${target}
         PRODUCT_NAME "${name}"
         COMPANY_NAME "Pulse"
         PLUGIN_MANUFACTURER_CODE Puls
         PLUGIN_CODE ${code}
         FORMATS VST3
-        IS_SYNTH FALSE
-        NEEDS_MIDI_INPUT FALSE
+        IS_SYNTH ${synth}
+        NEEDS_MIDI_INPUT ${synth}
         NEEDS_MIDI_OUTPUT FALSE
-        VST3_CATEGORIES Fx
+        VST3_CATEGORIES ${categories}
         COPY_PLUGIN_AFTER_BUILD FALSE
         NEEDS_CURL FALSE
         NEEDS_WEB_BROWSER FALSE)
@@ -118,6 +128,7 @@ function(pulse_fx_plugin target type name code sidechain)
     target_compile_definitions(${target} PUBLIC
         PULSE_PLUGIN_TYPE="${type}"
         PULSE_PLUGIN_SIDECHAIN=${sidechain}
+        PULSE_PLUGIN_SYNTH=${synthFlag}
         JUCE_VST3_CAN_REPLACE_VST2=0
         JUCE_ASIO=0
         JUCE_WASAPI=1
@@ -179,3 +190,14 @@ pulse_fx_plugin(PulseVocoder pulseVocoder "Pulse Vocoder" PPvc 1)
 pulse_fx_plugin(PulsePitchCorrect pulsePitchCorrect "Pulse Pitch Correction" PPpc 0)
 pulse_fx_plugin(PulseUtility pulseUtility "Pulse Utility" PPut 0)
 pulse_fx_plugin(PulseRumble pulseRumble "Pulse Rumble" PPrm 0)
+
+# The instruments (the Drum Rack is not one of them: it is a rack of devices, not one device)
+pulse_fx_plugin(PulseKick pulseKick "Pulse Kick" PIkk 0 SYNTH)
+pulse_fx_plugin(PulseAnalog pulseAnalog "Pulse Analog" PIan 0 SYNTH)
+pulse_fx_plugin(PulseWavetable pulseWavetable "Pulse Wavetable" PIwt 0 SYNTH)
+pulse_fx_plugin(PulseFM pulseFM "Pulse FM" PIfm 0 SYNTH)
+pulse_fx_plugin(PulseString pulseString "Pulse String" PIst 0 SYNTH)
+pulse_fx_plugin(PulseOrgan pulseOrgan "Pulse Organ" PIog 0 SYNTH)
+pulse_fx_plugin(PulseEPiano pulseEPiano "Pulse Electric Piano" PIep 0 SYNTH)
+pulse_fx_plugin(PulseDrumSynth pulseDrumSynth "Pulse Drum Synth" PIds 0 SYNTH)
+pulse_fx_plugin(PulseSimpler pulseSimpler "Pulse Simpler" PIsm 0 SYNTH)

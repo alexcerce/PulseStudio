@@ -165,6 +165,9 @@ public:
             const auto report = File::getCurrentWorkingDirectory().getChildFile (args[i + 2].unquoted());
             const auto pictures = i + 3 < args.size() ? File::getCurrentWorkingDirectory().getChildFile (args[i + 3].unquoted()) : File();
             const bool many = target.isDirectory() && ! target.hasFileExtension ("vst3");
+            // --self-move: Pulse's own plugins then move their settings from inside too, as their windows would (what is
+            // measured about the sound means nothing in such a run: it is about staying up)
+            if (args.contains ("--self-move")) _putenv_s ("PULSE_PLUGIN_SELF_MOVE", "1");
             Array<File> files;
             if (many) { files = target.findChildFiles (File::findFilesAndDirectories, false, "*.vst3"); files.sort(); pictures.createDirectory(); }
             else files.add (target);
@@ -206,7 +209,25 @@ public:
                         return Decibels::gainToDecibels (peak, -200.0f) - Decibels::gainToDecibels (level);
                     };
                     auto& params = inst->getParameters();
-                    text << params.size() << " parameters, delay " << inst->getLatencySamples() << " samples; a 400 Hz tone comes out at " << String (run (400.0), 2) << " dB; ";
+                    text << params.size() << " parameters, delay " << inst->getLatencySamples() << " samples; ";
+                    if (inst->getTotalNumInputChannels() == 0)
+                    {
+                        // an instrument: a note held for a third of a second, then let go; how loud it gets, and whether it ends
+                        AudioBuffer<float> buf (chans, 512);
+                        float peak = 0.0f, last = 0.0f;
+                        for (int block = 0; block < 1000; ++block)
+                        {
+                            MidiBuffer midi;
+                            if (block == 0) midi.addEvent (MidiMessage::noteOn (1, 48, (uint8) 110), 10);
+                            if (block == 30) midi.addEvent (MidiMessage::noteOff (1, 48), 10);
+                            buf.clear();
+                            inst->processBlock (buf, midi);
+                            last = buf.getMagnitude (0, 0, 512);
+                            peak = jmax (peak, last);
+                        }
+                        text << "a note (C2) peaks at " << String (Decibels::gainToDecibels (peak, -200.0f), 1) << " dBFS and ten seconds later is at " << String (Decibels::gainToDecibels (last, -200.0f), 0) << " dB; ";
+                    }
+                    else text << "a 400 Hz tone comes out at " << String (run (400.0), 2) << " dB; ";
                     // every setting whose name has "Gain" in it, turned three quarters up: what does the tone do?
                     AudioProcessorParameter* moved = nullptr;
                     for (auto* prm : params) if (prm->getName (64).contains ("Band 3 Gain")) moved = prm;
@@ -216,11 +237,14 @@ public:
                     {
                         const float before = moved->getValue();
                         moved->setValue (0.75f);
+                        MessageManager::getInstance()->runDispatchLoopUntil (80);   // (a plugin may take a host's value in on its own message thread)
                         text << "\"" << moved->getName (64) << "\" at " << moved->getText (0.75f, 32) << ": " << String (run (400.0), 2) << " dB; ";
                         MemoryBlock state;
                         inst->getStateInformation (state);
                         moved->setValue (before);
+                        MessageManager::getInstance()->runDispatchLoopUntil (80);
                         inst->setStateInformation (state.getData(), (int) state.getSize());
+                        MessageManager::getInstance()->runDispatchLoopUntil (80);
                         text << "state " << (int) state.getSize() << " bytes, and after putting it back the setting reads " << moved->getText (moved->getValue(), 32) << "; ";
                     }
                     // a sidechain input: a loud tone in, keyed from itself, then from a silent sidechain, then from a loud one
@@ -240,6 +264,38 @@ public:
                             ed->addToDesktop (0);
                             ed->setVisible (true);
                             MessageManager::getInstance()->runDispatchLoopUntil (1200);
+                            // As a host does it while its user rides the controls: blocks are processed on another thread, and
+                            // from that thread settings are moved, block after block, for four seconds, while this thread (the
+                            // message thread, with the plugin's window open on it) carries on. A plugin that is not careful
+                            // about which thread touches what falls over here.
+                            {
+                                std::atomic<bool> stop { false }, sane { true };
+                                std::atomic<int> blocksDone { 0 };
+                                const int movable = jmin (params.size(), 160);
+                                std::thread audio ([&]
+                                {
+                                    Random r (5);
+                                    AudioBuffer<float> buf (chans, 512);
+                                    while (! stop.load())
+                                    {
+                                        for (int k = 0; k < 6; ++k) params[r.nextInt (movable)]->setValue (r.nextFloat());
+                                        MidiBuffer midi;
+                                        if (blocksDone.load() % 40 == 0) midi.addEvent (MidiMessage::noteOn (1, 36 + r.nextInt (36), (uint8) 100), 0);
+                                        if (blocksDone.load() % 40 == 20) midi.addEvent (MidiMessage::allNotesOff (1), 0);
+                                        for (int c = 0; c < chans; ++c)
+                                            for (int n = 0; n < 512; ++n) buf.setSample (c, n, 0.1f * (float) std::sin (MathConstants<double>::twoPi * 400.0 * (blocksDone.load() * 512 + n) / 48000.0));
+                                        inst->processBlock (buf, midi);
+                                        for (int n = 0; n < 512; ++n) if (! std::isfinite (buf.getSample (0, n))) sane.store (false);
+                                        ++blocksDone;
+                                        Thread::sleep (2);
+                                    }
+                                });
+                                MessageManager::getInstance()->runDispatchLoopUntil (4000);
+                                stop.store (true);
+                                audio.join();
+                                text << "; settings ridden from an audio thread for 4 s with the window open: " << blocksDone.load() << " blocks, " << (sane.load() ? "sound sane" : "SOUND NOT SANE");
+                                for (auto* prm : params) if (auto d = prm->getDefaultValue(); true) { juce::ignoreUnused (d); break; }
+                            }
                             text << "window " << ed->getWidth() << " x " << ed->getHeight();
                             if (pictures != File())
                             {
@@ -252,7 +308,7 @@ public:
                         }
                     }
                     else text << "no window";
-                    text << "; the tone a second later: " << String (run (400.0), 2) << " dB";   // (whatever is worked out in the background has had its time)
+                    if (inst->getTotalNumInputChannels() > 0) text << "; the tone a second later: " << String (run (400.0), 2) << " dB";   // (whatever is worked out in the background has had its time)
                     if (many) kept.push_back (std::move (inst)); else inst->releaseResources();
                 }
                 else text << "could not be started: " << error;

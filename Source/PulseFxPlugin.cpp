@@ -1,6 +1,6 @@
 // One of Pulse's effects as a plugin for other hosts (VST3): the same device, the same window.
 //
-// The device itself is the app's own (a pulse::PulseEffect). Here it lives in a small project of its own that is
+// The device itself is the app's own (an effect, or an instrument: PULSE_PLUGIN_SYNTH says which). Here it lives in a small project of its own that is
 // never played: the host's sound is handed straight to the device, block by block, and the device's settings are
 // offered to the host as the plugin's parameters. Which device this file becomes is decided when it is compiled:
 // PULSE_PLUGIN_TYPE is the device's type ("pulsePrismEQ") and JucePlugin_Name its name.
@@ -31,20 +31,42 @@ namespace
         te::Engine engine;
     };
 
-    /** One setting of the device, as the host sees it. */
+    /** One setting of the device, as the host sees it.
+
+        Two worlds meet here and they must be kept apart. The host may set a value from any thread, above all from
+        its audio thread in the middle of a block. The device's parameter belongs to the engine, and the engine lets
+        it be set from the message thread only (setting it starts things that are not safe anywhere else: the first
+        version of this plugin set it straight from the host's thread, and a host that moved a band while the
+        plugin's own window moved it too froze and crashed). So a value from the host is only noted here, and put
+        into the device a moment later by applyHostValue(), which the plugin calls on the message thread. */
     class Setting : public AudioProcessorParameter,
                     private te::AutomatableParameter::Listener
     {
     public:
-        explicit Setting (te::AutomatableParameter& p) : param (&p) { param->addListener (this); }
+        Setting (te::AutomatableParameter& p, const std::atomic<bool>& quietFlag) : param (&p), quiet (quietFlag) { param->addListener (this); }
         ~Setting() override { param->removeListener (this); }
 
-        float getValue() const override                    { return param->valueRange.convertTo0to1 (param->getCurrentBaseValue()); }
+        float getValue() const override
+        {
+            return waiting.load (std::memory_order_acquire) ? fromHost.load (std::memory_order_relaxed) : ofDevice();
+        }
         void setValue (float v) override
         {
-            // from the host (automation, a preset, its own controls)
-            param->setParameter (param->valueRange.convertFrom0to1 (jlimit (0.0f, 1.0f, v)), dontSendNotification);
-            hostKnows.store (getValue(), std::memory_order_relaxed);
+            // from the host (automation, a preset, its own controls), on whatever thread it likes: noted, nothing more
+            fromHost.store (jlimit (0.0f, 1.0f, v), std::memory_order_relaxed);
+            waiting.store (true, std::memory_order_release);
+        }
+        /** Message thread: puts a value the host has sent into the device. */
+        void applyHostValue()
+        {
+            if (! waiting.exchange (false, std::memory_order_acq_rel)) return;
+            // What the host sends back while a hand is on the control in our own window is its echo of that hand,
+            // a little late: letting it in would pull the control back to where it was a moment ago.
+            if (inGesture || Time::getMillisecondCounter() - lastOwnMove < 300u) return;
+            const float want = param->valueRange.convertFrom0to1 (fromHost.load (std::memory_order_relaxed));
+            if (want == param->getCurrentBaseValue()) return;
+            const ScopedValueSetter<bool> svs (applying, true);
+            param->setParameter (want, dontSendNotification);
         }
         float getDefaultValue() const override             { return param->valueRange.convertTo0to1 (param->getDefaultValue().value_or (param->valueRange.start)); }
         String getName (int maxLength) const override      { return param->getParameterName().substring (0, maxLength); }
@@ -63,23 +85,32 @@ namespace
         bool isBoolean() const override                    { return isDiscrete() && getNumSteps() == 2; }
 
     private:
-        // from the plugin's own window: the host is told, so that it can record the move
+        float ofDevice() const { return param->valueRange.convertTo0to1 (param->getCurrentBaseValue()); }
+
+        // From the plugin's own window (always the message thread): the host is told, so that it can show and record
+        // the move. Not told: what it sent itself, and what is put back when a saved state is loaded.
         void curveHasChanged (te::AutomatableParameter&) override {}
         void currentValueChanged (te::AutomatableParameter&) override {}
         void parameterChanged (te::AutomatableParameter&, float) override
         {
-            // Only what the host does not know already: a move it made itself must not come back to it as if
-            // a hand had turned the control (a host takes that as "stop playing this automation").
-            const float now = getValue();
-            if (std::abs (now - hostKnows.load (std::memory_order_relaxed)) < 1.0e-6f) return;
-            hostKnows.store (now, std::memory_order_relaxed);
+            if (applying || quiet.load (std::memory_order_relaxed) || ! MessageManager::getInstance()->isThisTheMessageThread()) return;
+            lastOwnMove = Time::getMillisecondCounter();
+            waiting.store (false, std::memory_order_release);   // (whatever the host had sent is older than this)
+            const float now = ofDevice();
+            if (inGesture) { sendValueChangedMessageToListeners (now); return; }
+            beginChangeGesture();   // a click on a switch, a typed value, a preset: a whole move in one
             sendValueChangedMessageToListeners (now);
+            endChangeGesture();
         }
-        void parameterChangeGestureBegin (te::AutomatableParameter&) override { beginChangeGesture(); }
-        void parameterChangeGestureEnd (te::AutomatableParameter&) override   { endChangeGesture(); }
+        void parameterChangeGestureBegin (te::AutomatableParameter&) override { if (! inGesture) { inGesture = true; beginChangeGesture(); } }
+        void parameterChangeGestureEnd (te::AutomatableParameter&) override   { if (inGesture) { inGesture = false; lastOwnMove = Time::getMillisecondCounter(); endChangeGesture(); } }
 
         te::AutomatableParameter::Ptr param;
-        std::atomic<float> hostKnows { -1.0f };
+        const std::atomic<bool>& quiet;
+        std::atomic<float> fromHost { 0.0f };
+        std::atomic<bool> waiting { false };
+        bool applying = false, inGesture = false;   // (message thread only)
+        uint32 lastOwnMove = 0;
     };
 }
 
@@ -94,18 +125,18 @@ public:
           selection (shared->engine)
     {
         device = edit->getPluginCache().createNewPlugin (PULSE_PLUGIN_TYPE, {});
-        fx = dynamic_cast<pulse::PulseEffect*> (device.get());
+        fx = dynamic_cast<pulse::PulsePlugin*> (device.get());
         if (fx != nullptr)
         {
             if (auto t = te::getAudioTracks (*edit).getFirst()) t->pluginList.insertPlugin (device, 0, nullptr);
-            for (int i = 0; i < fx->numParams(); ++i) addParameter (new Setting (*fx->param (i)));
+            for (int i = 0; i < fx->numParams(); ++i) { auto* st = new Setting (*fx->param (i), restoring); settings.add (st); addParameter (st); }
            #if PULSE_PLUGIN_SIDECHAIN
             // In the app the key is another track, chosen on the track. Here it is the host's sidechain input.
             addParameter (keyed = new AudioParameterBool (ParameterID { "hostSidechain", 1 }, "External Sidechain", false));
            #endif
         }
         edit->getUndoManager().clearUndoHistory();
-        startTimerHz (10);
+        startTimerHz (100);   // (values from the host are put into the device from here: see Setting)
     }
 
     ~PulseFxProcessor() override
@@ -115,7 +146,7 @@ public:
     }
 
     const String getName() const override                 { return JucePlugin_Name; }
-    bool acceptsMidi() const override                      { return false; }
+    bool acceptsMidi() const override                      { return PULSE_PLUGIN_SYNTH != 0; }
     bool producesMidi() const override                     { return false; }
     double getTailLengthSeconds() const override           { return 8.0; }
     int getNumPrograms() override                          { return 1; }
@@ -125,9 +156,13 @@ public:
     void changeProgramName (int, const String&) override   {}
     bool isBusesLayoutSupported (const BusesLayout& l) const override
     {
+       #if PULSE_PLUGIN_SYNTH
+        return l.getMainOutputChannelSet() == AudioChannelSet::stereo();
+       #else
         if (l.getMainInputChannelSet() != AudioChannelSet::stereo() || l.getMainOutputChannelSet() != AudioChannelSet::stereo()) return false;
         if (l.inputBuses.size() > 1 && ! (l.inputBuses[1].isDisabled() || l.inputBuses[1] == AudioChannelSet::stereo())) return false;   // (the sidechain: stereo, or not there)
         return true;
+       #endif
     }
 
     void prepareToPlay (double sampleRate, int blockSize) override
@@ -143,10 +178,11 @@ public:
 
     void releaseResources() override {}
 
-    void processBlock (AudioBuffer<float>& buffer, MidiBuffer&) override
+    void processBlock (AudioBuffer<float>& buffer, MidiBuffer& hostMidi) override
     {
         ScopedNoDenormals noDenormals;
         const int n = buffer.getNumSamples();
+        juce::ignoreUnused (hostMidi);
         if (fx == nullptr || ! prepared || buffer.getNumChannels() < 2 || n <= 0) return;
 
         bool playing = true;
@@ -165,8 +201,13 @@ public:
         if (playing && beat.hasValue() && hostBpm.load (std::memory_order_relaxed) > 20.0) start = jmax (0.0, *beat * 60.0 / hostBpm.load (std::memory_order_relaxed));
         const auto from = te::TimePosition::fromSeconds (start), to = te::TimePosition::fromSeconds (start + (double) n / rate);
         samplesDone += n;
-        fx->hostSidechain.store (keyed != nullptr && keyed->get() && buffer.getNumChannels() >= 4, std::memory_order_relaxed);
+        if (auto* effect = dynamic_cast<pulse::PulseEffect*> (fx))
+            effect->hostSidechain.store (keyed != nullptr && keyed->get() && buffer.getNumChannels() >= 4, std::memory_order_relaxed);
         te::MidiMessageArray midi;
+       #if PULSE_PLUGIN_SYNTH
+        // the host's notes, each at its moment within the block
+        for (const auto meta : hostMidi) midi.addMidiMessage (meta.getMessage(), (double) meta.samplePosition / rate, midiSource);
+       #endif
         te::PluginRenderContext rc (&buffer, 0, n, &midi, 0.0, { from, to }, playing, false, false, false);
         fx->applyToBuffer (rc);
     }
@@ -176,6 +217,17 @@ public:
     void getStateInformation (MemoryBlock& dest) override
     {
         if (fx == nullptr) return;
+        // (the device's state is the engine's, which is the message thread's: a host that asks from another thread waits for it)
+        if (! MessageManager::getInstance()->isThisTheMessageThread())
+        {
+            if (MessageManager::getInstance()->isThisTheMessageThread() || MessageManager::getInstanceWithoutCreating() == nullptr) return;
+            WaitableEvent done;
+            WeakReference<PulseFxProcessor> weak (this);
+            MessageManager::callAsync ([weak, &dest, &done] { if (weak != nullptr) weak->getStateInformation (dest); done.signal(); });
+            done.wait (2000);
+            return;
+        }
+        for (auto* st : settings) st->applyHostValue();
         fx->flushPluginStateToValueTree();
         auto saved = fx->state.createCopy();
         if (keyed != nullptr) saved.setProperty (keyedID, keyed->get(), nullptr);
@@ -191,6 +243,15 @@ public:
         if (xml == nullptr) return;
         const auto saved = ValueTree::fromXml (*xml);
         if (! saved.isValid() || saved[te::IDs::type].toString() != String (PULSE_PLUGIN_TYPE)) return;
+        if (MessageManager::getInstance()->isThisTheMessageThread()) { restore (saved); return; }
+        WeakReference<PulseFxProcessor> weak (this);
+        MessageManager::callAsync ([weak, saved] { if (weak != nullptr) weak->restore (saved); });
+    }
+
+    /** Message thread: puts a saved state into the device. */
+    void restore (const ValueTree& saved)
+    {
+        restoring.store (true);   // (the host is not told of each setting as if a hand had moved it)
         // what is not a setting first (these are plain properties), then each setting through the device itself
         StringArray settingNames;
         for (int i = 0; i < fx->numParams(); ++i) settingNames.add (pulse::PulsePlugin::storageID (fx->param (i)->paramID).toString());
@@ -208,13 +269,16 @@ public:
             const Identifier name (settingNames[i]);
             if (saved.hasProperty (name)) fx->set (i, (float) saved[name]);
         }
+        restoring.store (false);
+        edit->getUndoManager().clearUndoHistory();
+        updateHostDisplay (ChangeDetails().withParameterInfoChanged (false).withNonParameterStateChanged (true));
     }
 
     //==============================================================================
     bool hasEditor() const override { return fx != nullptr; }
     AudioProcessorEditor* createEditor() override;
 
-    pulse::PulseEffect* effect() const   { return fx; }
+    pulse::PulsePlugin* effect() const   { return fx; }
     AudioParameterBool* sidechainSwitch() const { return keyed; }
     int windowW = 0, windowH = 0;        // the size the window was left at (0: the device's own)
     te::Edit& project()                  { return *edit; }
@@ -224,6 +288,18 @@ private:
     void timerCallback() override
     {
         if (fx == nullptr) return;
+        for (auto* st : settings) st->applyHostValue();
+        // (for testing, asked for by PULSE_PLUGIN_SELF_MOVE in the environment: the settings are moved from in here as
+        // the window's controls move them, hand on and hand off, so that a test host can ride them from its side at the
+        // same time and see whether the two get in each other's way)
+        if (selfMove && fx->numParams() > 0)
+        {
+            auto* prm = fx->param (selfRandom.nextInt (fx->numParams()));
+            prm->parameterChangeGestureBegin();
+            prm->setParameter (prm->valueRange.snapToLegalValue (prm->valueRange.convertFrom0to1 (selfRandom.nextFloat())), sendNotification);
+            prm->parameterChangeGestureEnd();
+        }
+        if (++tick % 10 != 0) return;
         // the tempo of the host, for whatever in the device keeps time with the song
         const double bpm = hostBpm.load (std::memory_order_relaxed);
         if (auto tempo = edit->tempoSequence.getTempo (0); tempo != nullptr && bpm > 20.0 && std::abs (tempo->getBpm() - bpm) > 0.01) tempo->setBpm (bpm);
@@ -234,7 +310,11 @@ private:
 
     static BusesProperties buses()
     {
+       #if PULSE_PLUGIN_SYNTH
+        auto b = BusesProperties().withOutput ("Output", AudioChannelSet::stereo(), true);   // an instrument: notes in, sound out
+       #else
         auto b = BusesProperties().withInput ("Input", AudioChannelSet::stereo(), true).withOutput ("Output", AudioChannelSet::stereo(), true);
+       #endif
        #if PULSE_PLUGIN_SIDECHAIN
         b = b.withInput ("Sidechain", AudioChannelSet::stereo(), true);
        #endif
@@ -245,7 +325,14 @@ private:
     std::unique_ptr<te::Edit> edit;
     te::SelectionManager selection;
     te::Plugin::Ptr device;
-    pulse::PulseEffect* fx = nullptr;
+    pulse::PulsePlugin* fx = nullptr;
+    Array<Setting*> settings;             // (owned by the processor's parameter list)
+    std::atomic<bool> restoring { false };
+    int tick = 0;
+    const bool selfMove = SystemStats::getEnvironmentVariable ("PULSE_PLUGIN_SELF_MOVE", {}) == "1";
+    Random selfRandom { 99 };
+    JUCE_DECLARE_WEAK_REFERENCEABLE (PulseFxProcessor)
+    const te::MPESourceID midiSource = te::createUniqueMPESourceID();
     AudioParameterBool* keyed = nullptr;
     static inline const Identifier keyedID { "pulseHostSidechain" }, windowWID { "pulseWindowW" }, windowHID { "pulseWindowH" };
     bool prepared = false;
@@ -273,7 +360,7 @@ public:
         // the device's own size (as in the app), kept to what a host's window can reasonably take; then whatever
         // size it was left at last time
         const int bar = keyBtn.isVisible() ? barH : 0;
-        int w = jlimit (560, 1100, window.getWidth()), h = jlimit (420, 760, window.getHeight()) + bar;
+        int w = jlimit (560, 1280, window.getWidth()), h = jlimit (420, 860, window.getHeight()) + bar;   // (the big instruments ask for 1280 x 860)
         if (p.windowW >= 560 && p.windowH >= 420) { w = p.windowW; h = p.windowH; }
         setResizable (true, true);
         setResizeLimits (560, 420, 3000, 2000);
