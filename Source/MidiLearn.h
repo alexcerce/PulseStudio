@@ -16,7 +16,7 @@ class MidiLearn : public ChangeBroadcaster,
 {
 public:
     static constexpr int numPages = 8;   // pages 1..8; page 0 is "Always"
-    enum class Target { parameter, nextPage, previousPage };
+    enum class Target { parameter, nextPage, previousPage, trackMute };
 
     explicit MidiLearn (te::Edit& e) : edit (e)
     {
@@ -69,12 +69,46 @@ public:
         sendChangeMessage();
     }
 
+    /** Waits for a button of the controller, and makes it mute and unmute this track (on the page chosen now). */
+    void startLearningMute (te::Track& t)
+    {
+        learning = nullptr;
+        learnTrack = t.itemID;
+        learnTarget = Target::trackMute;
+        sendChangeMessage();
+    }
+
+    bool isMuteMapped (te::Track& t) const
+    {
+        for (auto& m : mappings) if (m.param == nullptr && m.muteTrack == t.itemID && active (m)) return true;
+        return false;
+    }
+    String muteMappingText (te::Track& t) const
+    {
+        StringArray all;
+        for (auto& m : mappings)
+            if (m.param == nullptr && m.muteTrack == t.itemID)
+                all.add ("CC " + String (m.cc) + " (ch " + String (m.channel) + ")" + (m.page > 0 ? " on " + pageName (m.page) : String()));
+        return all.joinIntoString (", ");
+    }
+    void removeMuteMapping (te::Track& t)
+    {
+        mappings.erase (std::remove_if (mappings.begin(), mappings.end(), [&] (auto& m) { return m.param == nullptr && m.muteTrack == t.itemID && active (m); }), mappings.end());
+        save();
+        sendChangeMessage();
+    }
+
     void cancelLearning()                  { learning = nullptr; learnTarget = Target::parameter; sendChangeMessage(); }
     bool isLearning() const                { return learning != nullptr || learnTarget != Target::parameter; }
     String getLearningName() const
     {
         if (learnTarget == Target::nextPage)     return "the \"next page\" button";
         if (learnTarget == Target::previousPage) return "the \"previous page\" button";
+        if (learnTarget == Target::trackMute)
+        {
+            auto t = te::findTrackForID (edit, learnTrack);
+            return "the mute of " + (t != nullptr ? t->getName() : String ("a track")) + (page > 0 ? "  (" + pageName (page) + ")" : String());
+        }
         return learning != nullptr ? describe (*learning) + (page > 0 ? "  (" + pageName (page) + ")" : String()) : String();
     }
 
@@ -167,8 +201,12 @@ public:
     {
         std::vector<Row> out;
         for (int i = 0; i < (int) mappings.size(); ++i)
-            if (auto& m = mappings[(size_t) i]; m.page == onPage && m.param != nullptr)
-                out.push_back ({ i, m.channel, m.cc, m.page, describe (*m.param) });
+        {
+            auto& m = mappings[(size_t) i];
+            if (m.page != onPage) continue;
+            if (m.param != nullptr) out.push_back ({ i, m.channel, m.cc, m.page, describe (*m.param) });
+            else if (auto t = te::findTrackForID (edit, m.muteTrack)) out.push_back ({ i, m.channel, m.cc, m.page, t->getName() + " / Mute (a button)" });
+        }
         return out;
     }
 
@@ -230,6 +268,8 @@ private:
         int channel = 1, cc = 0;
         te::AutomatableParameter::Ptr param;
         int page = 0;   // 0 = always
+        te::EditItemID muteTrack;   // with no parameter: a button that mutes and unmutes this track
+        int last = 0;
     };
 
     struct PageButton { int channel = 1, cc = -1, last = 0; };
@@ -261,6 +301,21 @@ private:
 
         for (auto& ev : events)
         {
+            if (learnTarget == Target::trackMute)
+            {
+                // on a page, a controller does one thing and a track's mute has one button
+                mappings.erase (std::remove_if (mappings.begin(), mappings.end(),
+                                                [&] (auto& m) { return m.page == page && ((m.param == nullptr && m.muteTrack == learnTrack) || (m.cc == ev.cc && m.channel == ev.channel)); }),
+                                mappings.end());
+                Mapping m;
+                m.channel = ev.channel; m.cc = ev.cc; m.page = page; m.muteTrack = learnTrack; m.last = ev.value;
+                mappings.push_back (m);
+                learnTarget = Target::parameter;
+                save();
+                sendChangeMessage();
+                continue;
+            }
+
             if (learnTarget != Target::parameter)
             {
                 // a button for stepping the page: it must not be a knob of some mapping as well
@@ -298,8 +353,18 @@ private:
             if (wasButton) continue;
 
             for (auto& m : mappings)
-                if (m.cc == ev.cc && m.channel == ev.channel && m.param != nullptr && active (m))
+            {
+                if (m.cc != ev.cc || m.channel != ev.channel || ! active (m)) continue;
+                if (m.param != nullptr)
                     m.param->setNormalisedParameter ((float) ev.value / 127.0f, sendNotificationSync);
+                else
+                {
+                    // a mute acts when its button is pressed (the value goes from the lower half to the upper)
+                    if (ev.value >= 64 && m.last < 64)
+                        if (auto t = te::findTrackForID (edit, m.muteTrack)) EngineHelpers::toggleMute (*t);
+                    m.last = ev.value;
+                }
+            }
         }
     }
 
@@ -316,6 +381,18 @@ private:
         for (int p = 1; p <= numPages; ++p)
             if (pageNames[p].isNotEmpty()) parent.setProperty (Identifier ("name" + String (p)), pageNames[p], nullptr);
         for (auto& m : mappings)
+        {
+            if (m.param == nullptr)
+            {
+                if (! m.muteTrack.isValid()) continue;
+                ValueTree v ("MAP");
+                v.setProperty ("channel", m.channel, nullptr);
+                v.setProperty ("cc", m.cc, nullptr);
+                v.setProperty ("muteTrack", m.muteTrack.toString(), nullptr);
+                if (m.page != 0) v.setProperty ("page", m.page, nullptr);
+                parent.appendChild (v, nullptr);
+                continue;
+            }
             if (auto pl = m.param->getPlugin())
             {
                 ValueTree v ("MAP");
@@ -326,6 +403,7 @@ private:
                 if (m.page != 0) v.setProperty ("page", m.page, nullptr);
                 parent.appendChild (v, nullptr);
             }
+        }
     }
 
     void load()
@@ -339,7 +417,14 @@ private:
         prevButton = { (int) parent.getProperty ("prevChannel", 1), (int) parent.getProperty ("prevCc", -1), 0 };
         for (int p = 1; p <= numPages; ++p) pageNames.set (p, parent.getProperty (Identifier ("name" + String (p))).toString());
         for (auto v : parent)
-            if (auto pl = te::findPluginForID (edit, te::EditItemID::fromVar (v["plugin"])))
+            if (v.hasProperty ("muteTrack"))
+            {
+                Mapping m;
+                m.channel = v["channel"]; m.cc = v["cc"]; m.page = jlimit (0, numPages, (int) v.getProperty ("page", 0));
+                m.muteTrack = te::EditItemID::fromVar (v["muteTrack"]);
+                if (te::findTrackForID (edit, m.muteTrack) != nullptr) mappings.push_back (m);
+            }
+            else if (auto pl = te::findPluginForID (edit, te::EditItemID::fromVar (v["plugin"])))
                 if (auto p = pl->getAutomatableParameterByID (v["param"].toString()))
                     mappings.push_back ({ (int) v["channel"], (int) v["cc"], p, jlimit (0, numPages, (int) v.getProperty ("page", 0)) });
     }
@@ -347,6 +432,7 @@ private:
     te::Edit& edit;
     std::vector<Mapping> mappings;
     te::AutomatableParameter::Ptr learning;
+    te::EditItemID learnTrack;
     Target learnTarget = Target::parameter;
     int page = 0;
     uint32 pageChangedAt = 0;

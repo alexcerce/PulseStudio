@@ -2,6 +2,12 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.61 - 2026-10-07
+
+- Performance window (menu, or the command *Performance*): a mute pad for every track, fills to hold (the last 1/4, 1/8, 1/16 or 1/32 of the whole mix repeats in time) and a sweep filter over the mix, all of it learnable from a controller
+- New effect: Perform (the sweep and the fills as a device; the Performance window puts one on the master)
+- Controller mappings: a button can be learned for a track's mute
+
 ## 0.99.60 - 2026-10-07
 
 - Drum machine: the *Machine* button in the piano roll (and on the Drum Rack) shows a clip as sixteen steps for each pad, with accents, swing, four patterns (A to D), a chain that plays them in order, and twelve ready-made techno patterns

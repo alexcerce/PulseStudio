@@ -157,6 +157,7 @@ namespace PluginMenu
         addBuiltIn<pulse::Spectral> (effects, edit, cb);
         addBuiltIn<pulse::BeatRepeat> (effects, edit, cb);
         addBuiltIn<pulse::Looper> (effects, edit, cb);
+        addBuiltIn<pulse::Perform> (effects, edit, cb);
         addBuiltIn<pulse::Chorus> (effects, edit, cb);
         addBuiltIn<pulse::PhaserFlanger> (effects, edit, cb);
         addBuiltIn<pulse::AutoPan> (effects, edit, cb);

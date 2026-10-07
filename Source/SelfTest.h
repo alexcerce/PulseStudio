@@ -210,6 +210,7 @@ namespace SelfTest
         shoot (pulse::Exciter::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Exciter::pAmount, 0.6f); p.set (pulse::Exciter::pColour, 0.6f); }, "shot_exciter.png");
         shoot (pulse::KickSynth::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::KickSynth::pClick, 0.6f); }, "shot_kick.png");
         shoot (pulse::Rumble::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Rumble::pAmount, -3.0f); }, "shot_rumble.png");
+        shoot (pulse::Perform::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Perform::pSweep, -0.5f); p.set (pulse::Perform::pResonance, 0.6f); }, "shot_perform.png");
         shoot (pulse::Amp::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Amp::pModel, 2); p.set (pulse::Amp::pGain, 0.7f); p.set (pulse::Amp::pMid, 0.7f); p.set (pulse::Amp::pCabinet, 3); }, "shot_amp.png");
         shoot (pulse::Resonators::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Resonators::pChord, 5); p.set (pulse::Resonators::pDecay, 3.0f); }, "shot_resonators.png");
         shoot (pulse::Shimmer::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Shimmer::pShimmer, 0.7f); }, "shot_shimmer.png");
@@ -6629,6 +6630,177 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
                 }
                 rp3->deleteFromParent();
                 rp3 = nullptr;
+            }
+
+            // --- v0.99.61: Perform and the Performance page ----------------------------------------------
+            {
+                auto pp4 = edit->getPluginCache().createNewPlugin (pulse::Perform::xmlTypeName, {});
+                t->pluginList.insertPlugin (pp4, 0, nullptr);
+                auto* perform = dynamic_cast<pulse::Perform*> (pp4.get());
+                using PF = pulse::Perform;
+                auto tone = [] (double hz) { return [hz] (int, double tt) { return 0.25f * (float) std::sin (MathConstants<double>::twoPi * hz * tt); }; };
+                auto level = [&] (const AudioBuffer<float>& b, double from, double len) { return Decibels::gainToDecibels (b.getRMSLevel (0, (int) (from * sr), (int) (len * sr)), -140.0f); };
+                auto through = [&] (float sweep, float reso, double hz)
+                {
+                    perform->set (PF::pSweep, sweep); perform->set (PF::pResonance, reso); perform->set (PF::pFill, 0.0f);
+                    AudioBuffer<float> out;
+                    runFx (*perform, tone (hz), 1.0, &out);
+                    return level (out, 0.5, 0.4) - Decibels::gainToDecibels (0.25f / std::sqrt (2.0f));
+                };
+                // in the middle the sweep does nothing at all; to the left the highs go, to the right the lows
+                perform->set (PF::pSweep, 0.0f); perform->set (PF::pFill, 0.0f);
+                AudioBuffer<float> same;
+                runFx (*perform, tone (1000.0), 0.5, &same);
+                float worstOff = 0.0f;
+                { auto g = tone (1000.0); for (int i = 0; i < same.getNumSamples(); ++i) worstOff = jmax (worstOff, std::abs (same.getSample (0, i) - g (0, i / sr))); }
+                const float lpHigh = through (-0.83f, 0.0f, 2000.0), lpLow = through (-0.83f, 0.0f, 50.0);
+                const float hpLow = through (0.41f, 0.0f, 50.0), hpHigh = through (0.41f, 0.0f, 3000.0);
+                const float atCut = PF::cutoffFor (-0.5f);
+                const float plain = through (-0.5f, 0.0f, atCut), ringing = through (-0.5f, 0.85f, atCut);
+                const bool sweepOk = worstOff < 1.0e-5f && lpHigh < -30.0f && std::abs (lpLow) < 1.0f && hpLow < -30.0f && std::abs (hpHigh) < 1.0f && ringing > plain + 8.0f && ringing < 16.0f
+                                     && PF::sweepText (0.0f) == "Off" && PF::sweepText (-0.83f).startsWith ("Low-pass") && PF::sweepText (0.41f).startsWith ("High-pass");
+
+                // a fill: a slow ramp goes in, so that every moment has its own value. A sixteenth is held from 1.03 s to
+                // 2 s: what comes out is the sixteenth that began on the grid line before 1.03 s, again and again, and
+                // then the ramp itself as if nothing had happened
+                const double bpmNow = edit->tempoSequence.getTempo (0)->getBpm(), sixteenth = 15.0 / bpmNow;
+                auto ramp = [] (double tt) { return (float) (tt * 0.1); };
+                perform->set (PF::pSweep, 0.0f); perform->set (PF::pFill, 0.0f);
+                AudioBuffer<float> filled;
+                runFx (*perform, [&] (int ch, double tt)
+                {
+                    if (ch == 0) { const float want = tt >= 1.03 && tt < 2.0 ? 3.0f : 0.0f; if (perform->get (PF::pFill) != want) perform->set (PF::pFill, want); }
+                    return ramp (tt);
+                }, 3.0, &filled);
+                const double line = std::floor (1.03 / sixteenth) * sixteenth, firstRepeat = line + sixteenth;
+                auto outAt = [&] (double tt) { return filled.getSample (0, (int) std::round (tt * sr)); };
+                auto wantAt = [&] (double tt) { return ramp (line + std::fmod (tt - firstRepeat, sixteenth)); };
+                // (asked in the middle of a slice: its two ends are faded)
+                auto mid = [&] (int k) { return firstRepeat + (k + 0.5) * sixteenth; };
+                const int lastWhole = (int) std::floor ((2.0 - firstRepeat) / sixteenth) - 1;
+                const float errFirst = std::abs (outAt (mid (0)) - wantAt (mid (0))), errLast = std::abs (outAt (mid (lastWhole)) - wantAt (mid (lastWhole)));
+                const float before = std::abs (outAt (0.9) - ramp (0.9)), after = std::abs (outAt (2.5) - ramp (2.5));
+                float worstStep = 0.0f;
+                for (int i = (int) (1.99 * sr); i < (int) (2.03 * sr); ++i) worstStep = jmax (worstStep, std::abs (filled.getSample (0, i + 1) - filled.getSample (0, i)));
+                const bool fillOk = lastWhole >= 1 && errFirst < 2.0e-4f && errLast < 2.0e-4f && before < 1.0e-5f && after < 1.0e-5f && worstStep < 0.01f
+                                    && std::abs (outAt (mid (lastWhole)) - ramp (mid (lastWhole))) > 0.02f;
+                rep.check (sweepOk && fillOk, "Perform (a sweep that is out of the way in the middle, a low-pass to the left and a high-pass to the right, with resonance; a fill repeats the last sixteenth in time and gives the song back without a click)",
+                           "middle " + String (worstOff, 7) + "; low-pass 205 Hz: 2 kHz " + String (lpHigh, 1) + " dB, 50 Hz " + String (lpLow, 2) + " dB; high-pass 248 Hz: 50 Hz " + String (hpLow, 1) + " dB, 3 kHz " + String (hpHigh, 2)
+                           + " dB; at the cutoff " + String (plain, 1) + " dB plain, " + String (ringing, 1) + " dB resonant; fill at " + String (bpmNow, 0) + " BPM: off by " + String (errFirst, 6) + " / " + String (errLast, 6)
+                           + ", before " + String (before, 7) + ", after " + String (after, 7) + ", biggest step at the release " + String (worstStep, 5));
+
+                // its window: the point on the picture, and a control for every setting
+                {
+                    PulseLookAndFeel laf;
+                    LookAndFeel::setDefaultLookAndFeel (&laf);
+                    EditViewState evs (*edit, sm);
+                    perform->set (PF::pSweep, -0.3f); perform->set (PF::pResonance, 0.3f); perform->set (PF::pFill, 0.0f);
+                    PerformUI::PerformView pv (*perform);
+                    pv.setSize (1000, 520);
+                    { Image img (Image::ARGB, 1000, 520, true); Graphics g (img); pv.paint (g); }
+                    const float sw0 = perform->get (PF::pSweep), re0 = perform->get (PF::pResonance);
+                    pv.dragHandle (0, 120.0f, -60.0f);
+                    const bool handlesOk = perform->get (PF::pSweep) > sw0 + 0.1f && perform->get (PF::pResonance) > re0 + 0.05f;
+                    StringArray missing;
+                    {
+                        DeviceEditors::Editor ed (evs, *perform);
+                        ed.setSize (1100, 760);
+                        std::set<te::AutomatableParameter*> seen;
+                        std::function<void (Component&)> walk = [&] (Component& c)
+                        {
+                            if (auto* k = dynamic_cast<ParamKnob*> (&c)) seen.insert (&k->getParameter());
+                            if (auto* k = dynamic_cast<ParamChoice*> (&c)) seen.insert (&k->getParameter());
+                            if (auto* k = dynamic_cast<ParamToggle*> (&c)) seen.insert (&k->getParameter());
+                            for (auto* chd : c.getChildren()) walk (*chd);
+                        };
+                        walk (ed);
+                        for (int i = 0; i < perform->numParams(); ++i) if (! seen.count (&*perform->param (i))) missing.add (perform->param (i)->paramID);
+                        if (! DeviceEditors::hasFullEditor (*perform)) missing.add ("no full window");
+                    }
+                    rep.check (handlesOk && missing.isEmpty(), "Perform window: sweep and resonance are dragged on the picture, and there is a control for every parameter",
+                               missing.isEmpty() ? "sweep " + String (sw0, 2) + " -> " + String (perform->get (PF::pSweep), 2) + ", resonance " + String (re0, 2) + " -> " + String (perform->get (PF::pResonance), 2) : missing.joinIntoString ("; "));
+                    LookAndFeel::setDefaultLookAndFeel (nullptr);
+                }
+                pp4->deleteFromParent();
+                pp4 = nullptr;
+
+                // the Performance page: the device goes on the master, a pad for every track that is not a return
+                {
+                    PulseLookAndFeel laf;
+                    LookAndFeel::setDefaultLookAndFeel (&laf);
+                    EditViewState evs (*edit, sm);
+                    MidiLearn learn (*edit);
+                    evs.midiLearn = &learn;
+                    const bool noneYet = PerformUI::device (*edit, false) == nullptr;
+                    auto* onMaster = PerformUI::device (*edit, true);
+                    const bool placed = onMaster != nullptr && edit->getMasterPluginList().indexOf (onMaster) == 0 && PerformUI::device (*edit, true) == onMaster;
+                    auto mt1 = ClipImport::createContentTrack (*edit, "Pad one", false);
+                    auto mt2 = ClipImport::createContentTrack (*edit, "Pad two", false);
+                    const auto padsFor = PerformUI::padTracks (*edit);
+                    bool noReturns = ! padsFor.isEmpty();
+                    for (auto* pt : padsFor) noReturns = noReturns && ! Routing::isReturnTrack (*pt);
+                    bool muteOk = false, fillPads = false, learned = false, pressed = false, keptOnLoad = false, listed = false, drawn = false, helped = false;
+                    if (onMaster != nullptr)
+                    {
+                        PerformUI::Stage stage (evs, *onMaster);
+                        stage.setSize (1040, 600);
+                        const int i1 = padsFor.indexOf (mt1);
+                        // a pad mutes its track, another click unmutes it, and undo takes the click back
+                        stage.pressMute (i1);
+                        const bool muted = mt1->isMuted (false) && ! mt2->isMuted (false);
+                        edit->getUndoManager().undo();
+                        const bool unmutedByUndo = ! mt1->isMuted (false);
+                        stage.pressMute (i1); stage.pressMute (i1);
+                        muteOk = stage.numMutePads() == padsFor.size() && i1 >= 0 && muted && unmutedByUndo && ! mt1->isMuted (false);
+                        // a fill is on while its pad is held; a latched one stays until it is pressed again
+                        stage.holdFill (3);
+                        const bool held = onMaster->getInt (PF::pFill) == 3;
+                        stage.holdFill (0);
+                        const bool letGo = onMaster->getInt (PF::pFill) == 0;
+                        stage.latchFill (2);
+                        const bool latched = onMaster->getInt (PF::pFill) == 2;
+                        stage.latchFill (2);
+                        fillPads = held && letGo && latched && onMaster->getInt (PF::pFill) == 0;
+                        // a button of a controller learned for a mute: each press toggles, letting go does nothing
+                        learn.startLearningMute (*mt2);
+                        const bool waiting = learn.isLearning() && learn.getLearningName().contains ("Pad two");
+                        learn.processControllerForTest (1, 41, 127);
+                        learned = waiting && ! learn.isLearning() && learn.isMuteMapped (*mt2) && ! learn.isMuteMapped (*mt1) && ! mt2->isMuted (false) && learn.muteMappingText (*mt2).contains ("CC 41");
+                        learn.processControllerForTest (1, 41, 0);
+                        learn.processControllerForTest (1, 41, 127);
+                        const bool on1 = mt2->isMuted (false);
+                        learn.processControllerForTest (1, 41, 0);
+                        const bool stillOn = mt2->isMuted (false);
+                        learn.processControllerForTest (1, 41, 127);
+                        pressed = on1 && stillOn && ! mt2->isMuted (false);
+                        for (auto& row : learn.rows (0)) listed = listed || (row.cc == 41 && row.target.contains ("Pad two") && row.target.contains ("Mute"));
+                        { MidiLearn again (*edit); keptOnLoad = again.isMuteMapped (*mt2) && again.muteMappingText (*mt2).contains ("CC 41"); }
+                        // the picture, at its usual size and at its smallest and a very large one
+                        mt1->setMute (true);
+                        onMaster->set (PF::pSweep, -0.55f); onMaster->set (PF::pResonance, 0.6f);
+                        stage.latchFill (3);
+                        Image img (Image::ARGB, 1040, 600, true);
+                        { Graphics g (img); stage.paintEntireComponent (g, true); }
+                        for (auto [w, h] : { std::pair<int, int> { 640, 380 }, { 2400, 1400 } }) { stage.setSize (w, h); Image im (Image::ARGB, w, h, true); Graphics g (im); stage.paintEntireComponent (g, true); }
+                        { auto f = dir.getChildFile ("performance.png"); f.deleteFile(); if (auto os = f.createOutputStream()) { PNGImageFormat png; png.writeImageToStream (img, *os); } }
+                        drawn = true;
+                        helped = HelpLine::textFor (&stage).isNotEmpty();
+                        stage.latchFill (3);
+                        learn.removeMuteMapping (*mt2);
+                        drawn = drawn && ! learn.isMuteMapped (*mt2) && stage.deviceStillThere();
+                        onMaster->deleteFromParent();
+                        drawn = drawn && ! stage.deviceStillThere();
+                    }
+                    rep.check (noneYet && placed && noReturns && muteOk && fillPads && learned && pressed && listed && keptOnLoad && drawn && helped,
+                               "Performance page (Perform goes first on the master, a mute pad for every track but the returns, undo of a mute, fills held and latched, a controller button learned for a mute and kept with the project)",
+                               String (padsFor.size()) + " pads" + (noneYet && placed ? "" : "; the device is not put first on the master") + (noReturns ? "" : "; a return has a pad") + (muteOk ? "" : "; mute pads wrong")
+                               + (fillPads ? "" : "; fill pads wrong") + (learned ? "" : "; learning a mute wrong") + (pressed ? "" : "; a learned button does not toggle on the press")
+                               + (listed ? "" : "; not in the list of mappings") + (keptOnLoad ? "" : "; not kept with the project") + (drawn ? "" : "; picture or clean-up wrong") + (helped ? "" : "; no help"));
+                    edit->deleteTrack (mt2);
+                    edit->deleteTrack (mt1);
+                    edit->getUndoManager().clearUndoHistory();
+                    LookAndFeel::setDefaultLookAndFeel (nullptr);
+                }
             }
 
             // --- Pulse Amp ---------------------------------------------------------------------------------

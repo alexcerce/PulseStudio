@@ -183,7 +183,7 @@ well EVERYWHERE." So, besides the list:
    [x] an acid bass preset bank for Pulse Analog, with accent and slide written as the 303 does  [x] distortion:
    more kinds worth having on a kick (clipper, wavefolder with tone, rumble maker = reverb into low pass into
    sidechain)  [x] a "kick" synth with pitch and click envelopes drawn on a graph  [x] techno presets for every
-   instrument and factory drum kits (909, 808, industrial)  [ ] a performance view: mutes, fills and filter
+   instrument and factory drum kits (909, 808, industrial)  [x] a performance view: mutes, fills and filter
    sweeps on one page, playable from a controller
 
 Not attempted (told the owner why): content libraries and AI session players (large downloads / trained models),
@@ -945,3 +945,18 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   for it twice): the rule about foreground builds is what keeps the PC awake. While this run stood still another
   session did v0.99.51 to v0.99.59; a run that wakes up must re-read this file and `git log` before going on.
   Left in group 7: the performance view. The slow tier is owed for v0.99.60.
+- 2026-10-07: v0.99.61. Group 7: the performance view. Source/Perform.h (pulse::Perform: Sweep -1..1 with a dead
+  middle, two biquads a side (the first carries the resonance, Q up to 4.9), blended in over 5 ms so that off is
+  really off; Fill = Off / 1/4 / 1/8 / 1/16 / 1/32: a memory of the last 2.1 s that stands still while a slice is
+  repeated, the slice taken from the grid line before the press when that is still in memory, 2 ms fades at the
+  joins and at the release). Source/PerformDisplay.h (PerformView / PerformPanel for the device, PerformUI::device
+  = the one on the master, Stage = mute pads + fill pads + the view, Window / show / close). Command view.perform,
+  the menu entry beside Notes. MidiLearn: Target::trackMute (startLearningMute, a mapping with no parameter and a
+  track id, acts on the press, saved as MAP muteTrack=...). Measured: middle of the sweep is the input to the last
+  digit; low-pass at 205 Hz leaves 2 kHz at -79 dB and 50 Hz at -0.03; resonance 85% is +8.3 dB at the cutoff
+  against -6 plain; a sixteenth held from 1.03 s plays the slice from 1.0 s exactly, and the release steps by
+  0.003 at most on a signal that jumps by 0.1. Not done: the mute pads have no level meters; no VST3 target for
+  Perform; the fill pads are not learned one button each (one control chooses between them); the window has no
+  keyboard shortcuts. Fills and mutes were tried with made-up controller messages only. Not judged by ear.
+  345 checks, quick tier; performance.png looked at. Group 7 is complete but for the owner's word on the demo
+  song. The slow tier is owed for v0.99.60 and v0.99.61.

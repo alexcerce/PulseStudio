@@ -2269,6 +2269,7 @@ namespace pulse
 #include "AmpFx.h"
 #include "TimeFx.h"
 #include "LoopFx.h"
+#include "Perform.h"
 #include "SpectralFx.h"
 #include "Keys.h"
 #include "Synths2.h"
@@ -2308,6 +2309,7 @@ namespace pulse
         pm.createBuiltInType<GrainDelay>();
         pm.createBuiltInType<BeatRepeat>();
         pm.createBuiltInType<Looper>();
+        pm.createBuiltInType<Perform>();
         pm.createBuiltInType<MatchEQ>();
         pm.createBuiltInType<ChainOut>();
         pm.createBuiltInType<Reference>();

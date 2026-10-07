@@ -649,6 +649,15 @@ namespace FactoryPresetsMore
                 { "Wide Warehouse", { { "amount", -11 }, { "decay", 2.6f }, { "tone", 320 }, { "lowcut", 60 }, { "drive", 12 }, { "duck", 0.8f }, { "recover", 200 }, { "width", 0.8f }, { "dry", 1 } } },
                 { "Rumble Only (on a return fed by the kick)", { { "amount", 0 }, { "decay", 1.4f }, { "tone", 100 }, { "lowcut", 30 }, { "drive", 10 }, { "duck", 0.9f }, { "recover", 170 }, { "width", 0 }, { "dry", 0 } } } } },
 
+            // Perform: the fill is something held, so every preset leaves it off
+            { "pulsePerform", {
+                { "Ready (sweep off, a little resonance)", { { "sweep", 0 }, { "resonance", 0.3f }, { "fill", 0 } } },
+                { "Clean Sweep (no resonance)", { { "sweep", 0 }, { "resonance", 0 }, { "fill", 0 } } },
+                { "Screaming Sweep (high resonance)", { { "sweep", 0 }, { "resonance", 0.85f }, { "fill", 0 } } },
+                { "Breakdown: Bass Out (high-pass at 250 Hz)", { { "sweep", 0.41f }, { "resonance", 0.25f }, { "fill", 0 } } },
+                { "Next Room (low-pass at 600 Hz)", { { "sweep", -0.64f }, { "resonance", 0.2f }, { "fill", 0 } } },
+                { "Under Water (low-pass at 200 Hz, resonant)", { { "sweep", -0.83f }, { "resonance", 0.6f }, { "fill", 0 } } } } },
+
             { "pulseExciter", {
                 { "Vocal Presence", { { "freq", 3500 }, { "drive", 12 }, { "colour", 0.3f }, { "amount", 0.25f } } },
                 { "Air", { { "freq", 8000 }, { "drive", 14 }, { "colour", 0 }, { "amount", 0.3f } } },

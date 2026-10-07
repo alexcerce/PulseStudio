@@ -14,6 +14,7 @@
 #include "ModFxDisplay.h"
 #include "ColourFxDisplay.h"
 #include "RumbleDisplay.h"
+#include "PerformDisplay.h"
 #include "AmpFxDisplay.h"
 #include "TimeFxDisplay.h"
 #include "LoopFxDisplay.h"

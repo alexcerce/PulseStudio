@@ -109,6 +109,7 @@ namespace ClipImport
             { "Pulse Spectral", pulse::Spectral::xmlTypeName,      false },
             { "Beat Repeat",  pulse::BeatRepeat::xmlTypeName,      false },
             { "Looper",       pulse::Looper::xmlTypeName,          false },
+            { "Perform",      pulse::Perform::xmlTypeName,         false },
             { "Pulse Chorus", pulse::Chorus::xmlTypeName,          false },
             { "Phaser-Flanger", pulse::PhaserFlanger::xmlTypeName, false },
             { "Auto Pan",     pulse::AutoPan::xmlTypeName,         false },

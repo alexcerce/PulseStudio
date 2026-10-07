@@ -1777,6 +1777,8 @@ namespace DeviceEditors
             add ("Exciter", std::make_unique<ColourUI::ExciterPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::Rumble*> (&p))
             add ("Rumble", std::make_unique<RumbleUI::RumblePanel> (evs, *s));
+        else if (auto s = dynamic_cast<pulse::Perform*> (&p))
+            add ("Perform", std::make_unique<PerformUI::PerformPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::Chorus*> (&p))
             add ("Chorus", std::make_unique<ModUI::ChorusPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::PhaserFlanger*> (&p))
@@ -1849,7 +1851,7 @@ namespace DeviceEditors
             || dynamic_cast<pulse::ConvolutionReverb*> (&p) != nullptr || dynamic_cast<pulse::ModEffect*> (&p) != nullptr
             || dynamic_cast<pulse::MatchEQ*> (&p) != nullptr || dynamic_cast<pulse::Reference*> (&p) != nullptr
             || dynamic_cast<pulse::Spectral*> (&p) != nullptr || dynamic_cast<pulse::Resonators*> (&p) != nullptr || dynamic_cast<pulse::Shimmer*> (&p) != nullptr
-            || dynamic_cast<pulse::Amp*> (&p) != nullptr || dynamic_cast<pulse::Redux*> (&p) != nullptr || dynamic_cast<pulse::Exciter*> (&p) != nullptr || dynamic_cast<pulse::Rumble*> (&p) != nullptr
+            || dynamic_cast<pulse::Amp*> (&p) != nullptr || dynamic_cast<pulse::Redux*> (&p) != nullptr || dynamic_cast<pulse::Exciter*> (&p) != nullptr || dynamic_cast<pulse::Rumble*> (&p) != nullptr || dynamic_cast<pulse::Perform*> (&p) != nullptr
             || dynamic_cast<pulse::Gate*> (&p) != nullptr || dynamic_cast<pulse::TransientShaper*> (&p) != nullptr || dynamic_cast<pulse::DeEsser*> (&p) != nullptr;
     }
 

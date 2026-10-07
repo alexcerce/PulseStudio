@@ -366,6 +366,7 @@ public:
         c.add ("file.findMissing", "Find missing files", "File", {}, [this] { if (! About::isCapturing()) findMissingFiles (true); });
         c.add ("view.video", "Video: the film this project is written to", "View", {}, [this] { if (edit != nullptr && ! About::isCapturing()) Video::show (*edit); });
         c.add ("view.notes", "Notes for the project and its tracks", "View", {}, [this] { if (edit != nullptr && ! About::isCapturing()) Notes::show (*edit); });
+        c.add ("view.perform", "Performance: mutes, fills and a sweep on one page", "View", {}, [this] { if (evs != nullptr && ! About::isCapturing()) PerformUI::show (*evs); });
         c.add ("view.steps", "Piano roll: step grid on / off", "View", {}, [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->showSteps (! pianoRoll->stepGrid().isVisible()); } });
         c.add ("view.machine", "Piano roll: drum machine on / off", "View", {}, [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->showMachine (! pianoRoll->drumMachine().isVisible()); } });
         c.add ("midi.fitChords", "MIDI: fit to the chord track", "MIDI", {}, [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("fitchords"); } });
@@ -500,6 +501,7 @@ private:
         a.video          = [this] { if (edit != nullptr && ! About::isCapturing()) Video::show (*edit); };
         a.findMissing    = [this] { findMissingFiles (true); };
         a.notes          = [this] { if (edit != nullptr && ! About::isCapturing()) Notes::show (*edit); };
+        a.perform        = [this] { if (evs != nullptr && ! About::isCapturing()) PerformUI::show (*evs); };
         a.userGuide      = [this] { About::showUserGuide (this); };
         a.setMidiRecordMode = [this] (int m)
         {
@@ -865,7 +867,7 @@ public:
                              pulse::Saturator::xmlTypeName, pulse::AutoFilter::xmlTypeName, pulse::Limiter::xmlTypeName, pulse::Utility::xmlTypeName,
                              pulse::Gate::xmlTypeName, pulse::TransientShaper::xmlTypeName, pulse::DeEsser::xmlTypeName, pulse::ConvolutionReverb::xmlTypeName, pulse::MatchEQ::xmlTypeName, pulse::Reference::xmlTypeName,
                              pulse::Chorus::xmlTypeName, pulse::PhaserFlanger::xmlTypeName, pulse::AutoPan::xmlTypeName, pulse::FreqShifter::xmlTypeName,
-                             pulse::Redux::xmlTypeName, pulse::Exciter::xmlTypeName, pulse::Rumble::xmlTypeName, pulse::Amp::xmlTypeName, pulse::Resonators::xmlTypeName,
+                             pulse::Redux::xmlTypeName, pulse::Exciter::xmlTypeName, pulse::Rumble::xmlTypeName, pulse::Perform::xmlTypeName, pulse::Amp::xmlTypeName, pulse::Resonators::xmlTypeName,
                              pulse::Shimmer::xmlTypeName, pulse::GrainDelay::xmlTypeName, pulse::BeatRepeat::xmlTypeName, pulse::Looper::xmlTypeName,
                              pulse::Spectral::xmlTypeName, pulse::MultibandDynamics::xmlTypeName, pulse::GlueCompressor::xmlTypeName, pulse::PulseEQ::xmlTypeName,
                              pulse::Vocoder::xmlTypeName };
@@ -1196,6 +1198,7 @@ private:
         DeviceEditors::closeAll();
         UndoHistory::closeAll();
         Notes::close();
+        PerformUI::close();
         Video::close();
         pianoRoll = nullptr;
         mixer = nullptr;
