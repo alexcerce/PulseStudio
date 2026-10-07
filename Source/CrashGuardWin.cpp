@@ -34,14 +34,62 @@ namespace CrashGuardWin
 
 namespace CrashGuardWin
 {
+    static char helperStage[160] = "starting";
+
+    /** Sandbox helpers say what they are doing, so that a crash note can say where it happened. */
+    void setHelperStage (const char* stage)
+    {
+        strncpy_s (helperStage, sizeof (helperStage), stage != nullptr ? stage : "", _TRUNCATE);
+    }
+
+    /** Where a sandbox helper with this process id leaves its crash note (the folder, for pid 0). */
+    juce::File helperNoteFile (int pid)
+    {
+        auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("PulseSandbox");
+        return pid > 0 ? dir.getChildFile ("crash-" + juce::String (pid) + ".txt") : dir;
+    }
+
+    static wchar_t helperNotePath[MAX_PATH * 2] = {};
+
+    // Runs inside a crashing process: Windows calls only, nothing that allocates from the C++ heap.
+    static void writeHelperNote (EXCEPTION_POINTERS* ep)
+    {
+        if (helperNotePath[0] == 0) return;
+        char text[1400] = {};
+        char module[MAX_PATH * 2] = "(unknown)";
+        DWORD code = 0;
+        void* address = nullptr;
+        if (ep != nullptr && ep->ExceptionRecord != nullptr)
+        {
+            code = ep->ExceptionRecord->ExceptionCode;
+            address = ep->ExceptionRecord->ExceptionAddress;
+            HMODULE m = nullptr;
+            if (GetModuleHandleExW (GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCWSTR) address, &m) && m != nullptr)
+            {
+                wchar_t wide[MAX_PATH * 2] = {};
+                if (GetModuleFileNameW (m, wide, (DWORD) (sizeof (wide) / sizeof (wide[0]))) > 0)
+                    WideCharToMultiByte (CP_UTF8, 0, wide, -1, module, (int) sizeof (module), nullptr, nullptr);
+            }
+        }
+        const int n = wsprintfA (text, "exception 0x%08lX\r\nmodule %s\r\nstage %s\r\n", code, module, helperStage);
+        HANDLE f = CreateFileW (helperNotePath, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (f == INVALID_HANDLE_VALUE) return;
+        DWORD written = 0;
+        WriteFile (f, text, (DWORD) n, &written, nullptr);
+        CloseHandle (f);
+    }
+
     /** No "has stopped working" dialog for this process: a crash just ends it (used by sandbox helpers). */
     void disableCrashDialogs()
     {
+        helperNoteFile (0).createDirectory();
+        helperNoteFile ((int) GetCurrentProcessId()).getFullPathName().copyToUTF16 (helperNotePath, sizeof (helperNotePath) - sizeof (wchar_t));
+
         SetErrorMode (SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
         DWORD mode = 0;
         if (GetThreadErrorMode != nullptr) SetThreadErrorMode (SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX, &mode);
-        // a last-chance handler that terminates straight away
-        SetUnhandledExceptionFilter ([] (EXCEPTION_POINTERS*) -> LONG { TerminateProcess (GetCurrentProcess(), 3); return EXCEPTION_EXECUTE_HANDLER; });
+        // a last-chance handler that leaves a note of what happened and terminates straight away
+        SetUnhandledExceptionFilter ([] (EXCEPTION_POINTERS* ep) -> LONG { writeHelperNote (ep); TerminateProcess (GetCurrentProcess(), 3); return EXCEPTION_EXECUTE_HANDLER; });
     }
 }
 

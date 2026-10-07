@@ -2,6 +2,11 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.63 - 2026-10-07
+
+- Fixed: some plugins (Replika, Phasis, Choral and Flair among them) crashed their sandbox helper as soon as they were put in it by file. The helper now opens a plugin's file on the same thread it creates the plugin on
+- A sandboxed plugin that crashes says where: hover the card's name to read which file it stopped in and what the helper was doing (starting the plugin, giving it its settings, running)
+
 ## 0.99.62 - 2026-10-07
 
 - Prism EQ: the selected band's controls are a strip under the display. They used to float over the graph beside the band's point and hid the spectrum there. The Prism EQ VST3 plugin is rebuilt with it

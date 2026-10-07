@@ -3338,6 +3338,9 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
                         MessageManager::getInstance()->runDispatchLoopUntil (50);
                     const bool crashed = sb->hasCrashed();
                     const float after = peakDb (engine, EditingOps::renderTrack (*sbTrack, one, "sandbox-crashed"));
+                    const auto note = sb->getStatus();
+                    rep.check (note.containsIgnoreCase ("fault 0xC0000005") && note.contains ("while running"),
+                               "A crashed helper says what happened and where", note);
                     sb->restart();
                     rep.check (crashed && after > -40.0f && sb->isLoaded() && ! sb->hasCrashed(),
                                "Helper crash is contained (audio passes through, restart works)",

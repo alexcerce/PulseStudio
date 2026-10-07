@@ -388,6 +388,32 @@ public:
             return;
         }
 
+        // --sandbox-probe <plugin.vst3 | plugin.dll> <report.txt> : starts a sandbox helper for a plugin, as a device
+        // on a track would, and says whether it came up; if the helper died, what it wrote down as it went. Then exit.
+        if (auto i = args.indexOf ("--sandbox-probe"); i >= 0 && i + 2 < args.size())
+        {
+            engine = std::make_unique<te::Engine> ("Pulse Studio Test", std::make_unique<PulseUIBehaviour>(), std::make_unique<PulseEngineBehaviour>());
+            pulse::registerDevices (*engine);
+            const auto plugin = File::getCurrentWorkingDirectory().getChildFile (args[i + 1].unquoted());
+            const auto report = File::getCurrentWorkingDirectory().getChildFile (args[i + 2].unquoted());
+            String text = plugin.getFileName() + ": ";
+            {
+                auto edit = te::createEmptyEdit (*engine, File::getSpecialLocation (File::tempDirectory).getChildFile ("pulse-sandbox-probe.tracktionedit"));
+                auto p = edit->getPluginCache().createNewPlugin (pulse::SandboxedPlugin::createState (nullptr, plugin));
+                if (auto* sb = dynamic_cast<pulse::SandboxedPlugin*> (p.get()))
+                {
+                    Thread::sleep (300);   // a helper that died is noticed through its pipe a moment later
+                    text << (sb->isLoaded() && ! sb->hasCrashed() ? "up, \"" + sb->getName() + "\", " + String (sb->numParams()) + " parameters; " : String ("NOT up; "))
+                         << sb->getStatus();
+                }
+                else text << "the device could not be made";
+            }
+            report.replaceWithText (text);
+            engine = nullptr;
+            quit();
+            return;
+        }
+
         // --video-probe <video> <report.txt> : how Windows' media player gets on with a video file, then exit
         if (auto i = args.indexOf ("--video-probe"); i >= 0 && i + 2 < args.size())
         {

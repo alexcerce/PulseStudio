@@ -356,7 +356,7 @@ Pulse's own devices have compact cards: knobs stack in as many rows as the devic
 - **Crash reports:** if Pulse Studio crashes, it saves a log with a stack trace. It also notes which plugin the crash happened in, or which plugin was loading at the time.
 - **After a crash:** the next launch offers to *disable that plugin*, start in **safe mode**, or continue. Disabled plugins aren't loaded, but their settings stay in your projects. Re-enable them in **Audio Settings → Safety**, which also opens the crash-log folder.
 - **Plugin sandbox:** turn on *Audio Settings → Safety → Run new VST3 plugins in their own process*, or use a device's ☰ menu → *Run in its own process*.
-  - Each sandboxed plugin then runs in a helper process. If it crashes, Pulse keeps running: an effect passes audio through, an instrument goes quiet, and its card shows **Restart**.
+  - Each sandboxed plugin then runs in a helper process. If it crashes, Pulse keeps running: an effect passes audio through, an instrument goes quiet, and its card shows **Restart**. Hover the card's name to read where it stopped (which file, and whether it was starting, taking its settings or running).
   - Settings and automation work as usual. *Run inside Pulse* moves a plugin back.
 - **Safe mode:** hold **Shift** while starting, or run with `--safe-mode`. No plugins load, and the title bar says so.
 - **Per-project view:** zoom, scroll, snap, arrangement/session view, browser, bottom panel, panel size, selected track and collapsed groups are saved in the project. The window size and position are remembered too.

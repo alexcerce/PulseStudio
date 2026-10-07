@@ -2,7 +2,8 @@
 
 #include "PulseDevices.h"
 
-namespace CrashGuardWin { void disableCrashDialogs(); int currentProcessId(); bool isProcessAlive (int pid); }
+namespace CrashGuardWin { void disableCrashDialogs(); int currentProcessId(); bool isProcessAlive (int pid);
+                          void setHelperStage (const char* stage); File helperNoteFile (int pid); }
 
 /** Plugin sandboxing: a VST3 runs inside a helper process ("Pulse Studio.exe" in host mode),
     so a crashing plugin only takes down its helper, not Pulse.
@@ -62,28 +63,33 @@ namespace sandbox
             String error;
             PluginDescription desc;
             if (auto xml = parseXML (descXml)) desc.loadFromXml (*xml);
-            if (desc.fileOrIdentifier.isEmpty() && file.isNotEmpty())
-            {
-                OwnedArray<PluginDescription> found;
-                if (File (file).hasFileExtension ("dll")) { VSTPluginFormat fmt; fmt.findAllTypesForFile (found, file); }   // a VST2 is a plain .dll
-                else                                      { VST3PluginFormat fmt; fmt.findAllTypesForFile (found, file); }
-                if (! found.isEmpty()) desc = *found[0];
-            }
-
-            // plugins must be created on the message thread
+            // plugins must be opened and created on the message thread: some keep what they set up when their file
+            // is first opened for the thread it happened on
             WaitableEvent done;
             MessageManager::callAsync ([&]
             {
+                if (desc.fileOrIdentifier.isEmpty() && file.isNotEmpty())
+                {
+                    CrashGuardWin::setHelperStage ("reading what the file holds");
+                    OwnedArray<PluginDescription> found;
+                    if (File (file).hasFileExtension ("dll")) { VSTPluginFormat fmt; fmt.findAllTypesForFile (found, file); }   // a VST2 is a plain .dll
+                    else                                      { VST3PluginFormat fmt; fmt.findAllTypesForFile (found, file); }
+                    if (! found.isEmpty()) desc = *found[0];
+                }
+                CrashGuardWin::setHelperStage ("creating the plugin");
                 plugin = formats.createPluginInstance (desc, sampleRate, blockSize, error);
                 if (plugin != nullptr)
                 {
+                    CrashGuardWin::setHelperStage ("preparing the plugin to play");
                     plugin->enableAllBuses();
                     plugin->prepareToPlay (sampleRate, blockSize);
+                    CrashGuardWin::setHelperStage ("giving the plugin its saved settings");
                     if (state.getSize() > 0) plugin->setStateInformation (state.getData(), (int) state.getSize());
                 }
                 done.signal();
             });
             done.wait (30000);
+            CrashGuardWin::setHelperStage ("reading the plugin's parameters");
 
             MemoryOutputStream out;
             out.writeByte ((char) msgLoaded);
@@ -111,6 +117,7 @@ namespace sandbox
                 }
             }
             sendMessageToCoordinator (out.getMemoryBlock());
+            CrashGuardWin::setHelperStage ("running");
         }
 
         void prepare (double sr, int block)
@@ -322,7 +329,7 @@ namespace pulse
         int getLateBlocks() const  { return lateBlocks.load(); }
         String getStatus() const
         {
-            if (crashed) return "The plugin crashed (Pulse kept running). Click Restart.";
+            if (crashed) return "The plugin crashed (Pulse kept running). Click Restart." + (crashNote().isNotEmpty() ? " " + crashNote() + "." : String());
             if (! loaded) return "Not loaded: " + loadError;
             return "Running in its own process" + (lateBlocks > 0 ? " - " + String (lateBlocks.load()) + " late blocks" : String());
         }
@@ -332,6 +339,36 @@ namespace pulse
             MemoryOutputStream out;
             out.writeByte ((char) sandbox::msgShowEditor);
             host.sendMessageToWorker (out.getMemoryBlock());
+        }
+
+        /** What the helper wrote down as it went (the fault, the file it was in, what it was doing), or nothing. */
+        String crashNote() const
+        {
+            if (note.isEmpty())
+            {
+                File newest;
+                for (auto& f : CrashGuardWin::helperNoteFile (0).findChildFiles (File::findFiles, false, "crash-*.txt"))
+                    if (f.getLastModificationTime() >= launched - RelativeTime::seconds (2.0)
+                         && (newest == File() || f.getLastModificationTime() > newest.getLastModificationTime()))
+                        newest = f;
+                if (helperPid > 0 && CrashGuardWin::helperNoteFile (helperPid).existsAsFile()) newest = CrashGuardWin::helperNoteFile (helperPid);
+                if (newest != File())
+                {
+                    StringArray lines;
+                    lines.addLines (newest.loadFileAsString());
+                    lines.removeEmptyStrings();
+                    String fault, module, stage;
+                    for (auto& l : lines)
+                    {
+                        if (l.startsWith ("exception ")) fault = l.fromFirstOccurrenceOf (" ", false, false);
+                        if (l.startsWith ("module "))    module = File::createFileWithoutCheckingPath (l.fromFirstOccurrenceOf (" ", false, false)).getFileName();
+                        if (l.startsWith ("stage "))     stage = l.fromFirstOccurrenceOf (" ", false, false);
+                    }
+                    note = "It stopped in " + (module.isNotEmpty() ? module : String ("an unknown place")) + " while " + stage + " (fault " + fault + ")";
+                    newest.deleteFile();
+                }
+            }
+            return note;
         }
 
         /** Relaunches the helper and reloads the plugin with its last saved state. */
@@ -504,6 +541,8 @@ namespace pulse
         void launchAndLoad()
         {
             loaded = false;
+            note.clear();
+            launched = Time::getCurrentTime();
             const auto exe = File::getSpecialLocation (File::currentExecutableFile);
             if (! host.launchWorkerProcess (exe, sandbox::commandLineID, 15000, 0))
             {
@@ -554,6 +593,8 @@ namespace pulse
 
         Host host;
         String displayName, loadError;
+        mutable String note;
+        Time launched;
         bool instrument = false;
         int latencySamples = 0;
         std::atomic<bool> loaded { false };
