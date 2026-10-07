@@ -920,3 +920,7 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   Slow tier for .54 to .59: Release self-test 340/340, Debug self-test (see next entry), monkey seeds 21 and 22
   clean (one stall of 1035 ms on the Compressor's picture: the known one, cause still not found), command fuzz
   744 commands clean.
+- 2026-10-07: slow tier for v0.99.54 to .59 complete: Debug self-test 340/340, installer
+  PulseStudio-0.99.59-Setup.exe (286 MB with the 40 plugins as an optional part). Next in group 7: the drum
+  machine view of the Drum Rack, then the performance view. Before anything is said to the owner about a plugin
+  again: `--vst3-probe dist/VST3 report.txt` and the same with `--self-move`, both 40 of 40.
