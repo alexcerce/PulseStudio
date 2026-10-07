@@ -896,3 +896,27 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   Techno factory loop uses the Techno kit). "909, 808" kits were there already. All presets pass the level
   audit. NOT JUDGED BY EAR: these are settings written from knowledge of the synths, checked only for level.
   The owner's ears decide which stay. 340 checks, quick tier.
+- 2026-10-07: v0.99.59. THE PLUGINS CRASHED ABLETON. The owner tried Prism EQ and EQ Six in Live: "they both
+  spazed out, caused ableton to freeze when I started moving bands and freqs, made loud buzzing, and then
+  crashed ableton". Cause: Setting::setValue called te::AutomatableParameter::setParameter on whatever thread
+  the host used, which is its audio thread for every value it sends during playback, including its echo of a
+  move made in the plugin's own window. The engine allows that call on the message thread only (it starts
+  curveHasChanged, the automation record manager, listeners). My test in v0.99.53 set values and processed on
+  ONE thread, so it never saw it; I reported the plugins as working on the strength of that. Reproduced now:
+  --vst3-probe rides settings from a second thread while the window is open, and the plugin as shipped takes
+  the probe down at once (segmentation fault). FIX: a value from the host is only noted (two atomics); a 100 Hz
+  timer on the message thread puts it into the device; getValue answers with the noted value meanwhile. A
+  host's echo is dropped while a hand is on the control in our window and for 300 ms after. Our own moves are
+  sent to the host inside a gesture (the engine's begin/end when a knob is dragged, one of our own around a
+  click). Loading a state does not tell the host of each setting. State is read and written on the message
+  thread (a host asking from another thread waits for it). PULSE_PLUGIN_SELF_MOVE=1 makes a plugin move its own
+  settings as its window would, for the probe's --self-move. All 40 rebuilt and probed both ways: 40 of 40 up
+  and sane. The price: automation from the host lands within 10 ms, not on the sample, and an offline bounce in
+  a host runs faster than that timer (automation in a bounce may land late: to be looked at; realtime is right).
+  STILL NOT RUN IN LIVE BY ME: the owner's next try is the real test.
+  ALSO: instruments as VST3, asked for by the owner. PulseFxPlugin.cpp takes any PulsePlugin; pulse_fx_plugin
+  (... SYNTH) makes an instrument (no input, notes passed on at their moment in the block). Nine built. JUCE
+  adds 2000-odd MIDI-controller parameters to an instrument's list (its usual way of passing controllers on).
+  Slow tier for .54 to .59: Release self-test 340/340, Debug self-test (see next entry), monkey seeds 21 and 22
+  clean (one stall of 1035 ms on the Compressor's picture: the known one, cause still not found), command fuzz
+  744 commands clean.

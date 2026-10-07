@@ -163,7 +163,7 @@ public:
         {
             const auto target = File::getCurrentWorkingDirectory().getChildFile (args[i + 1].unquoted());
             const auto report = File::getCurrentWorkingDirectory().getChildFile (args[i + 2].unquoted());
-            const auto pictures = i + 3 < args.size() ? File::getCurrentWorkingDirectory().getChildFile (args[i + 3].unquoted()) : File();
+            const auto pictures = i + 3 < args.size() && ! args[i + 3].startsWith ("--") ? File::getCurrentWorkingDirectory().getChildFile (args[i + 3].unquoted()) : File();
             const bool many = target.isDirectory() && ! target.hasFileExtension ("vst3");
             // --self-move: Pulse's own plugins then move their settings from inside too, as their windows would (what is
             // measured about the sound means nothing in such a run: it is about staying up)

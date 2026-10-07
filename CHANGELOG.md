@@ -2,6 +2,11 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.59 - 2026-10-07
+
+- Fixed: the VST3 plugins froze and crashed the host when settings were moved (they set engine parameters from the host's audio thread). All of them are rebuilt
+- Nine instruments are built as VST3 plugins too (Kick, Analog, Wavetable, FM, String, Organ, Electric Piano, Drum Synth, Simpler)
+
 ## 0.99.58 - 2026-10-07
 
 - Techno presets for every instrument (listed first in the preset menu) and two more drum kits: Techno and Industrial
