@@ -22,16 +22,23 @@ namespace pulse
         std::function<bool()> isMono;
         /** Optional filters: return false to ignore the note (used by Drum Pads). */
         std::function<bool (int note)> acceptNoteOn, acceptNoteOff;
+        /** Optional, for an instrument that ties notes together: asked for every new note in mono mode; true means
+            the instrument has carried its sounding voice over to the note itself and nothing new is to start. */
+        std::function<bool (int note, float vel)> tieNoteOn;
+        /** Optional, with it: which note a note-off is really for (-1: for none, it is swallowed). */
+        std::function<int (int note)> mapNoteOff;
 
         void noteOff (int ch, int note, float vel, bool allowTailOff) override
         {
             if (acceptNoteOff && ! acceptNoteOff (note)) return;
+            if (mapNoteOff) { note = mapNoteOff (note); if (note < 0) return; }
             Synthesiser::noteOff (ch, note, vel, allowTailOff);
         }
 
         void noteOn (int ch, int note, float vel) override
         {
             if (acceptNoteOn && ! acceptNoteOn (note)) return;
+            if (isMono && isMono() && tieNoteOn && tieNoteOn (note, vel)) return;
             if (isMono && isMono())
                 for (auto* v : voices)
                     if (v->isVoiceActive())

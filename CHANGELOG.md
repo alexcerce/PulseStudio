@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.55 - 2026-10-06
+
+- Pulse Analog: tied notes (slides as on a 303) and accent, and a bank of eight acid presets
+
 ## 0.99.54 - 2026-10-06
 
 - Step grid: a chance of playing and repeats (ratchets) for each step, and a length of its own for each row (polymetre)

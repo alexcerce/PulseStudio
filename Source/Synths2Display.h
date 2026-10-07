@@ -138,6 +138,7 @@ namespace Synths2UI
             mx->add (knob (evs, *a.param (A::pMix), "1 / 2"), 46);
             mx->add (knob (evs, *a.param (A::pSub), "Sub"), 45);
             mx->add (knob (evs, *a.param (A::pNoise), "Noise"), 45);
+            mx->add (knob (evs, *a.param (A::pLevel), "Level"), 45);
             auto* fl = strip (0, "FILTER");
             fl->add (knob (evs, *a.param (A::pCutoff), "Cutoff"), 48);
             fl->add (knob (evs, *a.param (A::pReso), "Reso"), 46);
@@ -145,20 +146,25 @@ namespace Synths2UI
             fl->add (knob (evs, *a.param (A::pKeyTrack), "Key"), 45);
             fl->add (knob (evs, *a.param (A::pFilterDrive), "Drive"), 45);
             auto* fe = strip (1, "FILTER ENVELOPE");
-            fe->add (knob (evs, *a.param (A::pFA), "Attack"), 47); fe->add (knob (evs, *a.param (A::pFD), "Decay"), 47);
-            fe->add (knob (evs, *a.param (A::pFS), "Sustain"), 47); fe->add (knob (evs, *a.param (A::pFR), "Release"), 47);
+            fe->add (knob (evs, *a.param (A::pFA), "Attack"), 44); fe->add (knob (evs, *a.param (A::pFD), "Decay"), 44);
+            fe->add (knob (evs, *a.param (A::pFS), "Sustain"), 44); fe->add (knob (evs, *a.param (A::pFR), "Release"), 44);
             auto* ae = strip (1, "AMP ENVELOPE");
-            ae->add (knob (evs, *a.param (A::pA), "Attack"), 47); ae->add (knob (evs, *a.param (A::pD), "Decay"), 47);
-            ae->add (knob (evs, *a.param (A::pS), "Sustain"), 47); ae->add (knob (evs, *a.param (A::pR), "Release"), 47);
+            ae->add (knob (evs, *a.param (A::pA), "Attack"), 44); ae->add (knob (evs, *a.param (A::pD), "Decay"), 44);
+            ae->add (knob (evs, *a.param (A::pS), "Sustain"), 44); ae->add (knob (evs, *a.param (A::pR), "Release"), 44);
             auto* lf = strip (1, "LFO");
             lf->add (knob (evs, *a.param (A::pLfoRate), "Rate"), 46); lf->add (knob (evs, *a.param (A::pLfoPitch), "Pitch"), 46);
             lf->add (knob (evs, *a.param (A::pLfoCutoff), "Cutoff"), 46); lf->add (knob (evs, *a.param (A::pLfoPw), "Width"), 46);
             auto* vc = strip (1, "VOICE");
-            vc->add (new ParamChoice (*a.param (A::pMode), Theme::accent, false), 94);
+            { auto* mono = new ParamToggle (*a.param (A::pMode), "Mono", Theme::accent);
+              mono->setTooltip ("Mono: one note at a time (a bass line, a lead). Off: chords");
+              vc->add (mono, 52); }
             vc->add (knob (evs, *a.param (A::pGlide), "Glide"), 45);
+            { auto* tied = new ParamToggle (*a.param (A::pGlideMode), "Tied", Theme::accent);
+              tied->setTooltip ("Tied notes: in mono mode a note that begins before the last one has ended is not struck again, the pitch slides to it; a note on its own does not glide. Off: every note glides");
+              vc->add (tied, 50); }
+            vc->add (knob (evs, *a.param (A::pAccent), "Accent"), 46);
             vc->add (knob (evs, *a.param (A::pUnison), "Unison"), 46);
             vc->add (knob (evs, *a.param (A::pDrift), "Drift"), 45);
-            vc->add (knob (evs, *a.param (A::pLevel), "Level"), 45);
         }
 
         void paint (Graphics& g) override

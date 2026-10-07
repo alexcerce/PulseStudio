@@ -11,7 +11,7 @@ namespace pulse
     public:
         enum { pWave1, pOct1, pPw, pWave2, pOct2, pSemi2, pFine2, pSync, pMix, pSub, pNoise,
                pCutoff, pReso, pEnvAmt, pKeyTrack, pFilterDrive, pFA, pFD, pFS, pFR, pA, pD, pS, pR,
-               pLfoRate, pLfoPitch, pLfoCutoff, pLfoPw, pMode, pGlide, pUnison, pDrift, pLevel };
+               pLfoRate, pLfoPitch, pLfoCutoff, pLfoPw, pMode, pGlide, pUnison, pDrift, pLevel, pGlideMode, pAccent };
         static inline const char* xmlTypeName = "pulseAnalog";
         static const char* getPluginName() { return "Pulse Analog"; }
         static inline const StringArray waveNames { "Saw", "Pulse", "Triangle", "Sine" };
@@ -52,10 +52,37 @@ namespace pulse
             add ("unison", "Unison", { 0.0f, 1.0f }, 0.0f, fmt::pct);
             add ("drift", "Drift", { 0.0f, 1.0f }, 0.2f, fmt::pct);
             add ("level", "Level", { -24.0f, 12.0f }, -8.0f, fmt::db);
+            // The two things a bass line machine does with a note. Tied: in mono mode a note that begins before the
+            // last one has ended is not struck again: the pitch slides to it and the envelopes carry on (and a note
+            // that does not overlap does not glide at all). Accent: a hard-played note is louder, opens the filter
+            // further and snaps shut sooner.
+            add ("glidemode", "Glide Mode", steps (2), 0.0f, fmt::choice ({ "Every note", "Tied notes" }));
+            add ("accent", "Accent", { 0.0f, 1.0f }, 0.0f, fmt::pct);
             for (int i = 0; i < 16; ++i) synth.addVoice (new Voice (*this));
             synth.addSound (new AnySound());
             synth.setNoteStealingEnabled (true);
             synth.isMono = [this] { return getInt (pMode) > 0; };
+            synth.tieNoteOn = [this] (int note, float vel)
+            {
+                if (getInt (pGlideMode) == 0) { tiedTo = -1; return false; }
+                for (int i = 0; i < synth.getNumVoices(); ++i)
+                    if (auto* v = dynamic_cast<Voice*> (synth.getVoice (i)); v != nullptr && v->isVoiceActive() && v->isKeyDown())
+                    {
+                        v->tieTo (note, vel);
+                        tiedTo = note;                           // the key that now holds the voice
+                        tiedFrom = v->getCurrentlyPlayingNote();   // the key the synthesiser thinks holds it
+                        return true;
+                    }
+                tiedTo = -1;
+                return false;
+            };
+            synth.mapNoteOff = [this] (int note)
+            {
+                if (tiedTo < 0) return note;
+                if (note == tiedTo) { tiedTo = -1; return tiedFrom; }   // the tied note ends: the voice is let go
+                if (note == tiedFrom) return -1;                         // the first key comes up under the tie: nothing ends
+                return note;
+            };
         }
 
         String getName() const override       { return "Pulse Analog"; }
@@ -65,7 +92,7 @@ namespace pulse
         {
             return { { "Osc 1", { pWave1, pOct1, pPw } }, { "Osc 2", { pWave2, pOct2, pSemi2, pFine2, pSync } }, { "Mix", { pMix, pSub, pNoise } },
                      { "Filter", { pCutoff, pReso, pEnvAmt, pKeyTrack, pFilterDrive } }, { "Filter env", { pFA, pFD, pFS, pFR } }, { "Amp env", { pA, pD, pS, pR } },
-                     { "LFO", { pLfoRate, pLfoPitch, pLfoCutoff, pLfoPw } }, { "Voice", { pMode, pGlide, pUnison, pDrift, pLevel } } };
+                     { "LFO", { pLfoRate, pLfoPitch, pLfoCutoff, pLfoPw } }, { "Voice", { pMode, pGlide, pGlideMode, pAccent, pUnison, pDrift, pLevel } } };
         }
 
         /** A wave as it would be drawn (not band-limited): phase 0..1. */
@@ -93,6 +120,15 @@ namespace pulse
         std::atomic<float> lastNoteHz { 0.0f };
 
     private:
+        int tiedTo = -1, tiedFrom = -1;   // (on the audio thread only)
+
+        /** How much of the accent a note gets: none below a firm touch, all of it from a hard one. */
+        static float accentFor (float velocity) noexcept
+        {
+            const float t = jlimit (0.0f, 1.0f, (velocity - 0.75f) / 0.15f);
+            return t * t * (3.0f - 2.0f * t);
+        }
+
         /** Takes the step out of a saw or pulse edge, so that it does not fold back as hash (t = phase 0..1, dt = phase per sample). */
         static inline float blep (double t, double dt) noexcept
         {
@@ -155,7 +191,7 @@ namespace pulse
             {
                 const float target = (float) MidiMessage::getMidiNoteInHertz (note);
                 const float from = isVoiceActive() && freq > 0.0f ? freq : o.lastNoteHz.load();
-                freq = o.get (pGlide) > 0.5f && from > 0.0f ? from : target;
+                freq = o.get (pGlide) > 0.5f && from > 0.0f && o.getInt (pGlideMode) == 0 ? from : target;   // (with "tied notes", a note struck afresh does not glide)
                 targetFreq = target;
                 o.lastNoteHz.store (target);
                 velocity = vel;
@@ -179,6 +215,14 @@ namespace pulse
                 if (allowTailOff) { amp.noteOff(); fenv.noteOff(); }
                 else { amp.reset(); fenv.reset(); wasActive = false; clearCurrentNote(); }
             }
+            /** A tied note: the pitch goes over to it, nothing is struck again. */
+            void tieTo (int note, float vel)
+            {
+                targetFreq = (float) MidiMessage::getMidiNoteInHertz (note);
+                o.lastNoteHz.store (targetFreq);
+                noteNumber = note;
+                velocity = vel;
+            }
             void pitchWheelMoved (int v) override { bend = (float) (v - 8192) / 8192.0f * 2.0f; }
             void controllerMoved (int cc, int v) override { if (cc == 1) modWheel = (float) v / 127.0f; }
 
@@ -186,15 +230,18 @@ namespace pulse
             {
                 if (! isVoiceActive()) return;
                 const double sr = getSampleRate();
+                // the accent, moving to where the note in hand wants it (so that a tied note does not jump)
+                const float accWant = o.get (pAccent) * accentFor (velocity);
+                acc += (accWant - acc) * (1.0f - std::exp (-(float) num / (float) (0.004 * sr)));
                 amp.setParameters (adsrFrom (o.get (pA), o.get (pD), o.get (pS), o.get (pR)));
-                fenv.setParameters (adsrFrom (o.get (pFA), o.get (pFD), o.get (pFS), o.get (pFR)));
+                fenv.setParameters (adsrFrom (o.get (pFA), o.get (pFD) * (1.0f - 0.65f * acc), o.get (pFS), o.get (pFR)));
                 const int wave[2] = { o.getInt (pWave1), o.getInt (pWave2) };
                 const bool sync = o.getInt (pSync) > 0;
                 const float mix = o.get (pMix), sub = o.get (pSub), noise = o.get (pNoise), unison = o.get (pUnison), drift = o.get (pDrift);
-                const float cutoff = o.get (pCutoff), reso = o.get (pReso), envAmt = o.get (pEnvAmt), keyTrack = o.get (pKeyTrack);
+                const float cutoff = o.get (pCutoff), reso = jmin (1.0f, o.get (pReso) + 0.08f * acc), envAmt = jlimit (-1.0f, 1.3f, o.get (pEnvAmt) + 0.3f * acc), keyTrack = o.get (pKeyTrack);
                 const float drive = 0.4f + o.get (pFilterDrive) * 3.0f;
                 const float lfoPitch = o.get (pLfoPitch) + modWheel * 0.3f, lfoCut = o.get (pLfoCutoff), lfoPw = o.get (pLfoPw);
-                const float level = Decibels::decibelsToGain (o.get (pLevel)) * (0.35f + 0.65f * velocity);
+                const float level = Decibels::decibelsToGain (o.get (pLevel)) * (0.35f + 0.65f * velocity) * (1.0f + 0.7f * acc);
                 const float glideMs = o.get (pGlide);
                 const double lfoInc = o.get (pLfoRate) / sr;
                 const double ratio2 = std::pow (2.0, o.getInt (pOct2) + (o.getInt (pSemi2) + o.get (pFine2) / 100.0) / 12.0), ratio1 = std::pow (2.0, o.getInt (pOct1));
@@ -258,7 +305,7 @@ namespace pulse
             Ladder filter[2];
             ADSR amp, fenv;
             double subPhase = 0.0, lfoPhase = 0.0;
-            float freq = 0.0f, targetFreq = 440.0f, velocity = 1.0f, bend = 0.0f, modWheel = 0.0f, driftNow = 0.0f;
+            float freq = 0.0f, targetFreq = 440.0f, velocity = 1.0f, bend = 0.0f, modWheel = 0.0f, driftNow = 0.0f, acc = 0.0f;
             int noteNumber = 60;
             bool wasActive = false;
             Random rng;

@@ -157,6 +157,32 @@ namespace FactorySounds
     }
 
     /** Plays one note through an instrument (not in any playing edit) and returns the audio. */
+    /** A line of notes through an instrument: each with its pitch, how hard (1..127), and when it goes down and comes up, in seconds. */
+    struct LineNote { int note; int velocity; double on, off; };
+    inline AudioBuffer<float> renderLine (te::Plugin& p, const std::vector<LineNote>& notes, double length)
+    {
+        const int block = 480;
+        p.initialise ({ te::TimePosition(), sampleRate, block });
+        const int blocks = (int) std::ceil (length * sampleRate / block);
+        AudioBuffer<float> out (2, blocks * block), audio (2, block);
+        const auto src = te::createUniqueMPESourceID();
+        for (int k = 0; k < blocks; ++k)
+        {
+            audio.clear();
+            te::MidiMessageArray midi;
+            const double from = k * block / sampleRate, to = (k + 1) * block / sampleRate;
+            // (what comes up at a moment comes up after what goes down at it has gone down: a tie needs the overlap)
+            for (auto& n : notes) if (n.on >= from && n.on < to)  midi.addMidiMessage (MidiMessage::noteOn (1, n.note, (uint8) n.velocity), n.on - from, src);
+            for (auto& n : notes) if (n.off >= from && n.off < to) midi.addMidiMessage (MidiMessage::noteOff (1, n.note), n.off - from, src);
+            midi.sortByTimestamp();
+            te::PluginRenderContext fc (&audio, 0, block, &midi, 0.0, { te::TimePosition::fromSeconds (from), te::TimePosition::fromSeconds (to) }, true, false, true, false);
+            p.applyToBuffer (fc);
+            for (int ch = 0; ch < 2; ++ch) out.copyFrom (ch, k * block, audio, ch, 0, block);
+        }
+        p.deinitialise();
+        return out;
+    }
+
     inline AudioBuffer<float> renderNote (te::Plugin& p, int note, double hold)
     {
         const int block = 480;

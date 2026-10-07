@@ -7971,6 +7971,56 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
             for (int i = 4800; i < jmin (wide.getNumSamples(), 20000); ++i) sides = jmax (sides, std::abs (wide.getSample (0, i) - wide.getSample (1, i)));
             const bool analogOk = std::abs ((h4 - h1) + 12.0f) < 1.0f && sq2 < -35.0f && std::abs (sq3 + 9.5f) < 1.0f && foldSaw < -45.0f && h4closed < -15.0f && h4reso > 6.0f
                                   && singPeak < 3.0f && singPeak > -40.0f && std::abs (fifthCents) <= 3.0f && sides > 0.02f;
+            // --- v0.99.55: tied notes and accent, as a bass line machine has them ---
+            {
+                auto levelIn = [&] (const AudioBuffer<float>& b, double from, double len)
+                {
+                    const int a = jmin (b.getNumSamples() - 2, (int) (from * ksr)), n = jmin (b.getNumSamples() - a, (int) (len * ksr));
+                    return Decibels::gainToDecibels (b.getRMSLevel (0, a, n), -140.0f);
+                };
+                // how bright a stretch is: how much the signal changes from one sample to the next, against how big it is
+                auto edge = [&] (const AudioBuffer<float>& b, double from, double len)
+                {
+                    const int a = jmin (b.getNumSamples() - 2, (int) (from * ksr)), n = jmin (b.getNumSamples() - a - 1, (int) (len * ksr));
+                    double d = 0, e = 1.0e-12;
+                    for (int i = 0; i < n; ++i) { const double x = b.getSample (0, a + i), y = b.getSample (0, a + i + 1); d += (y - x) * (y - x); e += x * x; }
+                    return (float) (10.0 * std::log10 (d / e + 1.0e-12));
+                };
+                // a low note, a second one that begins before the first has ended (tied), then one on its own
+                const std::vector<FactorySounds::LineNote> line { { 45, 100, 0.0, 0.5 }, { 57, 100, 0.4, 0.9 }, { 52, 100, 1.0, 1.3 } };
+                auto setUp = [&] (int glideMode)
+                {
+                    plain(); analog->set (AN::pMode, 1); analog->set (AN::pGlide, 40.0f); analog->set (AN::pGlideMode, (float) glideMode); analog->set (AN::pCutoff, 300.0f);
+                    analog->set (AN::pEnvAmt, 0.6f); analog->set (AN::pFD, 120.0f); analog->set (AN::pFS, 0.0f); analog->set (AN::pR, 8.0f); analog->set (AN::pFR, 8.0f);
+                };
+                setUp (1);
+                auto tied = FactorySounds::renderLine (*analog, line, 1.6);
+                setUp (0);
+                auto struck = FactorySounds::renderLine (*analog, line, 1.6);
+                // tied: the second note is not struck (the filter does not open again at 0.4 s), it sounds on after the first key
+                // comes up at 0.5 s, it arrives at its own pitch, and it ends when its own key comes up
+                const float openTied = edge (tied, 0.405, 0.04), openStruck = edge (struck, 0.405, 0.04);
+                const float heldOn = levelIn (tied, 0.6, 0.25), ended = levelIn (tied, 0.96, 0.03);
+                const float tiedPitch = centsOff (tied, 220.0, 0.75, 0.14);
+                // and a note on its own does not glide: it is on its pitch at once (with "every note" it is still on its way there)
+                const float freshTied = partIn (tied, 164.81, 1.005, 0.04) - partIn (tied, 164.81, 1.2, 0.08), freshStruck = partIn (struck, 164.81, 1.005, 0.04) - partIn (struck, 164.81, 1.2, 0.08);
+                const bool ties = openStruck - openTied > 6.0f && heldOn > -40.0f && ended < heldOn - 30.0f && std::abs (tiedPitch) <= 6.0f && freshTied > -6.0f && freshStruck < freshTied - 6.0f;
+                // accent: a hard note is louder than its velocity alone makes it and brighter, a firm note is left as it was
+                auto hit = [&] (int vel, float accent)
+                {
+                    plain(); analog->set (AN::pCutoff, 400.0f); analog->set (AN::pEnvAmt, 0.4f); analog->set (AN::pFD, 300.0f); analog->set (AN::pFS, 0.0f); analog->set (AN::pAccent, accent);
+                    return FactorySounds::renderLine (*analog, { { 45, vel, 0.0, 0.4 } }, 0.6);
+                };
+                auto hardPlain = hit (127, 0.0f), hardAcc = hit (127, 1.0f), firmPlain = hit (90, 0.0f), firmAcc = hit (90, 1.0f);
+                const float louder = levelIn (hardAcc, 0.0, 0.1) - levelIn (hardPlain, 0.0, 0.1), firmSame = levelIn (firmAcc, 0.0, 0.3) - levelIn (firmPlain, 0.0, 0.3);
+                const float brighter = edge (hardAcc, 0.0, 0.05) - edge (hardPlain, 0.0, 0.05);
+                const bool accents = louder > 3.0f && brighter > 1.0f && std::abs (firmSame) < 0.7f;
+                rep.check (ties && accents, "Pulse Analog tied notes and accent (an overlapping note slides and is not struck again, a note on its own does not glide, a hard note is louder and brighter)",
+                           "filter at the tie " + String (openTied - openStruck, 1) + " dB duller than struck; tied note " + String (tiedPitch, 0) + " cents off, held at " + String (heldOn, 0) + " dB, " + String (ended, 0)
+                           + " dB after its key; a fresh note on pitch at once " + String (freshTied, 1) + " dB (gliding: " + String (freshStruck, 1) + "); accent +" + String (louder, 1) + " dB, edge +" + String (brighter, 1)
+                           + " dB; firm note changed " + String (firmSame, 2) + " dB");
+                plain();
+            }
             rep.check (analogOk, "Pulse Analog (saw and square harmonics, clean high notes, four-pole filter, resonance, singing filter in hand, tuning, unison)",
                        "saw 4th harmonic " + String (h4 - h1, 1) + " dB; square 2nd " + String (sq2, 0) + ", 3rd " + String (sq3, 1) + "; fold-back under a 2 kHz saw " + String (foldSaw, 0) + " dB; 300 Hz cutoff takes the 4th down "
                        + String (h4closed, 1) + " dB more; resonance lifts it " + String (h4reso, 1) + "; singing filter peaks at " + String (singPeak, 1) + " dBFS; a fifth is " + String (fifthCents, 0) + " cents out; unison sides differ by " + String (sides, 3));

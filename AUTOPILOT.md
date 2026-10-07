@@ -180,7 +180,7 @@ well EVERYWHERE." So, besides the list:
    left of the others): [x] the demo song is a whole techno track (wait for the owner's ears on it, then change what
    they say)  [x] step sequencer: probability, ratchets and a length of its own for each row (polymetre)
    [ ] a drum machine view of the Drum Rack: 16 steps a pad, accents, swing, pattern A/B/C/D and chaining
-   [ ] an acid bass preset bank for Pulse Analog, with accent and slide written as the 303 does  [ ] distortion:
+   [x] an acid bass preset bank for Pulse Analog, with accent and slide written as the 303 does  [ ] distortion:
    more kinds worth having on a kick (clipper, wavefolder with tone, rumble maker = reverb into low pass into
    sidechain)  [ ] a "kick" synth with pitch and click envelopes drawn on a graph  [ ] techno presets for every
    instrument and factory drum kits (909, 808, industrial)  [ ] a performance view: mutes, fills and filter
@@ -847,3 +847,17 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   when the clip's length changes while it is showing. Not done: per-pass dice at playback (would need a MIDI
   effect that knows the clip under the playhead), micro-timing per step, a length for the grid as a whole.
   334 checks, quick tier; steps-patterns.png looked at.
+- 2026-10-06: v0.99.55. Group 7: acid. Presets alone would not have been a 303: Pulse Analog glided on every
+  note and struck every note afresh. Added two parameters at the end of its list (state is by name, old projects
+  load as before): "Glide Mode" (Every note / Tied notes) and "Accent". Tied: PulseSynthesiser got two optional
+  hooks, tieNoteOn (asked for each new note in mono mode; the instrument may carry its voice over itself) and
+  mapNoteOff (which key a note-off is really for); Analog uses them so that an overlapping note retargets the
+  sounding voice (pitch slides, envelopes not struck), the first key coming up under the tie ends nothing, and
+  the tied key coming up releases the voice. A note that does not overlap does not glide in that mode. Accent:
+  from velocity 0.75 to 0.9 it fades in; louder (up to x1.7), filter envelope 0.3 further, its decay down to
+  35%, a little more resonance. Measured: the tie is 7.8 dB duller at the second note than a struck one, the
+  tied note is on pitch, held under the first key's release, silent after its own; accent +3.6 dB and brighter;
+  a firm note unchanged. FactorySounds::renderLine plays a line of notes through an instrument for such tests.
+  Eight "Acid:" presets. The panel: two more controls did not fit two rows; after three tries (pictures looked
+  at each time) Mono and Tied are switches and Level sits with the mix. Not judged by ear. Not done: an accent
+  that builds over repeated accents as the real circuit does; acid patterns as clips. 335 checks, quick tier.
