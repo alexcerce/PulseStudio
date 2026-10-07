@@ -5674,6 +5674,24 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
                 auto f = dir.getChildFile ("prism_eq.png");
                 f.deleteFile();
                 if (auto os = f.createOutputStream()) { PNGImageFormat png; png.writeImageToStream (img, *os); }
+                // the selected band's controls have a strip of their own under the display: they never lie over the spectrum,
+                // at the window's usual size or its smallest, with the dynamic part and the movement showing their knobs too
+                {
+                    bool clear = true, fits = true;
+                    setB (3, EQ::pModSrc, 1);
+                    for (auto [w, h] : { std::pair<int, int> { 1100, 760 }, { 1000, 680 }, { 1900, 1100 } })
+                    {
+                        view.setSize (w, h);
+                        view.showBand (3);
+                        const auto strip = view.bandStripBounds();
+                        clear = clear && ! strip.isEmpty() && ! strip.intersects (view.getGraph().getBounds()) && view.getGraph().getHeight() > h / 2;
+                        fits = fits && view.bandStripFits();
+                    }
+                    setB (3, EQ::pModSrc, 0);
+                    view.setSize (1100, 760);
+                    view.showBand (3);
+                    rep.check (clear && fits, "Prism EQ: the band's controls sit under the display, never over the spectrum, and fit at the smallest window", String (clear ? "" : "over the display; ") + (fits ? "ok" : "a control is cut off"));
+                }
                 PrismUI::View card (evs, *eq, false);
                 card.setSize (560, 300);
                 auto img2 = card.createComponentSnapshot (card.getLocalBounds());

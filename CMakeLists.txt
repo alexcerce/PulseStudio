@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(PulseStudio VERSION 0.99.61 LANGUAGES C CXX)
+project(PulseStudio VERSION 0.99.62 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -92,6 +92,9 @@ if (MSVC)
     # Symbols for release builds (a .pdb next to the build, never installed): crash reports can name functions.
     target_compile_options(PulseStudio PRIVATE /Zi)
     target_link_options(PulseStudio PRIVATE /DEBUG /OPT:REF /OPT:ICF)
+    # 8 MB of stack for the main thread (Windows gives 1 MB): some plugins use a great deal of it when their state is
+    # set, and in a Debug build the self-test (one very long function) already stands on most of a megabyte
+    target_link_options(PulseStudio PRIVATE /STACK:8388608)
 endif()
 
 # ---------------------------------------------------------------------------------------------------------

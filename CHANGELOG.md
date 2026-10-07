@@ -2,6 +2,11 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.62 - 2026-10-07
+
+- Prism EQ: the selected band's controls are a strip under the display. They used to float over the graph beside the band's point and hid the spectrum there. The Prism EQ VST3 plugin is rebuilt with it
+- The app has a larger stack (8 MB): some third-party plugins need a great deal when their state is set
+
 ## 0.99.61 - 2026-10-07
 
 - Performance window (menu, or the command *Performance*): a mute pad for every track, fills to hold (the last 1/4, 1/8, 1/16 or 1/32 of the whole mix repeats in time) and a sweep filter over the mix, all of it learnable from a controller

@@ -694,7 +694,7 @@ namespace PrismUI
                 phaseChoice->setTooltip ("Phase. Natural: no delay, each band turns the phase as an analogue EQ does. Linear: only the levels change, at the price of a delay (made up for) and no moving bands. Deep: the same, four times as long, for narrow bands in the bass");
                 for (auto* c : std::initializer_list<Component*> { analyser.get(), rangeChoice.get(), autoToggle.get(), phaseChoice.get() }) addAndMakeVisible (c);
                 addAndMakeVisible (panel);
-                panel.onClose = [this] { panel.setVisible (false); };
+                panel.onClose = [this] { panel.setVisible (false); resized(); };
                 for (auto* l : { &dynTitle, &moveTitle, &bandTitle }) panel.addAndMakeVisible (l);
                 outTitle.setVisible (false);
             }
@@ -744,6 +744,14 @@ namespace PrismUI
         }
 
         int selectedBand() const { return band; }
+        /** Where the selected band's controls are (empty when they are hidden): never over the display. */
+        Rectangle<int> bandStripBounds() const { return panel.isVisible() ? panel.getBounds() : Rectangle<int>(); }
+        /** True when every control of the strip lies inside it (nothing cut off at this size). */
+        bool bandStripFits() const
+        {
+            for (auto* c : panel.getChildren()) if (c->isVisible() && ! panel.getLocalBounds().contains (c->getBounds())) return false;
+            return true;
+        }
         Graph& getGraph() { return graph; }
 
         void paint (Graphics& g) override
@@ -781,10 +789,11 @@ namespace PrismUI
                 return;
             }
 
-            // large: the display fills the window; the global bar at the bottom; the band's
-            // controls float next to its node
+            // large: the display fills the window; the global bar at the bottom; the selected band's controls
+            // in a strip of their own between the two, so that nothing ever lies over the spectrum and the curve
             auto full = getLocalBounds();
             auto bar = full.removeFromBottom (barHeight).reduced (10, 6);
+            if (panel.isVisible()) panel.setBounds (full.removeFromBottom (stripHeight));
             graph.setBounds (full);
             {
                 // right to left: output knobs, auto gain, range, analyser; the band chips get the rest
@@ -843,65 +852,70 @@ namespace PrismUI
             int band;
         };
 
-        /** The floating band panel: under (or over) the selected node, inside the display. */
+        /** The band strip: the selected band's controls in one row under the display (it used to float over the
+            graph beside the band's point, and hid the spectrum there). From the left: what the band is, its three
+            main knobs, the dynamic part and the movement; the last two only take room for their knobs when on. */
         void layoutPanel()
         {
-            if (! large || typeButtons == nullptr) return;
-            constexpr int kw = 60, kh = 70, w = 470;
+            if (! large || typeButtons == nullptr || ! panel.isVisible()) return;
             const bool showDyn = eq.getInt (EQ::idx (band, EQ::pDyn)) > 0, showMod = eq.getInt (EQ::idx (band, EQ::pModSrc)) > 0;
-            const int h = 12 + 22 + 6 + 28 + 6 + 22 + 6 + kh + 6 + 24 + (showDyn ? kh + 4 : 0) + 6 + 24 + (showMod ? kh + 4 : 0) + 10;
-            auto node = graph.nodePos (band) + graph.getPosition().toFloat();
-            auto area = graph.getBounds().reduced (10);
-            int x = (int) node.x - w / 2, y = (int) node.y + 26;
-            if (y + h > area.getBottom()) y = (int) node.y - 26 - h;
-            x = jlimit (area.getX(), area.getRight() - w, x);
-            y = jlimit (area.getY(), jmax (area.getY(), area.getBottom() - h), y);
-            panel.setBounds (x, y, w, h);
+            auto r = panel.getLocalBounds().reduced (12, 8);
+            panel.closeBtn.setBounds (r.removeFromRight (22).removeFromTop (22));
+            r.removeFromRight (6);
+            // everything at its full width needs about 1120 px; in a narrower window the knobs and the shape column give
+            const bool roomy = r.getWidth() >= 1090;
+            const int kw = roomy ? 62 : 50, colA = roomy ? 340 : 310, gap = roomy ? 16 : 10, kh = 70;
 
-            auto r = panel.getLocalBounds().reduced (10, 8);
-            auto top = r.removeFromTop (22);
-            panel.closeBtn.setBounds (top.removeFromRight (22));
-            top.removeFromRight (6);
-            onOff->setBounds (top.removeFromRight (80));
+            auto a = r.removeFromLeft (colA);
+            auto top = a.removeFromTop (22);
+            bandTitle.setBounds (top.removeFromLeft (64));
+            onOff->setBounds (top.removeFromRight (76));
             top.removeFromRight (6);
             solo->setBounds (top.removeFromRight (100));
-            bandTitle.setBounds (top);
-            r.removeFromTop (6);
-            auto shapeRow = r.removeFromTop (28);
-            place->setBounds (shapeRow.removeFromRight (130));
-            shapeRow.removeFromRight (8);
-            typeButtons->setBounds (shapeRow);
-            r.removeFromTop (6);
-            slope->setBounds (r.removeFromTop (22));
+            a.removeFromTop (5);
+            typeButtons->setBounds (a.removeFromTop (28));
+            a.removeFromTop (5);
+            auto low = a.removeFromTop (22);
+            place->setBounds (low.removeFromRight (108));
+            low.removeFromRight (6);
+            slope->setBounds (low);
             slope->setEnabled (EQ::typeUsesSlope (eq.bandType (band)));
-            r.removeFromTop (6);
-            auto kr = r.removeFromTop (kh);
-            for (auto* k : knobs) k->setBounds (kr.removeFromLeft (kw + 10));
-            r.removeFromTop (6);
-            auto dr = r.removeFromTop (24);
-            dyn->setBounds (dr.removeFromLeft (190));
-            dynTitle.setBounds (dr.reduced (8, 0));
-            dynTitle.setText (eq.isLinear() ? "bands stand still while the phase is linear" : showDyn ? "gain moves with the level around the band" : "", dontSendNotification);
+            r.removeFromLeft (gap);
+
+            auto main = r.removeFromLeft (kw * 3).withSizeKeepingCentre (kw * 3, kh);
+            for (auto* k : knobs) k->setBounds (main.removeFromLeft (kw));
+            r.removeFromLeft (gap);
+
+            // the dynamic part: its switch, and under it either its knobs or (when it cannot work) why not
+            auto d = r.removeFromLeft (showDyn ? jmax (150, kw * 4) : 150);
+            dyn->setBounds (d.removeFromTop (24).withWidth (150));
+            dyn->setTooltip ("Dynamic: the band's gain moves with the level around the band (Range is how far, Threshold from where). It stands still while the phase is linear");
+            d.removeFromTop (2);
             for (auto* k : dynKnobs) k->setVisible (showDyn);
-            if (showDyn) { r.removeFromTop (4); auto row = r.removeFromTop (kh); for (auto* k : dynKnobs) k->setBounds (row.removeFromLeft (kw + 10)); }
-            r.removeFromTop (6);
-            auto mr = r.removeFromTop (24);
-            modSrc->setBounds (mr.removeFromLeft (260));
-            moveTitle.setBounds (mr.reduced (8, 0));
-            moveTitle.setText (showMod ? (eq.isLinear() ? "waits for the natural phase" : "moves frequency / gain") : "", dontSendNotification);
+            dynTitle.setVisible (! showDyn && eq.isLinear());
+            dynTitle.setText ("off while the phase is linear", dontSendNotification);
+            if (showDyn) { auto row = d.removeFromTop (kh); for (auto* k : dynKnobs) k->setBounds (row.removeFromLeft (kw)); }
+            else dynTitle.setBounds (d.removeFromTop (18));
+            r.removeFromLeft (gap);
+
+            auto m = r.removeFromLeft (showMod ? jmax (230, kw * 5) : 230);
+            modSrc->setBounds (m.removeFromTop (24).withWidth (230));
+            modSrc->setTooltip ("Movement: an LFO or the level of the sound moves the band's frequency and gain. It waits for the natural phase while the phase is linear");
+            m.removeFromTop (2);
             for (auto* k : modKnobs) k->setVisible (showMod);
-            if (showMod) { r.removeFromTop (4); auto row = r.removeFromTop (kh); for (auto* k : modKnobs) k->setBounds (row.removeFromLeft (kw + 10)); }
+            moveTitle.setVisible (! showMod && eq.isLinear());
+            moveTitle.setText ("waits for the natural phase", dontSendNotification);
+            if (showMod) { auto row = m.removeFromTop (kh); for (auto* k : modKnobs) k->setBounds (row.removeFromLeft (kw)); }
+            else moveTitle.setBounds (m.removeFromTop (18));
             panelSig = panelSignature();
         }
 
         String panelSignature() const
         {
-            const auto n = graph.nodePos (band);
-            return String (roundToInt (n.x)) + "," + String (roundToInt (n.y)) + "," + String (eq.getInt (EQ::idx (band, EQ::pDyn)))
-                   + "," + String (eq.getInt (EQ::idx (band, EQ::pModSrc))) + "," + String (eq.bandType (band)) + "," + String (eq.phaseMode());
+            return String (eq.getInt (EQ::idx (band, EQ::pDyn))) + "," + String (eq.getInt (EQ::idx (band, EQ::pModSrc))) + "," + String (eq.bandType (band)) + "," + String (eq.phaseMode());
         }
 
-        /** The floating card the band controls sit on. */
+        /** The strip the band controls sit on. */
         struct FloatingPanel : public Component
         {
             Colour colour { Theme::accent };
@@ -909,25 +923,21 @@ namespace PrismUI
             std::function<void()> onClose;
             FloatingPanel()
             {
-                closeBtn.setTooltip ("Hide (click a band's node to show it again)");
+                closeBtn.setTooltip ("Hide the band's controls and give the room to the display (click a band's point or its chip to show them again)");
                 closeBtn.onClick = [this] { if (onClose) onClose(); };
                 addAndMakeVisible (closeBtn);
-                setAlwaysOnTop (true);
             }
             void paint (Graphics& g) override
             {
-                auto r = getLocalBounds().toFloat().reduced (1.0f);
-                DropShadow (Pro::shade (0.6f), 18, { 0, 6 }).drawForRectangle (g, getLocalBounds().reduced (6));
+                auto r = getLocalBounds().toFloat();
                 g.setGradientFill (ColourGradient (Pro::cardTop(), 0.0f, r.getY(), Pro::cardBot(), 0.0f, r.getBottom(), false));
-                g.fillRoundedRectangle (r, 8.0f);
-                g.setColour (colour.withAlpha (0.8f));
-                g.drawRoundedRectangle (r, 8.0f, 1.2f);
-                g.setColour (colour);
-                g.fillRoundedRectangle (r.withHeight (3.0f).reduced (8.0f, 0.0f), 1.5f);
+                g.fillRect (r);
+                g.setColour (colour);   // a line in the band's colour along the top: whose controls these are
+                g.fillRect (r.withHeight (2.0f));
             }
         };
         FloatingPanel panel;
-        static constexpr int barHeight = 64;
+        static constexpr int barHeight = 64, stripHeight = 112;
         String panelSig;
         std::unique_ptr<Choice> analyser, rangeChoice, phaseChoice;
         std::unique_ptr<ParamToggle> autoToggle;
@@ -941,7 +951,7 @@ namespace PrismUI
         void timerCallback() override
         {
             for (auto* c : chips) c->repaint();
-            if (large && panel.isVisible() && panelSignature() != panelSig) layoutPanel();   // follow the node
+            if (large && panel.isVisible() && panelSignature() != panelSig) layoutPanel();   // knobs come and go with the dynamic part and the movement
         }
 
         EditViewState& evs;

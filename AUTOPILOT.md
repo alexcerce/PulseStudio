@@ -960,3 +960,25 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   keyboard shortcuts. Fills and mutes were tried with made-up controller messages only. Not judged by ear.
   345 checks, quick tier; performance.png looked at. Group 7 is complete but for the owner's word on the demo
   song. The slow tier is owed for v0.99.60 and v0.99.61.
+- 2026-10-07: v0.99.62. THE OWNER, during the run: "in prism eq the big block kinda blocks the spectrum and makes it
+  hard to see the effect of my changes". The band panel floated over the graph beside the selected point (470 px
+  wide, up to 400 tall). It is now a strip of 112 px between the display and the bottom bar (PrismUI::View::
+  layoutPanel; bandStripBounds / bandStripFits for the new check: never over the graph, nothing cut off from 1000 px
+  wide with the dynamic part and the movement open). The x hides the strip and the display takes the room. The
+  Prism EQ plugin in dist/VST3 is rebuilt (probe and --self-move probe sane); nothing outside the repository was
+  touched, so a copy the owner put somewhere else is still the old one. The Multiband panel still floats: if the
+  owner minds that one too, do the same there. RULE from this: controls never lie over a display.
+  SLOW TIER for v0.99.60 to .62: the Debug self-test crashed twice with a stack overflow inside a third-party
+  plugin (Replika, restoring its state) because SelfTest::run, one function, had outgrown a 1 MB stack in a Debug
+  build with the two new test blocks; the version before them did not crash. Fixed with /STACK:8388608 for the
+  app (CMakeLists.txt). After that Debug: 341 pass, 1 fail; random input 4000 events on the demo (seed 611) clean
+  with no stalls.
+  OPEN, NOT FROM THIS WORK: "Sandboxed VST3 processes audio in its own process" has failed in every run since
+  about 17:10 (Replika in the helper process: "The plugin crashed"), Release and Debug, with and without the
+  stack change, and also with the sources of 81bb084 built again; the same commit passed four times between
+  16:30 and 17:09. Loading Replika inside the app still works. Native Access (the maker's installer) was running
+  on the machine at the time, which may be the whole story: run the self-test again when it is closed, and if
+  the check still fails, look at the helper (sandbox::startWorkerIfRequested) with another plugin first (the test
+  takes the first of Replika / Phasis / Choral / Flair). Until then the Release self-test is 342 of 343.
+  A mistake of mine to avoid: I stopped a test run with taskkill by NAME; only my test was running, but that
+  would also close the owner's own Pulse Studio. Stop test runs by process id.
