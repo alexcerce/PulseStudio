@@ -990,3 +990,12 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   then what is left: per-note pitch and time editing of audio (group 4), the open quality-of-life items (drag
   anything anywhere, consistent modifier keys, sortable lists, nothing blocking over 100 ms), the one-hour --soak,
   and whatever the owner says about the demo song, the drum machine and the Performance window.
+- 2026-10-07: v0.99.63. The open sandbox check, found. Replika, Phasis, Choral and Flair (all four the test can
+  pick) died inside themselves while the helper created them; other plugins (Serum 2, Massive, Supercharger, Solid
+  EQ, Pulse Amp) came up. Cause: when the helper is given only a file (the test and "by file" loads; a plugin from
+  the scanned list comes with its description), it opened the file on the pipe thread and created the plugin on the
+  message thread. Both happen on the message thread now. Why it passed until about 17:10 is not known (Native
+  Access was still running when it passed again, so it was not that). To find it the helper now leaves a note when
+  it dies (CrashGuardWin::writeHelperNote: fault, module, and the stage set with setHelperStage), which the device's
+  status shows, and `--sandbox-probe <plugin> <report.txt>` runs one plugin through the helper. Release self-test
+  347 of 347 (four checks only run when the plugin loads). Quick tier.
