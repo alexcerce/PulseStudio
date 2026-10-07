@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.58 - 2026-10-07
+
+- Techno presets for every instrument (listed first in the preset menu) and two more drum kits: Techno and Industrial
+
 ## 0.99.57 - 2026-10-07
 
 - New instrument: Pulse Kick (a kick synth whose pitch, loudness and click are dragged on a picture of the kick)

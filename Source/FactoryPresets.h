@@ -130,6 +130,7 @@ namespace FactoryPresets
     {
         const auto n = presetName.toLowerCase();
         auto has = [&n] (std::initializer_list<const char*> words) { for (auto w : words) if (n.contains (w)) return true; return false; };
+        if (n.startsWith ("techno:") || n.startsWith ("acid:")) return "Techno";
         if (has ({ "riser", "drop", "noise", "fx", "gate", "stutter", "arcade", "texture", "drone", "sweep" })) return "FX and motion";
         if (has ({ "bass", "sub", "reese", "808", "acid", "growl", "wobble" }))                               return "Bass";
         if (has ({ "pad", "choir", "strings", "organ", "atmos", "warm", "dream", "glass ch" }))               return "Pads and strings";
@@ -144,7 +145,7 @@ namespace FactoryPresets
         auto& list = forType (type);
         StringArray names;
         if (list.size() <= 12) { for (auto& p : list) names.add (p.name); return names; }
-        for (auto cat : { "Bass", "Leads and brass", "Keys, plucks and bells", "Pads and strings", "FX and motion", "More" })
+        for (auto cat : { "Techno", "Bass", "Leads and brass", "Keys, plucks and bells", "Pads and strings", "FX and motion", "More" })
             for (auto& p : list) if (category (p.name) == cat) names.add (p.name);
         return names;
     }
@@ -158,7 +159,7 @@ namespace FactoryPresets
             for (auto& p : list) m.addItem (PopupMenu::Item (p.name).setTicked (tick == p.name).setAction ([choose, n = String (p.name)] { choose (n); }));
             return;
         }
-        for (auto cat : { "Bass", "Leads and brass", "Keys, plucks and bells", "Pads and strings", "FX and motion", "More" })
+        for (auto cat : { "Techno", "Bass", "Leads and brass", "Keys, plucks and bells", "Pads and strings", "FX and motion", "More" })
         {
             PopupMenu sub;
             bool any = false, ticked = false;

@@ -14,7 +14,7 @@
     sampled kit. */
 namespace FactorySounds
 {
-    constexpr int version = 1;
+    constexpr int version = 2;   // (2: the Techno and Industrial kits)
     constexpr double sampleRate = 48000.0;
 
     inline File folder (te::Engine& e)
@@ -95,7 +95,7 @@ namespace FactorySounds
                                      { 42, "x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.xx" } } },
             { "Breakbeat", 130, 0, { { 36, "x.........x.....x.x.......x....." }, { 38, "....x..x.x..x.......x..x.x..x..." },
                                      { 42, "x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x." }, { 49, "x..............................." } } },
-            { "Techno",    130, 4, { { 36, "x...x...x...x...x...x...x...x..." }, { 37, "..x..x....x..x....x..x....x..x.." },
+            { "Techno",    130, 5, { { 36, "x...x...x...x...x...x...x...x..." }, { 37, "..x..x....x..x....x..x....x..x.." },
                                      { 42, "..x...x...x...x...x...x...x...x." }, { 39, "....x.......x.......x.......x..." } } },
             { "Trap",      140, 1, { { 36, "x......x..x.....x.......x.x....." }, { 39, "........x...............x......." },
                                      { 42, "x.x.x.xxx.x.x.x.x.x.xxx.x.x.xxxx" }, { 46, "..............x..............x.." } } },

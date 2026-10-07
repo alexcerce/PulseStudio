@@ -182,7 +182,7 @@ well EVERYWHERE." So, besides the list:
    [ ] a drum machine view of the Drum Rack: 16 steps a pad, accents, swing, pattern A/B/C/D and chaining
    [x] an acid bass preset bank for Pulse Analog, with accent and slide written as the 303 does  [x] distortion:
    more kinds worth having on a kick (clipper, wavefolder with tone, rumble maker = reverb into low pass into
-   sidechain)  [x] a "kick" synth with pitch and click envelopes drawn on a graph  [ ] techno presets for every
+   sidechain)  [x] a "kick" synth with pitch and click envelopes drawn on a graph  [x] techno presets for every
    instrument and factory drum kits (909, 808, industrial)  [ ] a performance view: mutes, fills and filter
    sweeps on one page, playable from a controller
 
@@ -889,3 +889,10 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   with Q 18 and +18 dB of output. Not a runaway: a ring of some 90 dB that needs seconds to die. The test now
   gives anything still at the clamp after a second eight more seconds of silence and fails only what has not
   come off it. 340 checks, quick tier.
+- 2026-10-07: v0.99.58. Group 7: techno presets and kits. 23 presets named "Techno: ..." across Wavetable (5),
+  FM (4), Pulse Analog (6), Pulse String (2), Organ (2), Electric Piano (2), Drum Synth (2); a "Techno" category
+  (those and the "Acid:" bank) comes first in the preset menu. Drum kit styles Techno and Industrial (seven
+  styles now; FactorySounds version 2 so that the two new sampled kits are rendered on the next start; the
+  Techno factory loop uses the Techno kit). "909, 808" kits were there already. All presets pass the level
+  audit. NOT JUDGED BY EAR: these are settings written from knowledge of the synths, checked only for level.
+  The owner's ears decide which stay. 340 checks, quick tier.

@@ -368,7 +368,7 @@ namespace DrumRack
     }
 
     /** A playable synthesised kit on the GM slots (hats share a choke group). */
-    inline const StringArray& kitStyles() { static StringArray s { "Classic", "808", "909", "Lo-fi", "Electro" }; return s; }
+    inline const StringArray& kitStyles() { static StringArray s { "Classic", "808", "909", "Lo-fi", "Electro", "Techno", "Industrial" }; return s; }
 
     /** A playable synthesised kit on the GM slots (hats share a choke group), in a style:
         0 classic, 1 808 (long boomy kick, soft hats), 2 909 (punchy, bright), 3 lo-fi (dark,
@@ -378,12 +378,14 @@ namespace DrumRack
     {
         using D = pulse::DrumVoice;
         //                      tune  decay  tone  snap  drive
-        const float styles[5][5] = { { 0.0f, 1.0f, 0.5f, 0.5f, 0.0f },
+        const float styles[7][5] = { { 0.0f, 1.0f, 0.5f, 0.5f, 0.0f },
                                      { -3.0f, 1.7f, 0.25f, 0.3f, 0.1f },
                                      { 2.0f, 0.8f, 0.7f, 0.9f, 0.2f },
                                      { -3.0f, 0.8f, 0.15f, 0.4f, 0.7f },
-                                     { 0.0f, 0.6f, 0.85f, 1.0f, 0.35f } };
-        const auto& st = styles[jlimit (0, 4, style)];
+                                     { 0.0f, 0.6f, 0.85f, 1.0f, 0.35f },
+                                     { 1.0f, 0.85f, 0.6f, 0.85f, 0.5f },     // Techno: tight, punchy, driven
+                                     { -2.0f, 1.1f, 0.9f, 1.0f, 0.95f } };   // Industrial: bright, hard, as driven as it goes
+        const auto& st = styles[jlimit (0, 6, style)];
         const float tomTune = type == D::tom ? (slot == 41 ? -5.0f : slot == 48 ? 4.0f : 0.0f) : 0.0f;
         return { tomTune + (type == D::kick || type == D::tom ? st[0] : st[0] * 0.5f),
                  type == D::kick ? st[1] : jmin (2.0f, 0.5f + st[1] * 0.5f), st[2], st[3], st[4] };

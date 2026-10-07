@@ -28,6 +28,16 @@ namespace FactoryPresetsMore
             // v0.55: sets 6 resonant saw, 7 organ, 8 FM bell, 9 FM bright, 10 wavefold, 11 phase reso, 12 digital steps, 13 hollow to full,
             // 14 comb sweep, 15 growl, 16 glass; sources 14..17 = macros 1..4; drivetype 0 soft, 1 hard, 2 fold, 3 crush
             // v0.99.15: the third oscillator (set3, pos3, oct3, semi3, fine3, level3, pan3, warp3, warpamt3); it is silent unless level3 is set
+                { "Techno: Dub Chord Stab", { { "set1", 0 }, { "pos1", 0.66f }, { "mix", 0 }, { "voices", 3 }, { "detune", 0.15f }, { "ftype", 1 }, { "cutoff", 900 }, { "reso", 0.25f }, { "fenv", 0.5f }, { "fd", 250 }, { "fs", 0 },
+                                              { "a", 2 }, { "d", 300 }, { "s", 0 }, { "r", 350 }, { "level", -9 } } },
+                { "Techno: Hoover", { { "set1", 0 }, { "pos1", 0.66f }, { "set2", 0 }, { "pos2", 0.66f }, { "fine2", -18 }, { "mix", 0.5f }, { "voices", 7 }, { "detune", 0.7f }, { "ftype", 1 }, { "cutoff", 5000 }, { "glide", 80 },
+                                      { "a", 5 }, { "s", 0.9f }, { "r", 250 }, { "level", -12 } } },
+                { "Techno: Rave Stab", { { "set1", 0 }, { "pos1", 0.66f }, { "set2", 0 }, { "pos2", 0.66f }, { "fine2", 10 }, { "mix", 0.5f }, { "voices", 5 }, { "detune", 0.3f }, { "ftype", 1 }, { "cutoff", 3500 }, { "fenv", 0.4f },
+                                         { "fd", 200 }, { "fs", 0.1f }, { "a", 1 }, { "d", 250 }, { "s", 0.2f }, { "r", 200 }, { "level", -10 } } },
+                { "Techno: Dark Drone", { { "set1", 2 }, { "pos1", 0.3f }, { "set2", 3 }, { "pos2", 0.6f }, { "voices", 5 }, { "detune", 0.4f }, { "ftype", 1 }, { "cutoff", 500 }, { "reso", 0.4f }, { "fenv", 0 },
+                                          { "lfopos", 0.5f }, { "lforate", 0.08f }, { "a", 1500 }, { "s", 1 }, { "r", 3000 }, { "level", -11 } } },
+                { "Techno: Sub Rumble Bass", { { "set1", 0 }, { "pos1", 0 }, { "mix", 0 }, { "voices", 1 }, { "sub", 0.6f }, { "ftype", 1 }, { "cutoff", 200 }, { "fenv", 0 }, { "a", 2 }, { "s", 1 }, { "r", 150 }, { "level", -6 },
+                                               { "output", -3 } } },
                 { "Three-Osc Supersaw Stack", { { "set1", 0 }, { "pos1", 0.66f }, { "set2", 0 }, { "pos2", 0.66f }, { "fine2", 9 }, { "mix", 0.5f }, { "set3", 0 }, { "pos3", 0.66f }, { "oct3", 1 },
                                                 { "fine3", -7 }, { "level3", 0.7f }, { "pan1", -0.4f }, { "pan2", 0.4f }, { "voices", 5 }, { "detune", 0.3f }, { "ftype", 1 }, { "cutoff", 5000 },
                                                 { "fenv", 0.25f }, { "a", 5 }, { "s", 0.85f }, { "r", 350 }, { "reverbmix", 0.2f }, { "level", -14 } } },
@@ -184,6 +194,15 @@ namespace FactoryPresetsMore
 
             //----------------------------------------------------------------------------------
             { "pulseFM", {
+                { "Techno: Metallic Hit", { { "algorithm", 4 }, { "op0ratio", 1 }, { "op0d", 300 }, { "op0s", 0 }, { "op0r", 200 }, { "op1ratio", 3.5f }, { "op1level", 0.7f }, { "op1d", 120 }, { "op1s", 0 },
+                                            { "op2ratio", 1.41f }, { "op2level", 0.6f }, { "op2d", 250 }, { "op2s", 0 }, { "op3ratio", 7 }, { "op3level", 0.4f }, { "op3d", 60 }, { "op3s", 0 }, { "volume", -14 } } },
+                { "Techno: FM Bass Stab", { { "algorithm", 0 }, { "op0ratio", 1 }, { "op0d", 250 }, { "op0s", 0 }, { "op0r", 80 }, { "op1ratio", 1 }, { "op1level", 0.8f }, { "op1d", 120 }, { "op1s", 0 },
+                                            { "op2ratio", 2 }, { "op2level", 0.4f }, { "op2d", 80 }, { "op2s", 0 }, { "op3ratio", 0.5f }, { "op3level", 0.3f }, { "feedback", 0.4f }, { "volume", -13 } } },
+                { "Techno: Blip", { { "algorithm", 6 }, { "op0ratio", 1 }, { "op0d", 180 }, { "op0s", 0 }, { "op0r", 120 }, { "op1ratio", 2 }, { "op1level", 0.3f }, { "op1d", 100 }, { "op1s", 0 },
+                                    { "op2ratio", 1 }, { "op2level", 0.5f }, { "op2d", 150 }, { "op2s", 0 }, { "op3ratio", 5 }, { "op3level", 0.5f }, { "op3d", 70 }, { "op3s", 0 }, { "volume", -14 } } },
+                { "Techno: Clang Drone", { { "algorithm", 7 }, { "op0ratio", 1 }, { "op0a", 1200 }, { "op0s", 1 }, { "op0r", 2500 }, { "op1ratio", 1.5f }, { "op1level", 0.5f }, { "op1a", 1800 }, { "op1s", 1 }, { "op1r", 2500 },
+                                           { "op2ratio", 2.76f }, { "op2level", 0.35f }, { "op2a", 2200 }, { "op2s", 1 }, { "op2r", 2500 }, { "op3ratio", 5.4f }, { "op3level", 0.2f }, { "op3a", 2600 }, { "op3s", 1 },
+                                           { "op3r", 2500 }, { "volume", -15 } } },
                 { "DX Bass", { { "algorithm", 0 }, { "op0ratio", 1 }, { "op0d", 400 }, { "op0s", 0.6f }, { "op0r", 60 }, { "op1ratio", 1 }, { "op1level", 0.7f }, { "op1d", 180 },
                                { "op1s", 0.1f }, { "op2ratio", 1 }, { "op2level", 0.3f }, { "op2d", 120 }, { "op2s", 0 }, { "op3ratio", 3 }, { "op3level", 0.2f }, { "op3d", 60 },
                                { "op3s", 0 }, { "feedback", 0.3f }, { "volume", -14 } } },
@@ -233,6 +252,8 @@ namespace FactoryPresetsMore
             //----------------------------------------------------------------------------------
             // Drum Synth: map 0 = GM kit
             { "pulseDrumSynth", {
+                { "Techno: Tight", { { "tune", 1 }, { "decay", 0.85f }, { "tone", 0.6f }, { "snap", 0.85f }, { "drive", 0.5f } } },
+                { "Techno: Hard", { { "tune", 0 }, { "decay", 1.0f }, { "tone", 0.75f }, { "snap", 1.0f }, { "drive", 0.8f } } },
                 { "Deep House", { { "tune", -1 }, { "decay", 1.1f }, { "tone", 0.4f }, { "snap", 0.5f }, { "drive", 0.15f } } },
                 { "Techno Rumble", { { "tune", -3 }, { "decay", 2.2f }, { "tone", 0.25f }, { "snap", 0.6f }, { "drive", 0.6f } } },
                 { "Trap", { { "tune", -5 }, { "decay", 2.8f }, { "tone", 0.35f }, { "snap", 0.4f }, { "drive", 0.3f } } },
@@ -386,6 +407,18 @@ namespace FactoryPresetsMore
                 { "Pluck", { { "wave1", 1 }, { "pw", 0.3f }, { "wave2", 0 }, { "cutoff", 600 }, { "reso", 0.35f }, { "envamt", 0.6f }, { "fd", 180 }, { "fs", 0 }, { "d", 350 }, { "s", 0 }, { "r", 300 } } },
                 { "Self-Singing Filter", { { "wave1", 3 }, { "mix", 0 }, { "noise", 0.05f }, { "cutoff", 800 }, { "reso", 1.0f }, { "keytrack", 1.0f }, { "envamt", 0.15f }, { "fd", 400 }, { "s", 0.8f }, { "level", -14 } } },
                 { "Fifth Stab", { { "wave1", 0 }, { "wave2", 0 }, { "semi2", 7 }, { "cutoff", 1800 }, { "reso", 0.2f }, { "envamt", 0.4f }, { "fd", 300 }, { "fs", 0.2f }, { "d", 400 }, { "s", 0.3f }, { "r", 350 }, { "unison", 0.25f } } },
+                { "Techno: Dub Chord", { { "wave1", 0 }, { "wave2", 1 }, { "fine2", 7 }, { "cutoff", 700 }, { "reso", 0.3f }, { "envamt", 0.45f }, { "fa", 2 }, { "fd", 280 }, { "fs", 0 }, { "a", 2 }, { "d", 400 }, { "s", 0 },
+                                         { "r", 400 }, { "unison", 0.2f }, { "level", -7 } } },
+                { "Techno: Detroit Stab (a fifth)", { { "wave1", 0 }, { "wave2", 0 }, { "semi2", 7 }, { "cutoff", 1500 }, { "reso", 0.25f }, { "envamt", 0.4f }, { "fd", 200 }, { "fs", 0.1f }, { "d", 250 }, { "s", 0.15f },
+                                                      { "r", 220 }, { "unison", 0.3f }, { "level", -7 } } },
+                { "Techno: Hoover Lead", { { "wave1", 0 }, { "wave2", 0 }, { "oct2", -1 }, { "fine2", 25 }, { "unison", 0.8f }, { "cutoff", 4000 }, { "reso", 0.2f }, { "envamt", 0.2f }, { "mode", 1 }, { "glide", 90 },
+                                           { "lfopitch", 0.05f }, { "lforate", 5.5f }, { "s", 0.9f }, { "r", 200 }, { "level", -9 } } },
+                { "Techno: Rolling Sub", { { "wave1", 3 }, { "oct1", -1 }, { "mix", 0 }, { "sub", 0.4f }, { "cutoff", 300 }, { "reso", 0.1f }, { "envamt", 0.2f }, { "fd", 120 }, { "fs", 0.2f }, { "a", 2 }, { "s", 0.9f }, { "r", 60 },
+                                           { "mode", 1 }, { "fdrive", 0.4f }, { "level", -4 } } },
+                { "Techno: One Note Tone (the filter moves by itself)", { { "wave1", 1 }, { "pw", 0.3f }, { "mix", 0 }, { "cutoff", 600 }, { "reso", 0.7f }, { "envamt", 0.15f }, { "lfocutoff", 0.5f }, { "lforate", 0.12f },
+                                                                          { "s", 1 }, { "r", 200 }, { "mode", 1 }, { "fdrive", 0.5f }, { "level", -9 } } },
+                { "Techno: Noise Wash", { { "wave1", 3 }, { "mix", 0 }, { "noise", 1.0f }, { "cutoff", 900 }, { "reso", 0.5f }, { "envamt", 0 }, { "lfocutoff", 0.9f }, { "lforate", 0.06f }, { "a", 800 }, { "s", 1 }, { "r", 1500 },
+                                          { "keytrack", 0 }, { "level", -8 } } },
                 // The acid bank: one saw or one square into the filter, mono, notes tied where they overlap, hard notes accented.
                 // Write the line with short notes; make a note reach into the next one for a slide, and play it hard for an accent.
                 { "Acid: Classic Saw", { { "wave1", 0 }, { "mix", 0 }, { "cutoff", 260 }, { "reso", 0.82f }, { "envamt", 0.5f }, { "fa", 1 }, { "fd", 220 }, { "fs", 0 }, { "fr", 120 }, { "a", 1 }, { "d", 600 }, { "s", 0.7f }, { "r", 60 },
@@ -431,6 +464,8 @@ namespace FactoryPresetsMore
 
             // Pulse String: exciter 0 pluck, 1 pick, 2 hammer, 3 mallet
             { "pulseString", {
+                { "Techno: Metal Pluck", { { "exciter", 3 }, { "position", 0.08f }, { "brightness", 0.9f }, { "decay", 1.5f }, { "damping", 0.2f }, { "stiffness", 0.6f }, { "body", 0.2f }, { "detune", 0 } } },
+                { "Techno: Dub Pluck", { { "exciter", 0 }, { "position", 0.3f }, { "brightness", 0.4f }, { "decay", 1.2f }, { "damping", 0.6f }, { "body", 0.4f }, { "detune", 4 } } },
                 { "Nylon Guitar", { { "exciter", 0 }, { "position", 0.22f }, { "brightness", 0.5f }, { "decay", 3.5f }, { "damping", 0.4f }, { "body", 0.5f }, { "detune", 0 } } },
                 { "Steel String (picked)", { { "exciter", 1 }, { "position", 0.12f }, { "brightness", 0.85f }, { "decay", 6 }, { "damping", 0.2f }, { "body", 0.4f }, { "detune", 0 } } },
                 { "Twelve String", { { "exciter", 1 }, { "position", 0.15f }, { "brightness", 0.8f }, { "decay", 5 }, { "damping", 0.25f }, { "detune", 9 }, { "body", 0.35f } } },
@@ -446,6 +481,8 @@ namespace FactoryPresetsMore
             // Tonewheel Organ: bar1..bar9 = 16', 5 1/3', 8', 4', 2 2/3', 2', 1 3/5', 1 1/3', 1' (0 in .. 8 out); perc 0 off, 1 2nd, 2 3rd;
             // vibrato 0 off, 1-3 V1-V3, 4-6 C1-C3; rotary 0 stop, 1 slow, 2 fast
             { "pulseOrgan", {
+                { "Techno: Dub Organ Stab", { { "bar1", 0 }, { "bar2", 0 }, { "bar3", 8 }, { "bar4", 8 }, { "bar5", 0 }, { "bar6", 6 }, { "bar7", 0 }, { "bar8", 0 }, { "bar9", 0 }, { "click", 0.7f }, { "drive", 0.3f }, { "rotary", 0 }, { "rotarymix", 0 } } },
+                { "Techno: Hollow Organ Bass", { { "bar1", 8 }, { "bar2", 0 }, { "bar3", 4 }, { "bar4", 0 }, { "bar5", 0 }, { "bar6", 0 }, { "bar7", 0 }, { "bar8", 0 }, { "bar9", 0 }, { "click", 0.2f }, { "drive", 0.4f }, { "rotary", 0 }, { "rotarymix", 0 } } },
                 { "Jazz Trio (888 + 3rd perc)", { { "bar1", 8 }, { "bar2", 8 }, { "bar3", 8 }, { "perc", 2 }, { "percdecay", 0 }, { "vibrato", 6 }, { "drive", 0.25f }, { "rotary", 1 } } },
                 { "Gospel Full", { { "bar1", 8 }, { "bar2", 8 }, { "bar3", 8 }, { "bar4", 8 }, { "bar5", 8 }, { "bar6", 8 }, { "bar7", 8 }, { "bar8", 8 }, { "bar9", 8 }, { "drive", 0.4f }, { "rotary", 2 }, { "level", -10 } } },
                 { "Rock Scream", { { "bar1", 8 }, { "bar2", 8 }, { "bar3", 8 }, { "bar4", 8 }, { "bar5", 0 }, { "bar6", 0 }, { "bar7", 0 }, { "bar8", 0 }, { "bar9", 8 }, { "drive", 0.8f }, { "click", 0.5f }, { "rotary", 2 }, { "level", -9 } } },
@@ -458,6 +495,8 @@ namespace FactoryPresetsMore
             //----------------------------------------------------------------------------------
             // Electric Piano: model 0 tine, 1 reed
             { "pulseEPiano", {
+                { "Techno: Dub Chord Keys", { { "model", 0 }, { "bell", 0.3f }, { "bark", 0.7f }, { "drive", 0.3f }, { "decay", 1.5f }, { "tone", 2500 }, { "tremolo", 0 } } },
+                { "Techno: Reed Stab", { { "model", 1 }, { "bell", 0.3f }, { "bark", 0.8f }, { "drive", 0.5f }, { "decay", 1.0f }, { "tone", 3500 }, { "tremolo", 0 }, { "tremstereo", 0 } } },
                 { "Classic Tine", { { "model", 0 }, { "bell", 0.5f }, { "bark", 0.45f }, { "tremolo", 0.25f }, { "tremrate", 4.5f } } },
                 { "Mellow Ballad", { { "model", 0 }, { "bell", 0.25f }, { "bark", 0.25f }, { "hardness", 0.5f }, { "tone", 3500 }, { "decay", 5 }, { "tremolo", 0.4f }, { "tremrate", 3.2f } } },
                 { "Bright Bell Keys", { { "model", 0 }, { "bell", 0.95f }, { "bark", 0.3f }, { "tone", 12000 }, { "tremolo", 0.15f }, { "tremrate", 5.5f } } },
