@@ -180,7 +180,7 @@ well EVERYWHERE." So, besides the list:
    left of the others): [x] the demo song is a whole techno track (wait for the owner's ears on it, then change what
    they say)  [x] step sequencer: probability, ratchets and a length of its own for each row (polymetre)
    [ ] a drum machine view of the Drum Rack: 16 steps a pad, accents, swing, pattern A/B/C/D and chaining
-   [x] an acid bass preset bank for Pulse Analog, with accent and slide written as the 303 does  [ ] distortion:
+   [x] an acid bass preset bank for Pulse Analog, with accent and slide written as the 303 does  [x] distortion:
    more kinds worth having on a kick (clipper, wavefolder with tone, rumble maker = reverb into low pass into
    sidechain)  [ ] a "kick" synth with pitch and click envelopes drawn on a graph  [ ] techno presets for every
    instrument and factory drum kits (909, 808, industrial)  [ ] a performance view: mutes, fills and filter
@@ -861,3 +861,16 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   Eight "Acid:" presets. The panel: two more controls did not fit two rows; after three tries (pictures looked
   at each time) Mono and Tied are switches and Level sits with the mix. Not judged by ear. Not done: an accent
   that builds over repeated accents as the real circuit does; acid patterns as clips. 335 checks, quick tier.
+- 2026-10-07: v0.99.56. Group 7: "distortion worth having on a kick". The Saturator already has a hard
+  clipper, a foldback and a sine fold with a tone control, so the item came down to the one thing that was
+  missing: the rumble. New device Rumble (Rumble.h, RumbleDisplay.h): mono sum -> two all-passes -> four delay
+  lines in a Householder loop with damping (Decay = RT60) -> two 12 dB low-passes at Tone -> +15 dB -> tanh
+  drive -> low cut and the low-pass again -> gain from an envelope of the dry kick (against its own slow peak, so
+  it works at any level; square-rooted, Recover is its release) -> Amount; dry kick added unless "Rumble only".
+  First version was 27 dB under the kick and the drive did nothing (the tail of a 90 ms burst is quiet):
+  the make-up went in before the drive. Measured with 55 Hz bursts every half second: -24 dB between kicks,
+  14.6 dB lower under a kick than without ducking, kick itself changed 0.17 dB, mono to the last bit at Width 0,
+  -2.7 dBFS with everything up. Wired everywhere (menu, browser list, monkey project, presets x7, device audit,
+  window with three points, shot looked at, VST3 target PulseRumble built and probed). Not judged by ear.
+  The demo song's rumble return is still made of four devices: left alone until the owner has said what they
+  think of the demo. 338 checks, quick tier.

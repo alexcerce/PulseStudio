@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.56 - 2026-10-07
+
+- New effect: Rumble (the kick into a reverb, cut to its lows, driven and ducked by the kick), also as a VST3 plugin
+
 ## 0.99.55 - 2026-10-06
 
 - Pulse Analog: tied notes (slides as on a 303) and accent, and a bank of eight acid presets

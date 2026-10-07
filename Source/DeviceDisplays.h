@@ -13,6 +13,7 @@
 #include "ReferenceDisplay.h"
 #include "ModFxDisplay.h"
 #include "ColourFxDisplay.h"
+#include "RumbleDisplay.h"
 #include "AmpFxDisplay.h"
 #include "TimeFxDisplay.h"
 #include "LoopFxDisplay.h"

@@ -162,6 +162,7 @@ namespace PluginMenu
         addBuiltIn<pulse::FreqShifter> (effects, edit, cb);
         addBuiltIn<pulse::Redux> (effects, edit, cb);
         addBuiltIn<pulse::Exciter> (effects, edit, cb);
+        addBuiltIn<pulse::Rumble> (effects, edit, cb);
         addBuiltIn<pulse::Vocoder> (effects, edit, cb);
         addBuiltIn<pulse::PitchCorrect> (effects, edit, cb);
         addBuiltIn<pulse::Utility> (effects, edit, cb);

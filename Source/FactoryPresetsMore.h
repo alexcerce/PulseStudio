@@ -579,6 +579,16 @@ namespace FactoryPresetsMore
                 { "Dust (parallel)", { { "rate", 5000 }, { "bits", 6 }, { "mix", 0.3f } } } } },
 
             //----------------------------------------------------------------------------------
+            // Rumble: dry 1 = the kick stays in, 0 = rumble only (for a return track)
+            { "pulseRumble", {
+                { "Classic Techno Rumble", { { "amount", -8 }, { "decay", 1.2f }, { "tone", 110 }, { "lowcut", 30 }, { "drive", 8 }, { "duck", 0.9f }, { "recover", 160 }, { "width", 0 }, { "dry", 1 } } },
+                { "Short and Tight (fast tracks)", { { "amount", -7 }, { "decay", 0.5f }, { "tone", 130 }, { "lowcut", 35 }, { "drive", 10 }, { "duck", 1.0f }, { "recover", 90 }, { "width", 0 }, { "dry", 1 } } },
+                { "Long Dark Hall", { { "amount", -10 }, { "decay", 3.5f }, { "tone", 85 }, { "lowcut", 28 }, { "drive", 6 }, { "duck", 0.85f }, { "recover", 260 }, { "width", 0.15f }, { "dry", 1 } } },
+                { "Driven Growl", { { "amount", -9 }, { "decay", 1.0f }, { "tone", 220 }, { "lowcut", 40 }, { "drive", 24 }, { "duck", 0.95f }, { "recover", 140 }, { "width", 0 }, { "dry", 1 } } },
+                { "Sub Swell (slow to come back)", { { "amount", -6 }, { "decay", 2.0f }, { "tone", 70 }, { "lowcut", 25 }, { "drive", 4 }, { "duck", 1.0f }, { "recover", 420 }, { "width", 0 }, { "dry", 1 } } },
+                { "Wide Warehouse", { { "amount", -11 }, { "decay", 2.6f }, { "tone", 320 }, { "lowcut", 60 }, { "drive", 12 }, { "duck", 0.8f }, { "recover", 200 }, { "width", 0.8f }, { "dry", 1 } } },
+                { "Rumble Only (on a return fed by the kick)", { { "amount", 0 }, { "decay", 1.4f }, { "tone", 100 }, { "lowcut", 30 }, { "drive", 10 }, { "duck", 0.9f }, { "recover", 170 }, { "width", 0 }, { "dry", 0 } } } } },
+
             { "pulseExciter", {
                 { "Vocal Presence", { { "freq", 3500 }, { "drive", 12 }, { "colour", 0.3f }, { "amount", 0.25f } } },
                 { "Air", { { "freq", 8000 }, { "drive", 14 }, { "colour", 0 }, { "amount", 0.3f } } },

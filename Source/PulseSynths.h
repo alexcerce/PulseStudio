@@ -2265,6 +2265,7 @@ namespace pulse
 #include "FxRack.h"
 #include "ModFx.h"
 #include "ColourFx.h"
+#include "Rumble.h"
 #include "AmpFx.h"
 #include "TimeFx.h"
 #include "LoopFx.h"
@@ -2299,6 +2300,7 @@ namespace pulse
         pm.createBuiltInType<FreqShifter>();
         pm.createBuiltInType<Redux>();
         pm.createBuiltInType<Exciter>();
+        pm.createBuiltInType<Rumble>();
         pm.createBuiltInType<Amp>();
         pm.createBuiltInType<Resonators>();
         pm.createBuiltInType<Shimmer>();

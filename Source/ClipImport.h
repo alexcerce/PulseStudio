@@ -114,6 +114,7 @@ namespace ClipImport
             { "Frequency Shifter", pulse::FreqShifter::xmlTypeName, false },
             { "Redux",        pulse::Redux::xmlTypeName,           false },
             { "Exciter",      pulse::Exciter::xmlTypeName,         false },
+            { "Rumble",       pulse::Rumble::xmlTypeName,          false },
             { "Vocoder",      pulse::Vocoder::xmlTypeName,         false },
             { "Pitch Correction", pulse::PitchCorrect::xmlTypeName, false },
             { "Utility",      pulse::Utility::xmlTypeName,         false },

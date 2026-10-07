@@ -864,7 +864,7 @@ public:
                              pulse::Saturator::xmlTypeName, pulse::AutoFilter::xmlTypeName, pulse::Limiter::xmlTypeName, pulse::Utility::xmlTypeName,
                              pulse::Gate::xmlTypeName, pulse::TransientShaper::xmlTypeName, pulse::DeEsser::xmlTypeName, pulse::ConvolutionReverb::xmlTypeName, pulse::MatchEQ::xmlTypeName, pulse::Reference::xmlTypeName,
                              pulse::Chorus::xmlTypeName, pulse::PhaserFlanger::xmlTypeName, pulse::AutoPan::xmlTypeName, pulse::FreqShifter::xmlTypeName,
-                             pulse::Redux::xmlTypeName, pulse::Exciter::xmlTypeName, pulse::Amp::xmlTypeName, pulse::Resonators::xmlTypeName,
+                             pulse::Redux::xmlTypeName, pulse::Exciter::xmlTypeName, pulse::Rumble::xmlTypeName, pulse::Amp::xmlTypeName, pulse::Resonators::xmlTypeName,
                              pulse::Shimmer::xmlTypeName, pulse::GrainDelay::xmlTypeName, pulse::BeatRepeat::xmlTypeName, pulse::Looper::xmlTypeName,
                              pulse::Spectral::xmlTypeName, pulse::MultibandDynamics::xmlTypeName, pulse::GlueCompressor::xmlTypeName, pulse::PulseEQ::xmlTypeName,
                              pulse::Vocoder::xmlTypeName };

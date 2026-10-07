@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(PulseStudio VERSION 0.99.55 LANGUAGES C CXX)
+project(PulseStudio VERSION 0.99.56 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -178,3 +178,4 @@ pulse_fx_plugin(PulseMatchEQ pulseMatchEQ "Pulse Match EQ" PPme 1)
 pulse_fx_plugin(PulseVocoder pulseVocoder "Pulse Vocoder" PPvc 1)
 pulse_fx_plugin(PulsePitchCorrect pulsePitchCorrect "Pulse Pitch Correction" PPpc 0)
 pulse_fx_plugin(PulseUtility pulseUtility "Pulse Utility" PPut 0)
+pulse_fx_plugin(PulseRumble pulseRumble "Pulse Rumble" PPrm 0)

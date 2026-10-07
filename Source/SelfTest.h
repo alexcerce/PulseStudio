@@ -208,6 +208,7 @@ namespace SelfTest
         shoot (pulse::FreqShifter::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::FreqShifter::pShift, 240); p.set (pulse::FreqShifter::pLfoAmount, 120); }, "shot_shifter.png");
         shoot (pulse::Redux::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Redux::pRate, 6000); p.set (pulse::Redux::pBits, 4); }, "shot_redux.png");
         shoot (pulse::Exciter::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Exciter::pAmount, 0.6f); p.set (pulse::Exciter::pColour, 0.6f); }, "shot_exciter.png");
+        shoot (pulse::Rumble::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Rumble::pAmount, -3.0f); }, "shot_rumble.png");
         shoot (pulse::Amp::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Amp::pModel, 2); p.set (pulse::Amp::pGain, 0.7f); p.set (pulse::Amp::pMid, 0.7f); p.set (pulse::Amp::pCabinet, 3); }, "shot_amp.png");
         shoot (pulse::Resonators::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Resonators::pChord, 5); p.set (pulse::Resonators::pDecay, 3.0f); }, "shot_resonators.png");
         shoot (pulse::Shimmer::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Shimmer::pShimmer, 0.7f); }, "shot_shimmer.png");
@@ -6358,6 +6359,113 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
                     LookAndFeel::setDefaultLookAndFeel (nullptr);
                 }
                 fp2 = nullptr; rp2 = nullptr; ep2 = nullptr;
+            }
+
+            // --- v0.99.56: Rumble ------------------------------------------------------------------------
+            {
+                auto rp3 = edit->getPluginCache().createNewPlugin (pulse::Rumble::xmlTypeName, {});
+                t->pluginList.insertPlugin (rp3, 0, nullptr);
+                auto* rumble = dynamic_cast<pulse::Rumble*> (rp3.get());
+                using RB = pulse::Rumble;
+                // a kick: a burst of 55 Hz that dies away in 90 ms, every half second; `until`: no more kicks after that
+                auto kicks = [] (double until) { return [until] (int, double tt)
+                {
+                    const double ph = std::fmod (tt, 0.5);
+                    return tt < until && ph < 0.09 ? 0.8f * (float) (std::sin (MathConstants<double>::twoPi * 55.0 * ph) * (1.0 - ph / 0.09)) : 0.0f;
+                }; };
+                auto level = [&] (const AudioBuffer<float>& b, double from, double len)
+                {
+                    return Decibels::gainToDecibels (b.getRMSLevel (0, (int) (from * sr), (int) (len * sr)), -140.0f);
+                };
+                // how much of a stretch is highs: how much the signal changes from one sample to the next, against how big it is
+                auto edge = [&] (const AudioBuffer<float>& b, double from, double len)
+                {
+                    const int a = (int) (from * sr), n = (int) (len * sr);
+                    double d = 0, e = 1.0e-15;
+                    for (int i = 0; i < n; ++i) { const double x = b.getSample (0, a + i), y = b.getSample (0, a + i + 1); d += (y - x) * (y - x); e += x * x; }
+                    return (float) (10.0 * std::log10 (d / e + 1.0e-15));
+                };
+                auto defaults = [&] { for (auto* prm : rumble->getAutomatableParameters()) if (auto d = prm->getDefaultValue()) prm->setParameter (*d, sendNotificationSync); };
+                AudioBuffer<float> wet, open, both, dark, bright, shortTail, longTail, wide;
+                // the rumble alone: there between the kicks, pushed down while a kick sounds, and nothing but lows
+                defaults(); rumble->set (RB::pDry, 0);
+                runFx (*rumble, kicks (10.0), 3.0, &wet);
+                rumble->set (RB::pDuck, 0.0f);
+                runFx (*rumble, kicks (10.0), 3.0, &open);
+                const float between = level (wet, 2.75, 0.2), duringDucked = level (wet, 2.5, 0.06), duringOpen = level (open, 2.5, 0.06), lows = edge (wet, 2.6, 0.35);
+                float apart = 0.0f;
+                for (int i = 0; i < wet.getNumSamples(); ++i) apart = jmax (apart, std::abs (wet.getSample (0, i) - wet.getSample (1, i)));
+                // with the kick left in, the kick is there as it went in (the rumble is out of its way)
+                defaults();
+                runFx (*rumble, kicks (10.0), 3.0, &both);
+                AudioBuffer<float> plainKick (2, both.getNumSamples());
+                { auto k = kicks (10.0); for (int i = 0; i < plainKick.getNumSamples(); ++i) { const float v = k (0, i / sr); plainKick.setSample (0, i, v); plainKick.setSample (1, i, v); } }
+                const float kickKept = level (both, 2.5, 0.05) - level (plainKick, 2.5, 0.05);
+                // Tone opens it, Decay makes it last, Width takes it off the middle
+                // (for the tone: a kick with a knock at 300 Hz in it, which a pure 55 Hz burst does not have)
+                auto knocks = [] (int, double tt)
+                {
+                    const double ph = std::fmod (tt, 0.5);
+                    return ph < 0.09 ? (float) ((0.6 * std::sin (MathConstants<double>::twoPi * 55.0 * ph) + 0.3 * std::sin (MathConstants<double>::twoPi * 300.0 * ph)) * (1.0 - ph / 0.09)) : 0.0f;
+                };
+                defaults(); rumble->set (RB::pDry, 0); rumble->set (RB::pTone, 50.0f);
+                runFx (*rumble, knocks, 3.0, &dark);
+                rumble->set (RB::pTone, 500.0f);
+                runFx (*rumble, knocks, 3.0, &bright);
+                defaults(); rumble->set (RB::pDry, 0); rumble->set (RB::pDuck, 0.0f); rumble->set (RB::pDecay, 0.3f);
+                runFx (*rumble, kicks (1.0), 3.0, &shortTail);
+                rumble->set (RB::pDecay, 4.0f);
+                runFx (*rumble, kicks (1.0), 3.0, &longTail);
+                defaults(); rumble->set (RB::pDry, 0); rumble->set (RB::pWidth, 1.0f);
+                runFx (*rumble, kicks (10.0), 3.0, &wide);
+                float wideApart = 0.0f;
+                for (int i = 0; i < wide.getNumSamples(); ++i) wideApart = jmax (wideApart, std::abs (wide.getSample (0, i) - wide.getSample (1, i)));
+                // everything turned up: loud, and in hand
+                defaults(); rumble->set (RB::pDecay, 6.0f); rumble->set (RB::pDrive, 30.0f); rumble->set (RB::pAmount, 6.0f); rumble->set (RB::pDuck, 0.0f); rumble->set (RB::pTone, 600.0f);
+                const float worst = runFx (*rumble, kicks (10.0), 6.0);
+                defaults();
+                const bool rumbleOk = between > -45.0f && duringOpen - duringDucked > 8.0f && lows < -20.0f && apart < 1.0e-5f && std::abs (kickKept) < 1.0f
+                                      && edge (bright, 2.6, 0.35) - edge (dark, 2.6, 0.35) > 4.0f && level (longTail, 2.0, 0.5) - level (shortTail, 2.0, 0.5) > 25.0f && level (longTail, 2.0, 0.5) > -70.0f
+                                      && wideApart > 0.005f && worst < 12.0f && worst > -30.0f;
+                rep.check (rumbleOk, "Rumble (lows of a reverb behind the kick, pushed down while the kick sounds, the kick itself untouched; tone, decay and width; in hand with everything up)",
+                           "between kicks " + String (between, 1) + " dB; under a kick " + String (duringDucked, 1) + " (not ducked " + String (duringOpen, 1) + "); highs " + String (lows, 0) + " dB; kick changed "
+                           + String (kickKept, 2) + " dB; Tone 50 > 500 Hz: " + String (edge (bright, 2.6, 0.35) - edge (dark, 2.6, 0.35), 1) + " dB brighter; a second after the last kick: " + String (level (shortTail, 2.0, 0.5), 0)
+                           + " / " + String (level (longTail, 2.0, 0.5), 0) + " dB; sides " + String (apart, 6) + " / " + String (wideApart, 3) + "; all up " + String (worst, 1) + " dBFS");
+                // its window
+                {
+                    PulseLookAndFeel laf;
+                    LookAndFeel::setDefaultLookAndFeel (&laf);
+                    EditViewState evs (*edit, sm);
+                    RumbleUI::RumbleView rv3 (*rumble);
+                    rv3.setSize (1000, 520);
+                    { Image img (Image::ARGB, 1000, 520, true); Graphics g (img); rv3.paint (g); }
+                    const float tone0 = rumble->get (RB::pTone), am0 = rumble->get (RB::pAmount), cut0 = rumble->get (RB::pLowCut), duck0 = rumble->get (RB::pDuck);
+                    rv3.dragHandle (0, 40.0f, -30.0f);
+                    rv3.dragHandle (1, 30.0f, 0.0f);
+                    rv3.dragHandle (2, 0.0f, -60.0f);
+                    const bool handlesOk = rumble->get (RB::pTone) > tone0 * 1.2f && rumble->get (RB::pAmount) > am0 + 1.0f && rumble->get (RB::pLowCut) > cut0 + 3.0f && rumble->get (RB::pDuck) < duck0 - 0.05f;
+                    StringArray missing;
+                    {
+                        DeviceEditors::Editor ed (evs, *rumble);
+                        ed.setSize (1100, 760);
+                        std::set<te::AutomatableParameter*> seen;
+                        std::function<void (Component&)> walk = [&] (Component& c)
+                        {
+                            if (auto* k = dynamic_cast<ParamKnob*> (&c)) seen.insert (&k->getParameter());
+                            if (auto* k = dynamic_cast<ParamChoice*> (&c)) seen.insert (&k->getParameter());
+                            if (auto* k = dynamic_cast<ParamToggle*> (&c)) seen.insert (&k->getParameter());
+                            for (auto* chd : c.getChildren()) walk (*chd);
+                        };
+                        walk (ed);
+                        for (int i = 0; i < rumble->numParams(); ++i) if (! seen.count (&*rumble->param (i))) missing.add (rumble->param (i)->paramID);
+                        if (! DeviceEditors::hasFullEditor (*rumble)) missing.add ("no full window");
+                    }
+                    rep.check (handlesOk && missing.isEmpty(), "Rumble window: tone, amount, low cut and duck are dragged on the picture, and there is a control for every parameter",
+                               missing.isEmpty() ? "tone " + String (roundToInt (tone0)) + " -> " + String (roundToInt (rumble->get (RB::pTone))) + " Hz, duck " + String (duck0, 2) + " -> " + String (rumble->get (RB::pDuck), 2) : missing.joinIntoString ("; "));
+                    LookAndFeel::setDefaultLookAndFeel (nullptr);
+                }
+                rp3->deleteFromParent();
+                rp3 = nullptr;
             }
 
             // --- Pulse Amp ---------------------------------------------------------------------------------
