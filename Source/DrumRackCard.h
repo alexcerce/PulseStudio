@@ -1,5 +1,7 @@
 #pragma once
 
+#include "DrumMachine.h"
+
 // Included from DeviceChain.h (uses CardBase, ParamKnob, PluginMenu, ClipImport).
 
 /** Folders "Randomise kit" searches for samples (set by the main window from the browser's places). */
@@ -99,9 +101,16 @@ public:
         removeBtn.onClick = [this] { instance->deleteFromParent(); };
         kitBtn.setTooltip ("Kit: synth kit, randomise, clear");
         kitBtn.onClick = [this] { showKitMenu(); };
+        machineBtn.setTooltip ("Drum machine: this track's clip as sixteen steps for each pad, with accents, swing, four patterns and a chain (a clip of four bars is made if the track has none)");
+        machineBtn.onClick = [this]
+        {
+            if (auto t = dynamic_cast<te::AudioTrack*> (instance->getOwnerTrack()))
+                if (auto* mc = DrumMachine::clipFor (*t, evs.edit.getUndoManager()))
+                    if (evs.openDrumMachine) evs.openDrumMachine (mc);
+        };
         bankUp.onClick = [this] { setBank (DrumRack::getBank (*rack) + 16); };
         bankDown.onClick = [this] { setBank (DrumRack::getBank (*rack) - 16); };
-        for (auto* c : std::initializer_list<Component*> { &power, &removeBtn, &kitBtn, &bankUp, &bankDown })
+        for (auto* c : std::initializer_list<Component*> { &power, &removeBtn, &kitBtn, &machineBtn, &bankUp, &bankDown })
             addAndMakeVisible (c);
 
         const char* names[] = { "Sample", "Shape", "Synth", "Chain", "Mixer", "Returns", "Macros" };
@@ -148,6 +157,8 @@ public:
         removeBtn.setBounds (head.removeFromRight (22));
         head.removeFromRight (6);
         kitBtn.setBounds (head.removeFromRight (64));
+        head.removeFromRight (4);
+        machineBtn.setBounds (head.removeFromRight (72));
         title.setBounds (head.removeFromLeft (110));
         r.removeFromTop (6);
         r.removeFromBottom (6);
@@ -1146,6 +1157,6 @@ private:
     Label title, padTitle;
     IconButton power { Icons::Type::power, "Drum Rack on / off", Theme::green }, removeBtn { Icons::Type::close, "Remove device" },
                bankUp { Icons::Type::chevronUp, "Show higher pads" }, bankDown { Icons::Type::chevronDown, "Show lower pads" };
-    TextButton kitBtn { "Kit" };
+    TextButton kitBtn { "Kit" }, machineBtn { "Machine" };
     std::shared_ptr<FileChooser> chooser;
 };

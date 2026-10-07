@@ -179,7 +179,7 @@ well EVERYWHERE." So, besides the list:
 7. Techno (the owner, 2026-10-06: "I'd use this mostly for experimental techno music"; do this group before what is
    left of the others): [x] the demo song is a whole techno track (wait for the owner's ears on it, then change what
    they say)  [x] step sequencer: probability, ratchets and a length of its own for each row (polymetre)
-   [ ] a drum machine view of the Drum Rack: 16 steps a pad, accents, swing, pattern A/B/C/D and chaining
+   [x] a drum machine view of the Drum Rack: 16 steps a pad, accents, swing, pattern A/B/C/D and chaining
    [x] an acid bass preset bank for Pulse Analog, with accent and slide written as the 303 does  [x] distortion:
    more kinds worth having on a kick (clipper, wavefolder with tone, rumble maker = reverb into low pass into
    sidechain)  [x] a "kick" synth with pitch and click envelopes drawn on a graph  [x] techno presets for every
@@ -924,3 +924,24 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   PulseStudio-0.99.59-Setup.exe (286 MB with the 40 plugins as an optional part). Next in group 7: the drum
   machine view of the Drum Rack, then the performance view. Before anything is said to the owner about a plugin
   again: `--vst3-probe dist/VST3 report.txt` and the same with `--self-move`, both 40 of 40.
+- 2026-10-07: v0.99.60. Group 7: the drum machine. Source/DrumMachine.h (class DrumMachine, shown in the piano roll by its
+  Machine button, PianoRoll::showMachine, command view.machine, "Open in the drum machine" in the clip menu, and a
+  Machine button on the Drum Rack's card through evs.openDrumMachine and DrumMachine::clipFor). Decided, as for the
+  step grid: no playback engine of its own. Four patterns of sixteen steps (off / hit / accent), the chain (up to
+  16 letters), swing and the level of a plain hit are a "DRUMMACHINE" child of the clip's state, and the clip's
+  notes are written from them, the chain going round to the clip's end. A clip never edited there is only read
+  (first four bars as A to D, notes of 115 and over as accents) until the first change; from then the machine
+  writes ALL the clip's notes and takes the step grid's pattern rows out (StepGrid::forgetAllPatterns), which the
+  README says. A pattern is always one 4/4 bar of sixteenths. Twelve ready-made patterns by General MIDI note,
+  written only for drums that have a pad. The test caught notes left past the end of a clip made shorter (render
+  now clears every note first). Not done: a length per pattern, more than four patterns, the chain's letters
+  typed from the keyboard, playing the steps from a controller (that belongs to the performance view), typed
+  values for swing and level (they have a right-click menu instead). Not judged by ear. 341 checks, quick tier;
+  drum-machine.png looked at.
+  THIS RUN was a scheduled one that started 2026-10-06 and then stood still for hours twice, most likely waiting on permission
+  prompts for Bash commands (single commands had been approved by hand in the settings file; sleep cannot be ruled out): the owner then said "always allow in routine so that it is
+  truly autopilot", and C:\Users\cercea\IdeaProjects\.claude\settings.local.json now allows Bash, PowerShell,
+  Read, Edit, Write, Glob and Grep outright. There is no request_keep_awake tool in a scheduled session (looked
+  for it twice): the rule about foreground builds is what keeps the PC awake. While this run stood still another
+  session did v0.99.51 to v0.99.59; a run that wakes up must re-read this file and `git log` before going on.
+  Left in group 7: the performance view. The slow tier is owed for v0.99.60.

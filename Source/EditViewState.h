@@ -180,6 +180,8 @@ public:
 
     /** Set by the main component: opens a MIDI clip in the piano roll. */
     std::function<void (te::MidiClip*)> openPianoRoll;
+    /** Opens a MIDI clip in the drum machine of the piano roll. */
+    std::function<void (te::MidiClip*)> openDrumMachine;
     /** Shows a track's devices (selects it and opens the Devices panel; also for return tracks). */
     std::function<void (te::Track*)> showDevices;   // nullptr = the master
     /** Opens a device's editor (big Pulse editor, sandbox window or the plugin's own window). */

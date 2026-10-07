@@ -891,6 +891,7 @@ private:
         if (auto mc = dynamic_cast<te::MidiClip*> (clip.get()))
         {
             m.addItem ("Open in Piano Roll", [this, mc] { if (evs.openPianoRoll) evs.openPianoRoll (mc); });
+            m.addItem ("Open in the drum machine", [this, mc] { if (evs.openDrumMachine) evs.openDrumMachine (mc); });
             Groove::addToMenu (m, *mc);
         }
         m.addItem ("Extract groove (to the groove list)", [c = clip]

@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.60 - 2026-10-07
+
+- Drum machine: the *Machine* button in the piano roll (and on the Drum Rack) shows a clip as sixteen steps for each pad, with accents, swing, four patterns (A to D), a chain that plays them in order, and twelve ready-made techno patterns
+
 ## 0.99.59 - 2026-10-07
 
 - Fixed: the VST3 plugins froze and crashed the host when settings were moved (they set engine parameters from the host's audio thread). All of them are rebuilt

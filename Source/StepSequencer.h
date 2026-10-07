@@ -29,7 +29,8 @@ public:
 
     /** The rows: the pads of the track's Drum Rack that have a sound, top row the highest; without a Drum Rack, the
         pitches the clip uses (or the sixteen from C1 if it is empty). */
-    std::vector<Row> rows() const
+    std::vector<Row> rows() const { return rowsFor (clip.get()); }
+    static std::vector<Row> rowsFor (te::MidiClip* clip)
     {
         std::vector<Row> out;
         if (clip == nullptr) return out;
@@ -387,6 +388,12 @@ public:
         // otherwise: along the steps
         scroll = jlimit (0, jmax (0, numSteps() - 8), scroll + (w.deltaY > 0 || w.deltaX > 0 ? -4 : 4));
         repaint();
+    }
+
+    /** Takes every pattern row out of a clip (its notes stay): for whatever else writes the clip's notes itself. */
+    static void forgetAllPatterns (te::MidiClip& c, juce::UndoManager* um)
+    {
+        if (auto all = c.state.getChildWithName (rowsID); all.isValid()) c.state.removeChild (all, um);
     }
 
     /** (for the help line) */

@@ -8,6 +8,7 @@
 #include "Scales.h"
 #include "Chords.h"
 #include "StepSequencer.h"
+#include "DrumMachine.h"
 #include "ClipEnvelopes.h"
 
 /** Piano roll editor for a te::MidiClip. X positions are in the clip's content beats. */
@@ -16,7 +17,7 @@ class PianoRoll : public Component,
                   private te::ValueTreeAllEventListener
 {
 public:
-    explicit PianoRoll (EditViewState& e) : evs (e), steps (e)
+    explicit PianoRoll (EditViewState& e) : evs (e), steps (e), machine (e)
     {
         setWantsKeyboardFocus (true);
 
@@ -27,6 +28,14 @@ public:
         stepsBtn.onClick = [this] { showSteps (stepsBtn.getToggleState()); };
         addAndMakeVisible (stepsBtn);
         addChildComponent (steps);
+
+        // the drum machine: the clip as four sixteen-step patterns and a chain
+        machineBtn.setClickingTogglesState (true);
+        machineBtn.setTooltip ("Drum machine: sixteen steps for each pad, accents, swing, four patterns (A to D) and a chain that plays them in order");
+        machineBtn.setColour (TextButton::buttonOnColourId, Theme::accentDim);
+        machineBtn.onClick = [this] { showMachine (machineBtn.getToggleState()); };
+        addAndMakeVisible (machineBtn);
+        addChildComponent (machine);
 
         gridBox.addItemList ({ "1/4", "1/8", "1/16", "1/32", "1/8T", "1/16T", "Off" }, 1);
         gridBox.setSelectedId (3, dontSendNotification);
@@ -115,6 +124,7 @@ public:
 
         clip = mc;
         steps.setClip (mc);
+        machine.setClip (mc);
         selected.clear();
         scrollX = 0.0;
 
@@ -143,12 +153,24 @@ public:
     /** Shows the step grid in place of the notes (or the notes again). */
     void showSteps (bool on)
     {
+        if (on) showMachine (false);
         stepsBtn.setToggleState (on, dontSendNotification);
         steps.setVisible (on);
         if (on) steps.toFront (false);
         resized();
     }
     StepGrid& stepGrid() { return steps; }
+
+    /** Shows the drum machine in place of the notes (or the notes again). */
+    void showMachine (bool on)
+    {
+        if (on) showSteps (false);
+        machineBtn.setToggleState (on, dontSendNotification);
+        machine.setVisible (on);
+        if (on) machine.toFront (false);
+        resized();
+    }
+    DrumMachine& drumMachine() { return machine; }
 
     /** The clip on show can be taken out of the project behind the piano roll's back (undo, deleting its
         track, cutting the section it is in). Everything that draws or edits asks this first. */
@@ -294,6 +316,9 @@ public:
         r.removeFromLeft (4);
         stepsBtn.setBounds (r.removeFromLeft (56));
         steps.setBounds (getLocalBounds().withTrimmedTop (toolbarH));
+        r.removeFromLeft (4);
+        machineBtn.setBounds (r.removeFromLeft (72));
+        machine.setBounds (getLocalBounds().withTrimmedTop (toolbarH));
         r.removeFromLeft (6);
         laneBox.setBounds (r.removeFromLeft (140));
         r.removeFromLeft (10);
@@ -1309,7 +1334,8 @@ private:
     mutable std::vector<int> rows;
     mutable std::array<int, 128> rowOf {};
     mutable String rowsKey;
-    TextButton quantizeBtn { "Quantize" }, toolsBtn { "Tools" }, paintBtn { "Draw" }, ghostBtn { "Ghosts" }, stepsBtn { "Steps" };
+    TextButton quantizeBtn { "Quantize" }, toolsBtn { "Tools" }, paintBtn { "Draw" }, ghostBtn { "Ghosts" }, stepsBtn { "Steps" }, machineBtn { "Machine" };
     StepGrid steps;
+    DrumMachine machine;
     Label title, hint;
 };

@@ -367,6 +367,7 @@ public:
         c.add ("view.video", "Video: the film this project is written to", "View", {}, [this] { if (edit != nullptr && ! About::isCapturing()) Video::show (*edit); });
         c.add ("view.notes", "Notes for the project and its tracks", "View", {}, [this] { if (edit != nullptr && ! About::isCapturing()) Notes::show (*edit); });
         c.add ("view.steps", "Piano roll: step grid on / off", "View", {}, [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->showSteps (! pianoRoll->stepGrid().isVisible()); } });
+        c.add ("view.machine", "Piano roll: drum machine on / off", "View", {}, [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->showMachine (! pianoRoll->drumMachine().isVisible()); } });
         c.add ("midi.fitChords", "MIDI: fit to the chord track", "MIDI", {}, [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("fitchords"); } });
         c.add ("midi.strum", "MIDI: strum chords up", "MIDI", {}, [this] { if (pianoRoll) { showTab (Tab::pianoRoll); pianoRoll->applyTool ("strum"); } });
         c.add ("mixer.snapshot", "Store a mixer snapshot", "Mixer", {}, [this] { if (edit) MixSnapshots::store (*edit, "Mix " + String (MixSnapshots::names (*edit).size() + 1)); });
@@ -1065,6 +1066,7 @@ private:
         StartupTimer::mark ("edit prepared (upgrades, meters, context)");
         evs = std::make_unique<EditViewState> (*edit, selectionManager);
         evs->openPianoRoll = [this] (te::MidiClip* mc) { pianoRoll->setClip (mc); showTab (Tab::pianoRoll); };
+        evs->openDrumMachine = [this] (te::MidiClip* mc) { pianoRoll->setClip (mc); showTab (Tab::pianoRoll); pianoRoll->showMachine (true); };
         evs->showDevices = [this] (te::Track* t)
         {
             if (t != nullptr) selectionManager.selectOnly (t);

@@ -1525,6 +1525,168 @@ namespace SelfTest
             edit->getUndoManager().clearUndoHistory();
         }
 
+        // --- v0.99.60: the drum machine ---------------------------------------------------------------------
+        {
+            rep.step ("drum machine");
+            using DM = DrumMachine;
+            auto dt = ClipImport::createContentTrack (*edit, "Machine test", false);
+            auto rackPlugin = DrumRack::create (*edit, true);   // with the synthesised kit on its pads
+            dt->pluginList.insertPlugin (rackPlugin, 0, nullptr);
+            auto beat = [&] (double b) { return EngineHelpers::beatToTime (*edit, b); };
+            auto mc = te::insertMIDIClip (*dt, "beat", { beat (0.0), beat (16.0) });   // four bars
+            EditViewState devs (*edit, sm);
+            DM dm (devs);
+            dm.setSize (1100, 420);
+            dm.setClip (mc.get());
+            using Starts = std::vector<double>;
+            auto startsIn = [] (te::MidiClip& c, int note)
+            {
+                Starts v;
+                for (auto* n : c.getSequence().getNotes()) if (n->getNoteNumber() == note) v.push_back (std::round (n->getStartBeat().inBeats() * 1.0e6) / 1.0e6);
+                std::sort (v.begin(), v.end());
+                return v;
+            };
+            auto velIn = [] (te::MidiClip& c, int note, double at)
+            {
+                for (auto* n : c.getSequence().getNotes()) if (n->getNoteNumber() == note && std::abs (n->getStartBeat().inBeats() - at) < 1.0e-6) return n->getVelocity();
+                return 0;
+            };
+            auto starts = [&] (int note) { return startsIn (*mc, note); };
+            // an empty clip: nothing written yet
+            const bool fresh = ! dm.isMachine() && dm.numBars() == 4 && dm.chain() == "A" && dm.rows().size() >= 4 && mc->getSequence().getNumNotes() == 0;
+            // a hit on the fifth step of the kick plays in every bar (the chain is "A", going round four bars)
+            dm.toggle (36, 4);
+            const bool everyBar = dm.isMachine() && starts (36) == Starts { 1.0, 5.0, 9.0, 13.0 } && velIn (*mc, 36, 1.0) == 96;
+            dm.toggleAccent (36, 4);
+            const bool accented = dm.stepAt (36, 4) == DM::accent && velIn (*mc, 36, 5.0) == 127 && mc->getSequence().getNumNotes() == 4;
+            edit->getUndoManager().undo();
+            const bool accentUndone = dm.stepAt (36, 4) == DM::hit && velIn (*mc, 36, 5.0) == 96 && mc->getSequence().getNumNotes() == 4;
+            // pattern B has a snare on its first step; the chain A A B puts it in the third bar, and the fourth bar is A again
+            dm.selectPattern (1);
+            dm.toggle (38, 0);
+            const bool notYet = starts (38).empty();
+            dm.setChain ("aab?");
+            const bool chained = dm.chain() == "AAB" && starts (38) == Starts { 8.0 } && starts (36) == Starts { 1.0, 5.0, 13.0 };
+            // swing pushes every second sixteenth later and leaves the others where they are
+            dm.selectPattern (0);
+            dm.toggle (42, 1);
+            dm.setSwing (66);
+            const auto hats = starts (42);
+            const bool swung = hats.size() == 3 && std::abs (hats[0] - (0.25 + 0.66 * 0.125)) < 1.0e-5 && starts (36).front() == 1.0;
+            edit->getUndoManager().undo();
+            const bool swingUndone = dm.swing() == 0 && std::abs (starts (42).front() - 0.25) < 1.0e-6;
+            dm.setLevel (80);
+            const bool levelled = velIn (*mc, 42, 0.25) == 80 && dm.level() == 80;
+            // copying and clearing patterns
+            dm.copyPattern (0, 2);
+            const bool copied = dm.model().at (2, 36, 4) == DM::hit && dm.model().at (2, 42, 1) == DM::hit;
+            dm.clearPattern (2);
+            const bool wiped = dm.model().hits (2) == 0 && dm.model().hits (0) == 2;
+            // a ready-made pattern, written only for drums that have a pad
+            dm.selectPattern (3);
+            dm.applyFactory (0);
+            const auto fm = dm.model();
+            const bool readyMade = fm.at (3, 36, 0) == DM::accent && fm.at (3, 36, 4) == DM::accent && fm.at (3, 42, 2) == DM::hit && fm.at (3, 39, 4) == DM::accent && DM::factory().size() >= 8;
+            bool factoryShapes = true;
+            for (auto& f : DM::factory()) for (auto& r : f.rows) factoryShapes = factoryShapes && String (r.second).length() == DM::numSteps;
+            // rows: fill, shift round the end, clear
+            dm.selectPattern (2);
+            dm.fillRow (37, 4);
+            dm.shiftRow (37, -1);
+            const bool rowTools = dm.stepAt (37, 15) == DM::hit && dm.stepAt (37, 3) == DM::hit && dm.stepAt (37, 0) == DM::off && dm.model().hits (2) == 4;
+            dm.clearPattern (2);
+            // kept with the clip: another machine reads the same thing
+            DM other (devs);
+            other.setClip (mc.get());
+            const bool kept = other.chain() == "AAB" && other.level() == 80 && other.model().at (1, 38, 0) == DM::hit && mc->state.getChildWithName ("DRUMMACHINE").isValid();
+            other.setClip (nullptr);
+            // the clip made as long as the chain: three bars, and undo gives the fourth back with its notes
+            dm.fitClipToChain();
+            const bool fitted = dm.numBars() == 3 && starts (36) == Starts { 1.0, 5.0 } && std::abs (EngineHelpers::timeToBeat (*edit, mc->getPosition().getEnd()) - 12.0) < 1.0e-6;
+            edit->getUndoManager().undo();
+            const bool fitUndone = dm.numBars() == 4 && starts (36) == Starts { 1.0, 5.0, 13.0 };
+            // the pattern rows of a step grid give way: the machine writes every note of the clip
+            {
+                StepGrid sg (devs);
+                sg.setSize (900, 300);
+                sg.setClip (mc.get());
+                sg.setRatchet (36, 4, 3);
+                sg.setClip (nullptr);
+            }
+            const bool hadRows = mc->state.getChildWithName ("STEPROWS").isValid();
+            dm.selectPattern (0);
+            dm.toggle (46, 6);
+            const bool rowsGone = hadRows && ! mc->state.getChildWithName ("STEPROWS").isValid() && starts (36) == Starts { 1.0, 5.0, 13.0 };
+
+            // a clip of plain notes is read, not written: two different bars become A and B, hard notes accents
+            auto mc2 = te::insertMIDIClip (*dt, "plain", { beat (32.0), beat (40.0) });
+            for (int b = 0; b < 8; ++b) mc2->getSequence().addNote (36, te::BeatPosition::fromBeats ((double) b), te::BeatDuration::fromBeats (0.2), 90, 0, nullptr);
+            mc2->getSequence().addNote (38, te::BeatPosition::fromBeats (5.0), te::BeatDuration::fromBeats (0.2), 127, 0, nullptr);
+            dm.setClip (mc2.get());
+            const auto cm = dm.model();
+            const bool read = ! cm.stored && ! dm.isMachine() && cm.chain == "AB" && cm.at (0, 36, 0) == DM::hit && cm.at (0, 36, 4) == DM::hit && cm.at (0, 38, 4) == DM::off
+                              && cm.at (1, 38, 4) == DM::accent && cm.level == 90 && mc2->getSequence().getNumNotes() == 9;
+            dm.selectPattern (0);
+            dm.toggle (42, 2);
+            const bool taken = dm.isMachine() && mc2->getSequence().getNumNotes() == 10 && startsIn (*mc2, 42) == Starts { 0.5 } && velIn (*mc2, 38, 5.0) == 127 && velIn (*mc2, 36, 3.0) == 90;
+            edit->getUndoManager().undo();
+            const bool takenUndone = ! dm.isMachine() && mc2->getSequence().getNumNotes() == 9;
+
+            // the picture, at its usual size and at a very small and a very large one
+            dm.setClip (mc.get());
+            dm.selectPattern (0);
+            dm.applyFactory (1);
+            dm.toggleAccent (42, 3);
+            dm.setChain ("AABAAABD");
+            dm.setSwing (33);
+            Image img (Image::ARGB, 1100, 420, true);
+            {
+                PulseLookAndFeel laf; LookAndFeel::setDefaultLookAndFeel (&laf);
+                { Graphics g (img); dm.paint (g); }
+                for (auto [w, h] : { std::pair<int, int> { 620, 180 }, { 2400, 1300 } }) { dm.setSize (w, h); Image im (Image::ARGB, w, h, true); Graphics g (im); dm.paint (g); }
+                dm.setSize (1100, 420);
+                LookAndFeel::setDefaultLookAndFeel (nullptr);
+            }
+            { auto f = dir.getChildFile ("drum-machine.png"); f.deleteFile(); if (auto os = f.createOutputStream()) { PNGImageFormat png; png.writeImageToStream (img, *os); } }
+            const bool helped = HelpLine::textFor (&dm).isNotEmpty() && DM::helpText().contains ("accent");
+
+            // inside the piano roll: Machine swaps it in with the same clip, and Steps swaps it out again
+            PianoRoll roll (devs);
+            roll.setSize (1100, 500);
+            roll.setClip (mc.get());
+            roll.showMachine (true);
+            const bool swappedIn = roll.drumMachine().isVisible() && ! roll.stepGrid().isVisible() && roll.drumMachine().chain() == "AABAAABD";
+            roll.showSteps (true);
+            const bool swappedOut = ! roll.drumMachine().isVisible() && roll.stepGrid().isVisible();
+            roll.showSteps (false);
+            roll.setClip (nullptr);
+            // the Machine button of the Drum Rack: the clip under the playhead, or a new one of four bars on a track with none
+            edit->getTransport().setPosition (beat (2.0));
+            const bool found = DM::clipFor (*dt, edit->getUndoManager()) == mc.get();
+            auto et = ClipImport::createContentTrack (*edit, "Machine empty", false);
+            auto* made = DM::clipFor (*et, edit->getUndoManager());
+            const bool madeOne = made != nullptr && et->getClips().size() == 1 && std::abs (EngineHelpers::timeToBeat (*edit, made->getPosition().getEnd()) - EngineHelpers::timeToBeat (*edit, made->getPosition().getStart()) - 16.0) < 1.0e-6;
+            edit->getTransport().setPosition (te::TimePosition());
+
+            const bool model = fresh && everyBar && accented && accentUndone && notYet && chained && swung && swingUndone && levelled;
+            const bool tools = copied && wiped && readyMade && factoryShapes && rowTools && kept && fitted && fitUndone && rowsGone;
+            const bool reading = read && taken && takenUndone;
+            const bool views = helped && swappedIn && swappedOut && found && madeOne;
+            rep.check (model && tools && reading && views,
+                       "Drum machine (sixteen steps a pad, accents, four patterns and a chain that goes round the clip, swing, hit level, ready-made patterns, undo, kept with the clip, a plain clip read as patterns, in the piano roll and from the Drum Rack)",
+                       String (DM::factory().size()) + " ready-made patterns"
+                       + (fresh ? "" : "; an empty clip is not empty") + (everyBar ? "" : "; a hit is not in every bar (" + String (starts (36).size()) + ")") + (accented && accentUndone ? "" : "; accent or its undo wrong")
+                       + (notYet && chained ? "" : "; chain wrong") + (swung && swingUndone ? "" : "; swing wrong") + (levelled ? "" : "; hit level wrong")
+                       + (copied && wiped ? "" : "; copy or clear wrong") + (readyMade && factoryShapes ? "" : "; ready-made pattern wrong") + (rowTools ? "" : "; row tools wrong")
+                       + (kept ? "" : "; not kept with the clip") + (fitted && fitUndone ? "" : "; fitting the clip to the chain wrong") + (rowsGone ? "" : "; step grid rows not given up")
+                       + (read ? "" : "; a plain clip is read wrong (chain " + cm.chain + ", level " + String (cm.level) + ")") + (taken && takenUndone ? "" : "; taking a plain clip over wrong")
+                       + (helped ? "" : "; no help") + (swappedIn && swappedOut ? "" : "; piano roll swap wrong") + (found && madeOne ? "" : "; clip for the Machine button wrong"));
+            dm.setClip (nullptr);
+            edit->deleteTrack (et);
+            edit->deleteTrack (dt);
+            edit->getUndoManager().clearUndoHistory();
+        }
+
         // --- v0.99.23: crop and consolidate ------------------------------------------------------------------
         {
             rep.step ("crop and consolidate");
