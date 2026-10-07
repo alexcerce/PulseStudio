@@ -182,7 +182,7 @@ well EVERYWHERE." So, besides the list:
    [ ] a drum machine view of the Drum Rack: 16 steps a pad, accents, swing, pattern A/B/C/D and chaining
    [x] an acid bass preset bank for Pulse Analog, with accent and slide written as the 303 does  [x] distortion:
    more kinds worth having on a kick (clipper, wavefolder with tone, rumble maker = reverb into low pass into
-   sidechain)  [ ] a "kick" synth with pitch and click envelopes drawn on a graph  [ ] techno presets for every
+   sidechain)  [x] a "kick" synth with pitch and click envelopes drawn on a graph  [ ] techno presets for every
    instrument and factory drum kits (909, 808, industrial)  [ ] a performance view: mutes, fills and filter
    sweeps on one page, playable from a controller
 
@@ -874,3 +874,18 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   window with three points, shot looked at, VST3 target PulseRumble built and probed). Not judged by ear.
   The demo song's rumble return is still made of four devices: left alone until the owner has said what they
   think of the demo. 338 checks, quick tier.
+- 2026-10-07: v0.99.57. Group 7: Pulse Kick (Kick.h, KickDisplay.h). KickShape holds the settings and the two
+  curves (pitch: Tune x 2^(fall), loudness: 1 ms up, hold, fall; one "fall" function, a straight line at curve 0
+  and exp(-5u) landed on zero at curve 1). KickMaker makes the samples: a sine at that pitch, Shape (tanh
+  towards square), a click (white noise between two one-pole low-passes, gone in four click-times), tanh drive
+  normalised to full scale. The window draws the wave with a KickMaker of its own at 16 kHz, so the picture is
+  the sound; five points (pitch fall, pitch time, hold, decay, click), the wheel on a point bends its curve.
+  One kick at a time without a crack: acceptNoteOn fades whatever is sounding over 4 ms and the new kick starts
+  on another voice (biggest sample step at a retrigger 0.020). Note-off does nothing: a kick is a one-shot.
+  Measured: starts near 259 Hz (the first 12 ms), ends at 48.0 Hz, silent after hold + decay, click +17.9 dB of
+  edge in the first 8 ms and none later, third harmonic -30 > -9 dB with drive, C2 with Keys 96.0 Hz. Nine
+  presets. Not judged by ear.
+  THE FUZZ TEST: adding a device moved its random numbers and EQ Six "ran away": three low-passes at 20 Hz
+  with Q 18 and +18 dB of output. Not a runaway: a ring of some 90 dB that needs seconds to die. The test now
+  gives anything still at the clamp after a second eight more seconds of silence and fails only what has not
+  come off it. 340 checks, quick tier.

@@ -2,6 +2,10 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.57 - 2026-10-07
+
+- New instrument: Pulse Kick (a kick synth whose pitch, loudness and click are dragged on a picture of the kick)
+
 ## 0.99.56 - 2026-10-07
 
 - New effect: Rumble (the kick into a reverb, cut to its lows, driven and ducked by the kick), also as a VST3 plugin

@@ -1721,6 +1721,8 @@ namespace DeviceEditors
             add ("Drum Synth", std::make_unique<DrumSynthPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::Analog*> (&p))
             add ("Analog", std::make_unique<Synths2UI::AnalogPanel> (evs, *s));
+        else if (auto s = dynamic_cast<pulse::KickSynth*> (&p))
+            add ("Kick", std::make_unique<KickUI::KickPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::StringModel*> (&p))
             add ("String", std::make_unique<Synths2UI::StringPanel> (evs, *s));
         else if (auto s = dynamic_cast<pulse::Organ*> (&p))
@@ -1840,7 +1842,7 @@ namespace DeviceEditors
             || dynamic_cast<pulse::FMSynth*> (&p) != nullptr
             || dynamic_cast<pulse::Simpler*> (&p) != nullptr
             || dynamic_cast<pulse::DrumSynth*> (&p) != nullptr
-            || dynamic_cast<pulse::Analog*> (&p) != nullptr || dynamic_cast<pulse::StringModel*> (&p) != nullptr
+            || dynamic_cast<pulse::Analog*> (&p) != nullptr || dynamic_cast<pulse::StringModel*> (&p) != nullptr || dynamic_cast<pulse::KickSynth*> (&p) != nullptr
             || dynamic_cast<pulse::Organ*> (&p) != nullptr || dynamic_cast<pulse::EPiano*> (&p) != nullptr
             || dynamic_cast<pulse::Reverb*> (&p) != nullptr || dynamic_cast<pulse::Delay*> (&p) != nullptr || dynamic_cast<pulse::Saturator*> (&p) != nullptr
             || dynamic_cast<pulse::MultibandDynamics*> (&p) != nullptr || dynamic_cast<pulse::Limiter*> (&p) != nullptr

@@ -123,6 +123,7 @@ namespace PluginMenu
             instruments.addItem ("Drum Rack (synth kit)", [&edit, cb] { if (auto p = drumRackFactory (edit, true)) cb (p); });
         }
         addBuiltIn<pulse::DrumSynth> (instruments, edit, cb);
+        addBuiltIn<pulse::KickSynth> (instruments, edit, cb);
         addBuiltIn<pulse::WavetableSynth> (instruments, edit, cb);
         addBuiltIn<pulse::FMSynth> (instruments, edit, cb);
         addBuiltIn<pulse::Analog> (instruments, edit, cb);

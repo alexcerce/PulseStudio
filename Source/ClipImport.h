@@ -79,6 +79,7 @@ namespace ClipImport
             { "Wavetable",    pulse::WavetableSynth::xmlTypeName,  true },
             { "FM Synth",     pulse::FMSynth::xmlTypeName,         true },
             { "Pulse Analog", pulse::Analog::xmlTypeName,          true },
+            { "Pulse Kick",   pulse::KickSynth::xmlTypeName,       true },
             { "Pulse String", pulse::StringModel::xmlTypeName,     true },
             { "Simpler",      pulse::Simpler::xmlTypeName,         true },
             { "Electric Piano", pulse::EPiano::xmlTypeName,        true },

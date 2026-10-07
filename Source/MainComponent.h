@@ -870,7 +870,7 @@ public:
                              pulse::Vocoder::xmlTypeName };
         const int numFx = (int) std::size (fx);
         const char* synths[] = { pulse::WavetableSynth::xmlTypeName, pulse::FMSynth::xmlTypeName, pulse::Analog::xmlTypeName, pulse::StringModel::xmlTypeName,
-                                 pulse::Organ::xmlTypeName, pulse::EPiano::xmlTypeName };
+                                 pulse::Organ::xmlTypeName, pulse::EPiano::xmlTypeName, pulse::KickSynth::xmlTypeName };
         for (int t = EngineHelpers::getUserTracks (*edit).size(); t < numTracks; ++t)
         {
             auto track = ClipImport::createContentTrack (*edit, "Big " + String (t + 1), false);

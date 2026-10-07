@@ -208,6 +208,7 @@ namespace SelfTest
         shoot (pulse::FreqShifter::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::FreqShifter::pShift, 240); p.set (pulse::FreqShifter::pLfoAmount, 120); }, "shot_shifter.png");
         shoot (pulse::Redux::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Redux::pRate, 6000); p.set (pulse::Redux::pBits, 4); }, "shot_redux.png");
         shoot (pulse::Exciter::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Exciter::pAmount, 0.6f); p.set (pulse::Exciter::pColour, 0.6f); }, "shot_exciter.png");
+        shoot (pulse::KickSynth::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::KickSynth::pClick, 0.6f); }, "shot_kick.png");
         shoot (pulse::Rumble::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Rumble::pAmount, -3.0f); }, "shot_rumble.png");
         shoot (pulse::Amp::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Amp::pModel, 2); p.set (pulse::Amp::pGain, 0.7f); p.set (pulse::Amp::pMid, 0.7f); p.set (pulse::Amp::pCabinet, 3); }, "shot_amp.png");
         shoot (pulse::Resonators::xmlTypeName, [] (pulse::PulsePlugin& p) { p.set (pulse::Resonators::pChord, 5); p.set (pulse::Resonators::pDecay, 3.0f); }, "shot_resonators.png");
@@ -7498,12 +7499,27 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
                                 if (k >= 125) tailPeak = jmax (tailPeak, std::abs (v));
                             }
                     }
+                    // Still at the clamp a second after the input stopped: either a runaway, or something that rings long and
+                    // loud because it was asked to (three low-passes at 20 Hz with a Q of 18 and 18 dB of gain on top ring for
+                    // seconds, and die away). Eight more seconds of silence tell the two apart: a runaway does not die away.
+                    if (ok && ! p->isSynth() && tailPeak >= 3.99f)
+                        for (int k = 130; k < 130 + 750 && ok; ++k)
+                        {
+                            audio.clear();
+                            te::MidiMessageArray midi;
+                            te::PluginRenderContext fc (&audio, 0, block, &midi, 0.0, { te::TimePosition::fromSeconds (k * block / sr), te::TimePosition::fromSeconds ((k + 1) * block / sr) },
+                                                        true, false, true, false);
+                            p->applyToBuffer (fc);
+                            tailPeak = audio.getMagnitude (0, block);
+                            if (! std::isfinite (tailPeak)) { ok = false; worst = "not a number"; }
+                            if (tailPeak < 1.0f) break;
+                        }
                     p->deinitialise();
                     ++runs;
-                    // a second after the input stopped (notes released) it must not still be screaming: that is a runaway
+                    // long after the input stopped (notes released) it must not still be screaming: that is a runaway
                     // (instruments are left out: a ten-second release at full level is loud for a long time and that is what was asked for)
                     juce::ignoreUnused (pinned);
-                    if (ok && ! p->isSynth() && tailPeak >= 3.99f) { ok = false; worst = "runs away (still at the clamp a second after the input stopped)"; }
+                    if (ok && ! p->isSynth() && tailPeak >= 3.99f) { ok = false; worst = "runs away (still at the clamp nine seconds after the input stopped)"; }
                     if (! ok)
                     {
                         StringArray settings;
@@ -8128,6 +8144,106 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
                            + " dB after its key; a fresh note on pitch at once " + String (freshTied, 1) + " dB (gliding: " + String (freshStruck, 1) + "); accent +" + String (louder, 1) + " dB, edge +" + String (brighter, 1)
                            + " dB; firm note changed " + String (firmSame, 2) + " dB");
                 plain();
+            }
+            // --- v0.99.57: Pulse Kick ---
+            {
+                auto kp = edit->getPluginCache().createNewPlugin (pulse::KickSynth::xmlTypeName, {});
+                auto* kick = dynamic_cast<pulse::KickSynth*> (kp.get());
+                using KK = pulse::KickSynth;
+                auto defaults = [&] { for (auto* prm : kick->getAutomatableParameters()) if (auto d = prm->getDefaultValue()) prm->setParameter (*d, sendNotificationSync); };
+                // the pitch of a stretch, from how often the wave crosses zero going up
+                auto pitchOf = [&] (const AudioBuffer<float>& b, double from, double len)
+                {
+                    const int a = (int) (from * ksr), n = jmin (b.getNumSamples() - a - 1, (int) (len * ksr));
+                    int first = -1, last = -1, count = 0;
+                    for (int i = 0; i < n; ++i) if (b.getSample (0, a + i) <= 0.0f && b.getSample (0, a + i + 1) > 0.0f) { if (first < 0) first = i; last = i; ++count; }
+                    return count > 1 ? (double) (count - 1) * ksr / (double) (last - first) : 0.0;
+                };
+                auto levelIn = [&] (const AudioBuffer<float>& b, double from, double len)
+                {
+                    const int a = jmin (b.getNumSamples() - 2, (int) (from * ksr)), n = jmin (b.getNumSamples() - a, (int) (len * ksr));
+                    return n > 0 ? Decibels::gainToDecibels (b.getRMSLevel (0, a, n), -140.0f) : -140.0f;
+                };
+                auto edge = [&] (const AudioBuffer<float>& b, double from, double len)
+                {
+                    const int a = (int) (from * ksr), n = jmin (b.getNumSamples() - a - 1, (int) (len * ksr));
+                    double d = 0, e = 1.0e-12;
+                    for (int i = 0; i < n; ++i) { const double x = b.getSample (0, a + i), y = b.getSample (0, a + i + 1); d += (y - x) * (y - x); e += x * x; }
+                    return (float) (10.0 * std::log10 (d / e + 1.0e-12));
+                };
+                auto play = [&] (int note = 36) { return FactorySounds::renderLine (*kick, { { note, 110, 0.0, 0.1 } }, 1.0); };
+                // as it comes: the pitch starts high and comes down to the Tune, the sound is gone after hold + decay, and it is loud
+                defaults(); kick->set (KK::pClick, 0.0f); kick->set (KK::pDrive, 0.0f); kick->set (KK::pShape, 0.0f);
+                auto clean = play();
+                const double early = pitchOf (clean, 0.0, 0.012), late = pitchOf (clean, 0.15, 0.25);
+                const float body = levelIn (clean, 0.1, 0.1), after = levelIn (clean, 0.5, 0.2), peakDb = Decibels::gainToDecibels (clean.getMagnitude (0, clean.getNumSamples()), -100.0f);
+                // the click is at the very start and nowhere else
+                kick->set (KK::pClick, 1.0f);
+                auto clicky = play();
+                const float clickAdds = edge (clicky, 0.0, 0.008) - edge (clean, 0.0, 0.008), clickLater = edge (clicky, 0.1, 0.1) - edge (clean, 0.1, 0.1);
+                // drive fills the tone with harmonics (the third: 144 Hz under a 48 Hz kick)
+                defaults(); kick->set (KK::pClick, 0.0f); kick->set (KK::pDrive, 0.0f); kick->set (KK::pShape, 0.0f); kick->set (KK::pDecay, 900.0f); kick->set (KK::pAmpCurve, 0.0f);
+                auto soft = play();
+                kick->set (KK::pDrive, 30.0f);
+                auto hard = play();
+                const float thirdSoft = partIn (soft, 144.0, 0.2, 0.2) - partIn (soft, 48.0, 0.2, 0.2), thirdHard = partIn (hard, 144.0, 0.2, 0.2) - partIn (hard, 48.0, 0.2, 0.2);
+                // with Keys, an octave up on the keyboard is an octave up; without, every key is the same kick
+                kick->set (KK::pDrive, 0.0f);
+                const double sameKey = pitchOf (play (48), 0.2, 0.25);
+                kick->set (KK::pKeys, 1.0f);
+                const double octaveUp = pitchOf (play (48), 0.2, 0.25);
+                // a kick that comes while the last one still sounds takes over without a crack: no jump from one sample to the next
+                defaults(); kick->set (KK::pClick, 0.0f); kick->set (KK::pDrive, 0.0f); kick->set (KK::pShape, 0.0f); kick->set (KK::pDecay, 800.0f);
+                auto twice = FactorySounds::renderLine (*kick, { { 36, 110, 0.0, 0.1 }, { 36, 110, 0.2, 0.3 } }, 1.2);
+                float jump = 0.0f;
+                for (int i = (int) (0.195 * ksr); i < (int) (0.215 * ksr); ++i) jump = jmax (jump, std::abs (twice.getSample (0, i + 1) - twice.getSample (0, i)));
+                const bool secondThere = levelIn (twice, 0.25, 0.1) > -30.0f;
+                defaults();
+                const bool kickOk = early > 150.0 && std::abs (late - 48.0) < 2.5 && body > -20.0f && after < -90.0f && peakDb > -14.0f && peakDb < 0.5f
+                                    && clickAdds > 6.0f && std::abs (clickLater) < 1.0f && thirdSoft < -25.0f && thirdHard > thirdSoft + 12.0f
+                                    && std::abs (sameKey - 48.0) < 2.5 && std::abs (octaveUp - 96.0) < 4.0 && jump < 0.06f && secondThere;
+                rep.check (kickOk, "Pulse Kick (the pitch falls to the Tune, gone after its length, a click at the start only, drive adds harmonics, keys, a new kick takes over without a crack)",
+                           "starts near " + String (roundToInt (early)) + " Hz, ends at " + String (late, 1) + "; body " + String (body, 0) + " dB, after " + String (after, 0) + ", peak " + String (peakDb, 1)
+                           + " dBFS; click +" + String (clickAdds, 1) + " dB of edge at the start (" + String (clickLater, 2) + " later); 3rd harmonic " + String (thirdSoft, 0) + " > " + String (thirdHard, 0)
+                           + " dB with drive; C2: " + String (sameKey, 1) + " / with keys " + String (octaveUp, 1) + " Hz; biggest step at the second kick " + String (jump, 3));
+                // its window: the points move the settings, the picture is as wide as the kick is long, and every setting has a control
+                {
+                    PulseLookAndFeel laf;
+                    LookAndFeel::setDefaultLookAndFeel (&laf);
+                    EditViewState evs (*edit, sm);
+                    KickUI::KickView kv (*kick);
+                    kv.setSize (1000, 520);
+                    { Image img (Image::ARGB, 1000, 520, true); Graphics g (img); kv.paint (g); }
+                    const float p0 = kick->get (KK::pPitch), pt0 = kick->get (KK::pPitchTime), h0 = kick->get (KK::pHold), d0 = kick->get (KK::pDecay), c0 = kick->get (KK::pClick);
+                    const bool spans = std::abs (kv.shownSeconds() - 0.47 * 1.08) < 0.01;
+                    kv.dragHandle (0, 0.0f, 40.0f);
+                    kv.dragHandle (1, 60.0f, 0.0f);
+                    kv.dragHandle (2, 40.0f, 0.0f);
+                    kv.dragHandle (3, -80.0f, 0.0f);
+                    kv.dragHandle (4, 0.0f, -60.0f);
+                    const bool handlesOk = kick->get (KK::pPitch) < p0 - 2.0f && kick->get (KK::pPitchTime) > pt0 + 10.0f && kick->get (KK::pHold) > h0 + 5.0f && kick->get (KK::pDecay) < d0 - 20.0f && kick->get (KK::pClick) > c0 + 0.05f;
+                    StringArray missing;
+                    {
+                        DeviceEditors::Editor ed (evs, *kick);
+                        ed.setSize (1100, 760);
+                        std::set<te::AutomatableParameter*> seen;
+                        std::function<void (Component&)> walk = [&] (Component& c)
+                        {
+                            if (auto* k = dynamic_cast<ParamKnob*> (&c)) seen.insert (&k->getParameter());
+                            if (auto* k = dynamic_cast<ParamChoice*> (&c)) seen.insert (&k->getParameter());
+                            if (auto* k = dynamic_cast<ParamToggle*> (&c)) seen.insert (&k->getParameter());
+                            for (auto* chd : c.getChildren()) walk (*chd);
+                        };
+                        walk (ed);
+                        for (int i = 0; i < kick->numParams(); ++i) if (! seen.count (&*kick->param (i))) missing.add (kick->param (i)->paramID);
+                        if (! DeviceEditors::hasFullEditor (*kick)) missing.add ("no full window");
+                    }
+                    rep.check (handlesOk && spans && missing.isEmpty(), "Pulse Kick window: pitch, hold, decay and click are dragged on the picture of the kick, and there is a control for every setting",
+                               missing.isEmpty() ? "fall " + String (roundToInt (p0)) + " -> " + String (roundToInt (kick->get (KK::pPitch))) + " st, decay " + String (roundToInt (d0)) + " -> " + String (roundToInt (kick->get (KK::pDecay)))
+                                                   + " ms" + (spans ? "" : "; the picture is not as wide as the kick is long") : missing.joinIntoString ("; "));
+                    LookAndFeel::setDefaultLookAndFeel (nullptr);
+                }
+                kp = nullptr;
             }
             rep.check (analogOk, "Pulse Analog (saw and square harmonics, clean high notes, four-pole filter, resonance, singing filter in hand, tuning, unison)",
                        "saw 4th harmonic " + String (h4 - h1, 1) + " dB; square 2nd " + String (sq2, 0) + ", 3rd " + String (sq3, 1) + "; fold-back under a 2 kHz saw " + String (foldSaw, 0) + " dB; 300 Hz cutoff takes the 4th down "

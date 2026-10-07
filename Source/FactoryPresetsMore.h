@@ -408,6 +408,27 @@ namespace FactoryPresetsMore
                                                   { "sub", 0.4f }, { "s", 1 }, { "level", -8 } } } } },
 
             //----------------------------------------------------------------------------------
+            // Pulse Kick: keys 0 = every note the same kick, 1 = the kick follows the notes
+            { "pulseKick", {
+                { "Techno Kick (round, long)", { { "tune", 46 }, { "pitch", 34 }, { "pitchtime", 55 }, { "pitchcurve", 0.7f }, { "hold", 25 }, { "decay", 520 }, { "ampcurve", 0.5f }, { "click", 0.3f }, { "clicktime", 6 },
+                                                 { "clicktone", 3500 }, { "shape", 0.1f }, { "drive", 8 }, { "keys", 0 } } },
+                { "Hard Techno (driven)", { { "tune", 50 }, { "pitch", 42 }, { "pitchtime", 45 }, { "pitchcurve", 0.8f }, { "hold", 40 }, { "decay", 380 }, { "ampcurve", 0.45f }, { "click", 0.5f }, { "clicktime", 5 },
+                                            { "clicktone", 4500 }, { "shape", 0.35f }, { "drive", 22 }, { "keys", 0 }, { "level", -8 } } },
+                { "Rumble Feeder (long sub, for the Rumble effect)", { { "tune", 42 }, { "pitch", 30 }, { "pitchtime", 70 }, { "pitchcurve", 0.7f }, { "hold", 30 }, { "decay", 900 }, { "ampcurve", 0.55f }, { "click", 0.2f },
+                                                                       { "clicktime", 6 }, { "clicktone", 3000 }, { "shape", 0.05f }, { "drive", 6 }, { "keys", 0 } } },
+                { "Short and Punchy", { { "tune", 55 }, { "pitch", 40 }, { "pitchtime", 35 }, { "pitchcurve", 0.75f }, { "hold", 10 }, { "decay", 180 }, { "ampcurve", 0.4f }, { "click", 0.45f }, { "clicktime", 4 },
+                                        { "clicktone", 4000 }, { "shape", 0.15f }, { "drive", 10 }, { "keys", 0 } } },
+                { "909-ish", { { "tune", 52 }, { "pitch", 36 }, { "pitchtime", 50 }, { "pitchcurve", 0.6f }, { "hold", 15 }, { "decay", 320 }, { "ampcurve", 0.5f }, { "click", 0.55f }, { "clicktime", 4 }, { "clicktone", 5000 },
+                               { "shape", 0.05f }, { "drive", 9 }, { "keys", 0 } } },
+                { "808-ish (a boom that follows the keys)", { { "tune", 45 }, { "pitch", 12 }, { "pitchtime", 25 }, { "pitchcurve", 0.6f }, { "hold", 0 }, { "decay", 1400 }, { "ampcurve", 0.35f }, { "click", 0.12f },
+                                                              { "clicktime", 3 }, { "clicktone", 2500 }, { "shape", 0 }, { "drive", 3 }, { "keys", 1 } } },
+                { "Gabber (square and loud)", { { "tune", 60 }, { "pitch", 48 }, { "pitchtime", 90 }, { "pitchcurve", 0.6f }, { "hold", 120 }, { "decay", 300 }, { "ampcurve", 0.3f }, { "click", 0.3f }, { "clicktime", 5 },
+                                                { "clicktone", 4000 }, { "shape", 0.8f }, { "drive", 34 }, { "keys", 0 }, { "level", -10 } } },
+                { "Deep Minimal", { { "tune", 44 }, { "pitch", 24 }, { "pitchtime", 40 }, { "pitchcurve", 0.7f }, { "hold", 15 }, { "decay", 260 }, { "ampcurve", 0.5f }, { "click", 0.15f }, { "clicktime", 5 }, { "clicktone", 1500 },
+                                    { "shape", 0 }, { "drive", 4 }, { "keys", 0 } } },
+                { "Tom (follows the keys)", { { "tune", 65 }, { "pitch", 10 }, { "pitchtime", 120 }, { "pitchcurve", 0.5f }, { "hold", 5 }, { "decay", 350 }, { "ampcurve", 0.5f }, { "click", 0.2f }, { "clicktime", 4 },
+                                              { "clicktone", 2500 }, { "shape", 0.05f }, { "drive", 5 }, { "keys", 1 } } } } },
+
             // Pulse String: exciter 0 pluck, 1 pick, 2 hammer, 3 mallet
             { "pulseString", {
                 { "Nylon Guitar", { { "exciter", 0 }, { "position", 0.22f }, { "brightness", 0.5f }, { "decay", 3.5f }, { "damping", 0.4f }, { "body", 0.5f }, { "detune", 0 } } },
