@@ -2,7 +2,7 @@
 
 #include "Common.h"
 
-/** Scans for new VST3 plugins in the background (only files not already known), using the
+/** Scans for new VST3 and VST2 plugins in the background (only files not already known), using the
     engine's out-of-process scanner so a crashing plugin can't take Pulse down. */
 class BackgroundPluginScan : private Thread
 {
@@ -32,7 +32,7 @@ public:
     /** How many new plugins the last scan added. */
     int getNumFound() const { return found.load(); }
 
-    /** Where VST3s are looked for: the default folders plus any the plugin manager was pointed at. */
+    /** Where plugins of a format are looked for: the default folders plus any the plugin manager was pointed at. */
     static FileSearchPath searchPath (te::Engine& e, AudioPluginFormat& f)
     {
         auto path = f.getDefaultLocationsToSearch();
@@ -55,7 +55,7 @@ private:
         const int before = list.getNumTypes();
         for (auto* format : pm.pluginFormatManager.getFormats())
         {
-            if (! format->getName().containsIgnoreCase ("VST3")) continue;
+            if (! format->getName().containsIgnoreCase ("VST")) continue;   // VST3 and VST (2)
             auto pedal = engine.getTemporaryFileManager().getTempFile ("PulseBackgroundScanPedal");
             PluginDirectoryScanner scanner (list, *format, searchPath (engine, *format), true, pedal, false);
             String name;

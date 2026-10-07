@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(PulseStudio VERSION 0.99.51 LANGUAGES C CXX)
+project(PulseStudio VERSION 0.99.52 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -51,6 +51,8 @@ target_compile_definitions(PulseStudio PRIVATE
     JUCE_DIRECTSOUND=1
     # Plugin hosting
     JUCE_PLUGINHOST_VST3=1
+    # VST 2 plugins too (the interface files are our own, in Source/vst2: see the note at the top of them)
+    JUCE_PLUGINHOST_VST=1
     JUCE_PLUGINHOST_AU=0
     JUCE_PLUGINHOST_ARA=1
     TRACKTION_ENABLE_ARA=1
@@ -68,6 +70,7 @@ target_compile_definitions(PulseStudio PRIVATE
     TRACKTION_ENABLE_ABLETON_LINK=1)
 
 target_include_directories(PulseStudio PRIVATE
+    Source/vst2
     external/ARA_SDK
     external/link/include
     external/link/modules/asio-standalone/asio/include)

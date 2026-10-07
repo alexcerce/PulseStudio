@@ -791,3 +791,16 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   If this one is wrong too, the next step is not a third guess: ask the owner what was wrong (the sounds
   themselves? the kick? the mix? the notes?), because the app's synths may be the limit and not the writing.
   333 checks, quick tier.
+- 2026-10-06: v0.99.52. VST2 hosting, asked for by the owner (45 VST2 plugins in D:\Documents\VST\VST 2 x64).
+  JUCE's VST2 host code needs Steinberg's aeffect.h / aeffectx.h, which are not in the project and which
+  Steinberg no longer hands out. Nothing was downloaded: Source/vst2/pluginterfaces/vst2.x/ holds two files
+  written here from the publicly known shape of the interface (the plugin's record, the request numbers, the
+  records for events, time and speakers). FOR VERSION 2: whether shipping a host built on self-written VST2
+  interface files is acceptable is a question to settle before a public release (other open hosts do it).
+  CMake: JUCE_PLUGINHOST_VST=1 and Source/vst2 on the include path. The background scan takes "VST" as well as
+  "VST3"; the sandbox worker knows both formats; the menu marks VST2 entries. --vst2-probe <dll> <report> loads
+  one plugin, plays a note or a tone through it and reports. Tried: TAL-U-No-62 (-13.9 dBFS out), TAL-Chorus-LX,
+  TAL-BassLine, Serum (315 parameters, -9.6 dBFS). The dev profile's scan path for VST now includes the
+  owner's folder, and one run of the dev build scanned it: 40-odd VST2 plugins in the list (Kontakt, Massive,
+  Serum, Reaktor, the TAL ones, Valhalla, Vital...). Not tried: opening a VST2 plugin's own window, a VST2 in
+  the sandbox, saving and reopening a project with one. 333 checks, quick tier.

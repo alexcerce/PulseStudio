@@ -43,7 +43,7 @@ namespace PluginMenu
             if (desc.isInstrument != instruments)
                 continue;
 
-            m.addItem (desc.name, [&edit, desc, cb]
+            m.addItem (desc.pluginFormatName == "VST" ? desc.name + "  (VST2)" : desc.name, [&edit, desc, cb]
             {
                 if (auto p = sandbox::createPlugin (edit, desc))
                     cb (p);
@@ -192,7 +192,7 @@ namespace PluginMenu
         else if (allowed.instruments) m.addItem ("MIDI Effects (add an instrument first)", false, false, nullptr);
         m.addSubMenu ("Audio Effects", effects);
         if (! allowed.instruments) m.addItem ("(this chain takes audio effects only)", false, false, nullptr);
-        m.addSectionHeader ("VST3");
+        m.addSectionHeader ("VST3 and VST2");
 
         if (vstInst.getNumItems() + vstFx.getNumItems() == 0)
         {

@@ -155,6 +155,52 @@ public:
             *p = 42;
         }
 
+        // --vst2-probe <plugin.dll> <report.txt> : loads a VST2 plugin, plays a note through it, and says what happened, then exit
+        if (auto i = args.indexOf ("--vst2-probe"); i >= 0 && i + 2 < args.size())
+        {
+            const auto dll = File::getCurrentWorkingDirectory().getChildFile (args[i + 1].unquoted());
+            const auto report = File::getCurrentWorkingDirectory().getChildFile (args[i + 2].unquoted());
+            String text = dll.getFileName() + ": ";
+            report.replaceWithText (text + "loading (if this is all there is, the plugin took the probe down with it)");
+            VSTPluginFormat format;
+            OwnedArray<PluginDescription> found;
+            format.findAllTypesForFile (found, dll.getFullPathName());
+            if (found.isEmpty()) text << "not recognised as a VST2 plugin";
+            else
+            {
+                auto& d = *found[0];
+                text << "\"" << d.name << "\" by " << d.manufacturerName << ", " << (d.isInstrument ? "instrument" : "effect") << ", " << d.numInputChannels << " in / " << d.numOutputChannels << " out; ";
+                String error;
+                if (auto inst = format.createInstanceFromDescription (d, 48000.0, 512, error))
+                {
+                    inst->enableAllBuses();
+                    inst->prepareToPlay (48000.0, 512);
+                    const int chans = jmax (2, inst->getTotalNumInputChannels(), inst->getTotalNumOutputChannels());
+                    AudioBuffer<float> buf (chans, 512);
+                    float peak = 0.0f;
+                    for (int block = 0; block < 60; ++block)
+                    {
+                        MidiBuffer midi;
+                        if (block == 2) midi.addEvent (MidiMessage::noteOn (1, 57, 0.8f), 0);
+                        if (block == 40) midi.addEvent (MidiMessage::noteOff (1, 57), 0);
+                        for (int c = 0; c < chans; ++c)   // an effect is given a tone to work on
+                            for (int n = 0; n < 512; ++n) buf.setSample (c, n, d.isInstrument ? 0.0f : 0.25f * (float) std::sin (MathConstants<double>::twoPi * 220.0 * (block * 512 + n) / 48000.0));
+                        inst->processBlock (buf, midi);
+                        for (int c = 0; c < jmin (2, chans); ++c) peak = jmax (peak, buf.getMagnitude (c, 0, 512));
+                    }
+                    MemoryBlock state;
+                    inst->getStateInformation (state);
+                    text << inst->getParameters().size() << " parameters, " << (inst->hasEditor() ? "has its own window" : "no window") << ", state of " << (int) state.getSize()
+                         << " bytes, output peak " << String (Decibels::gainToDecibels (peak, -200.0f), 1) << " dBFS";
+                    inst->releaseResources();
+                }
+                else text << "could not be started: " << error;
+            }
+            report.replaceWithText (text);
+            quit();
+            return;
+        }
+
         // --video-probe <video> <report.txt> : how Windows' media player gets on with a video file, then exit
         if (auto i = args.indexOf ("--video-probe"); i >= 0 && i + 2 < args.size())
         {

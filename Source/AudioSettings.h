@@ -186,7 +186,7 @@ public:
     std::function<void (bool)> onSandboxChanged;
     void setSandbox (bool b) { sandboxToggle.setToggleState (b, dontSendNotification); }
 private:
-    ToggleButton sandboxToggle { "Run new VST3 plugins in their own process (sandbox: a crash can't take Pulse down)" };
+    ToggleButton sandboxToggle { "Run new VST plugins in their own process (sandbox: a crash can't take Pulse down)" };
     Label title, safeInfo;
     ListBox list;
     TextButton enableBtn { "Re-enable selected" }, logsBtn { "Show crash logs" };

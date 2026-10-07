@@ -25,7 +25,7 @@ namespace sandbox
     class Worker : public ChildProcessWorker
     {
     public:
-        Worker() { formats.addFormat (new VST3PluginFormat()); }
+        Worker() { formats.addFormat (new VST3PluginFormat()); formats.addFormat (new VSTPluginFormat()); }
 
         void handleMessageFromCoordinator (const MemoryBlock& mb) override
         {
@@ -65,8 +65,8 @@ namespace sandbox
             if (desc.fileOrIdentifier.isEmpty() && file.isNotEmpty())
             {
                 OwnedArray<PluginDescription> found;
-                VST3PluginFormat fmt;
-                fmt.findAllTypesForFile (found, file);
+                if (File (file).hasFileExtension ("dll")) { VSTPluginFormat fmt; fmt.findAllTypesForFile (found, file); }   // a VST2 is a plain .dll
+                else                                      { VST3PluginFormat fmt; fmt.findAllTypesForFile (found, file); }
                 if (! found.isEmpty()) desc = *found[0];
             }
 
