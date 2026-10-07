@@ -2792,12 +2792,36 @@ te::EditFileOperations (*small).save (true, true, false);   // like the app: the
                 again.setClip (ca.get());
                 const bool saved = state.getChildWithName ("ROLLVIEWS").getNumChildren() == 2 && std::abs (again.currentView().ppb - leftA.ppb) < 1.0e-6 && std::abs (again.currentView().rowH - leftA.rowH) < 0.01f;
                 again.setClip (nullptr);
+                // Notes that go away while they are selected (an undo, an edit made elsewhere), then Delete: the roll
+                // must not touch notes that are no longer there (found by the random-input test: it crashed here)
+                roll.setClip (ca.get());
+                roll.keyPressed (KeyPress ('a', ModifierKeys::ctrlModifier, 0));
+                const int hadSelected = roll.numSelectedNotes();
+                int manySelected = 0, manyLeft = -1;
+                {
+                    auto& seq = ca->getSequence();
+                    struct Kept { int pitch; te::BeatPosition start; te::BeatDuration length; int velocity; };
+                    std::vector<Kept> keptNotes;
+                    for (auto* nn : seq.getNotes()) keptNotes.push_back ({ nn->getNoteNumber(), nn->getStartBeat(), nn->getLengthBeats(), nn->getVelocity() });
+                    while (seq.getNotes().size() > 0) seq.removeNote (*seq.getNotes().getFirst(), nullptr);
+                    roll.keyPressed (KeyPress (KeyPress::deleteKey));
+                    // and a great many notes, all selected, deleted at once (each removal tidies the selection while
+                    // the others are still being removed)
+                    for (int k = 0; k < 600; ++k) seq.addNote (36 + k % 48, te::BeatPosition::fromBeats (k * 0.01), te::BeatDuration::fromBeats (0.01), 100, 0, nullptr);
+                    roll.keyPressed (KeyPress ('a', ModifierKeys::ctrlModifier, 0));
+                    manySelected = roll.numSelectedNotes();
+                    roll.keyPressed (KeyPress (KeyPress::deleteKey));
+                    manyLeft = seq.getNotes().size();
+                    for (auto& k : keptNotes) seq.addNote (k.pitch, k.start, k.length, k.velocity, 0, nullptr);
+                }
+                const bool staleSafe = hadSelected > 0 && roll.numSelectedNotes() == 0 && manySelected == 600 && manyLeft == 0;
                 roll.setClip (nullptr);
-                ok = fits && taller && capped && floored && remembered && saved && std::abs (start.rowH - 13.0f) < 0.01f;
+                ok = fits && taller && capped && floored && remembered && saved && staleSafe && std::abs (start.rowH - 13.0f) < 0.01f;
                 note = String (fits ? "" : "fit leaves notes outside; ") + (taller ? "" : "row zoom wrong; ") + (capped && floored ? "" : "row height not held in its range; ") + (remembered ? "" : "a clip's view is not remembered; ") + (saved ? "" : "views not kept in the project; ");
+                if (! staleSafe) note << "notes that are gone stay selected, or 600 selected notes are not all deleted (" << manyLeft << " left); ";
                 LookAndFeel::setDefaultLookAndFeel (nullptr);
             }
-            rep.check (ok, "Piano roll zoom (fit all the notes, taller and flatter rows around the mouse, each clip's view remembered and kept with the project)", note + "ok");
+            rep.check (ok, "Piano roll zoom (fit all the notes, taller and flatter rows around the mouse, each clip's view remembered and kept with the project) and deleting hundreds of selected notes at once", note + "ok");
             edit->deleteTrack (zt);
             edit->getUndoManager().clearUndoHistory();
         }

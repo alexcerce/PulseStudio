@@ -804,3 +804,35 @@ one-hour `--soak` (the first attempt was cut off at 3.5 minutes when the session
   owner's folder, and one run of the dev build scanned it: 40-odd VST2 plugins in the list (Kontakt, Massive,
   Serum, Reaktor, the TAL ones, Valhalla, Vital...). Not tried: opening a VST2 plugin's own window, a VST2 in
   the sandbox, saving and reopening a project with one. 333 checks, quick tier.
+- 2026-10-06: v0.99.53. Pulse's effects as VST3 plugins, asked for by the owner ("really want to use prism eq
+  there as well", there = Ableton Live). Source/PulseFxPlugin.cpp is one plugin that becomes whichever device
+  PULSE_PLUGIN_TYPE names when it is compiled: a te::Engine shared by every instance in the DLL (no sound device),
+  a one-track Edit per instance that is never played, the device created in it and fed the host's blocks through
+  applyToBuffer. The device's settings are the plugin's parameters (Setting forwards a te::AutomatableParameter;
+  a move the host made is not sent back to it, or Live would take it as a hand on the control and stop its
+  automation). State is the device's ValueTree. Latency is passed on and updated. Host tempo is copied into the
+  Edit and the host's beat becomes the Edit time of each block. PulseEffect::hostSidechain lets a device take
+  channels 3/4 without a source track; five devices have a sidechain bus and an "External Sidechain" switch.
+  The window is DeviceEditors::Editor itself. CMake: pulse_fx_plugin() at the end of CMakeLists.txt, thirty
+  targets, all EXCLUDE_FROM_ALL; tools/build-plugins.sh builds them one by one into dist/VST3 and deletes each
+  one's intermediates (250 MB apiece; the disk has 40 GB free). Each .vst3 is 20 MB because each carries the
+  engine: a single plugin holding all thirty would be smaller, but JUCE's VST3 wrapper makes one plugin per file.
+  --vst3-probe (file or folder) is the host-side test; CrashGuardWin::grabWindow takes the picture (PrintWindow),
+  since a hosted plugin's window is a child window a component snapshot cannot see.
+  Tested from the host side only: --vst3-probe on dist/VST3 loads all thirty into one process (each: tone
+  through, a setting moved and read back through saved state, sidechain where there is one, window opened and
+  photographed), then runs all thirty again together: 30 of 30 sane. Prism EQ band 3 at +15 dB gives +15.00 dB
+  at 400 Hz; Compressor keyed from itself -5.96 dB, from a silent sidechain 0.00, from a loud one -10.33;
+  Gate with a silent key closes to -60 dB. Pictures of Prism EQ, Compressor, Space, Utility, Match EQ looked at.
+  ALSO FIXED, found by the slow tier (monkey seed 11, a crash every time): Ctrl+A then Delete in the piano roll
+  with many notes. keyPressed walked `selected` while each removeNote came back through valueTreeChildRemoved,
+  which shrinks `selected` (and, past a few dozen notes, reallocates it under the loop). Has been there a long
+  time; small selections survived by luck. PianoRoll::removeSelectedNotes walks a copy; the right-click delete
+  used the same loop. dropNotesThatAreGone also prunes the selection at every entry point. New check deletes
+  600 selected notes (not confirmed to fail on the old code: the monkey seed is the proof, crash before, 4000
+  events after). And a test run that follows a crashed one no longer stops at the "crashed last time" question
+  (it cost a 280 s hang here). Slow tier: Debug self-test 333/333 (before the piano fix), Release self-test
+  333/333 after, monkey seeds 11, 12, 13 x 4000 events clean.
+  NOT tried: any of them in Ableton Live itself (it is the owner's program; nothing was installed or copied
+  into a system folder). Modulators and macros do nothing in a plugin (the Edit is not played). The installer
+  has an unchecked task that puts dist/VST3 into {autocf}\VST3\Pulse.

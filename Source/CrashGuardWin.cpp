@@ -131,3 +131,46 @@ namespace CrashGuardWin
         return out;
     }
 }
+
+namespace CrashGuardWin
+{
+    /** A picture of a window with everything inside it, child windows of other makers included (a hosted
+        plugin's own window is one of those, and a snapshot of our component does not see it). */
+    juce::Image grabWindow (void* windowHandle)
+    {
+        auto hwnd = (HWND) windowHandle;
+        RECT r {};
+        if (hwnd == nullptr || ! GetClientRect (hwnd, &r) || r.right <= 0 || r.bottom <= 0) return {};
+        const int w = r.right, h = r.bottom;
+        juce::Image img (juce::Image::ARGB, w, h, true);
+        HDC screen = GetDC (nullptr);
+        HDC dc = CreateCompatibleDC (screen);
+        BITMAPINFO bi {};
+        bi.bmiHeader.biSize = sizeof (BITMAPINFOHEADER);
+        bi.bmiHeader.biWidth = w;
+        bi.bmiHeader.biHeight = -h;
+        bi.bmiHeader.biPlanes = 1;
+        bi.bmiHeader.biBitCount = 32;
+        bi.bmiHeader.biCompression = BI_RGB;
+        void* bits = nullptr;
+        HBITMAP bmp = CreateDIBSection (dc, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
+        if (bmp != nullptr && bits != nullptr)
+        {
+            auto old = SelectObject (dc, bmp);
+            PrintWindow (hwnd, dc, 0x00000001 /* client only */ | 0x00000002 /* full content */);
+            GdiFlush();
+            juce::Image::BitmapData data (img, juce::Image::BitmapData::writeOnly);
+            for (int y = 0; y < h; ++y)
+            {
+                auto* src = static_cast<const juce::uint8*> (bits) + (size_t) y * (size_t) w * 4;
+                auto* dst = data.getLinePointer (y);
+                for (int x = 0; x < w; ++x) { dst[x * 4] = src[x * 4]; dst[x * 4 + 1] = src[x * 4 + 1]; dst[x * 4 + 2] = src[x * 4 + 2]; dst[x * 4 + 3] = 255; }
+            }
+            SelectObject (dc, old);
+        }
+        if (bmp != nullptr) DeleteObject (bmp);
+        DeleteDC (dc);
+        ReleaseDC (nullptr, screen);
+        return img;
+    }
+}

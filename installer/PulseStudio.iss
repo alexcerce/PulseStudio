@@ -2,7 +2,7 @@
 ; Build:  ISCC.exe installer\PulseStudio.iss
 ; Override the build folder with  /DBuildDir=..\build-dev
 #define AppName "Pulse Studio"
-#define AppVersion "0.99.52"
+#define AppVersion "0.99.53"
 #define AppStage "1.0 RC 1"
 #ifndef BuildDir
   #define BuildDir "..\build"
@@ -34,12 +34,19 @@ PrivilegesRequired=lowest
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 Name: "fileassoc"; Description: "Open Pulse Studio projects (.tracktionedit) with a double-click"; GroupDescription: "File types:"
+#ifexist "..\dist\VST3\Pulse Prism EQ.vst3\Contents\x86_64-win\Pulse Prism EQ.vst3"
+Name: "vst3"; Description: "Pulse's effects as VST3 plugins for other hosts (Ableton Live and others)"; GroupDescription: "Plugins:"; Flags: unchecked
+#endif
 
 [Files]
 Source: "{#BuildDir}\PulseStudio_artefacts\Release\Pulse Studio.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion isreadme
 Source: "..\CHANGELOG.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\THIRD-PARTY-NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
+; (the standard VST3 folder: Common Files for all users, the user's own Programs\Common when installed for one)
+#ifexist "..\dist\VST3\Pulse Prism EQ.vst3\Contents\x86_64-win\Pulse Prism EQ.vst3"
+Source: "..\dist\VST3\*"; DestDir: "{autocf}\VST3\Pulse"; Flags: ignoreversion recursesubdirs createallsubdirs; Tasks: vst3
+#endif
 
 [Registry]
 Root: HKA; Subkey: "Software\Classes\.tracktionedit\OpenWithProgids"; ValueType: string; ValueName: "PulseStudio.Project"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassoc

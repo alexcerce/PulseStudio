@@ -161,7 +161,7 @@ namespace pulse
 
             // sidechain input arrives on channels 3 / 4 (when a source is chosen)
             sidechain = nullptr;
-            if (wantsSidechain() && b.getNumChannels() > 2 && getSidechainSourceID().isValid())
+            if (wantsSidechain() && b.getNumChannels() > 2 && (getSidechainSourceID().isValid() || hostSidechain.load (std::memory_order_relaxed)))
             {
                 scBuffer.setSize (2, fc.bufferNumSamples, false, false, true);
                 scBuffer.copyFrom (0, 0, b, 2, fc.bufferStartSample, fc.bufferNumSamples);
@@ -227,6 +227,10 @@ namespace pulse
 
         /** Devices that must keep running on silence (none of the built-in ones need to) can say no. */
         virtual bool canSleepOnSilence() const { return true; }
+
+        /** Set where the device runs as a plugin in another host and that host's sidechain input is to be used
+            (there is no track here to choose as the source). */
+        std::atomic<bool> hostSidechain { false };
 
         /** Effects that can be keyed from another track declare two extra inputs. */
         virtual bool wantsSidechain() const { return false; }

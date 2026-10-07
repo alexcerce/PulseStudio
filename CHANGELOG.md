@@ -2,6 +2,12 @@
 
 Every version of Pulse Studio, newest first. The README describes each feature in detail.
 
+## 0.99.53 - 2026-10-06
+
+- Thirty of Pulse's effects are built as VST3 plugins for other hosts (Prism EQ, the compressors, limiter, reverb, delay and the rest), each with its full window; the installer can put them in the VST3 folder
+- `--vst3-probe` loads a VST3 plugin as a host would and reports
+- Fixed: a crash when deleting many selected notes at once in the piano roll (Ctrl+A, Delete on a busy clip)
+
 ## 0.99.52 - 2026-10-06
 
 - VST2 plugins can be loaded (scanned, listed with the VST3s, sandboxed)

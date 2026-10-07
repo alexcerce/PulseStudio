@@ -60,7 +60,7 @@ extern "C" { struct PulseFileTime { unsigned long lo, hi; };
              struct PulseMemCounters { unsigned long cb, pageFaults; size_t peakWorkingSet, workingSet, quotaPeakPaged, quotaPaged, quotaPeakNonPaged, quotaNonPaged, pagefile, peakPagefile; };
              __declspec (dllimport) int __stdcall K32GetProcessMemoryInfo (void*, PulseMemCounters*, unsigned long); }
 #endif
-namespace CrashGuardWin { std::map<unsigned long, std::pair<juce::String, double>> threadTimes(); }
+namespace CrashGuardWin { std::map<unsigned long, std::pair<juce::String, double>> threadTimes(); juce::Image grabWindow (void*); }
 
 namespace ProcessCpu
 {
@@ -153,6 +153,137 @@ public:
             CrashGuard::beginLoading ("C:/Fake Plugins/Crashy.vst3", "Crashy");
             volatile int* p = nullptr;
             *p = 42;
+        }
+
+        // --vst3-probe <plugin.vst3 | folder of them> <report.txt> [picture.png | folder for pictures] : loads a VST3
+        // plugin as a host would, runs a tone through it, turns its settings, saves and restores its state, opens
+        // its window, and says what happened; then exit. Given a folder, every plugin in it is loaded into this one
+        // process and all of them are kept until the end, as a host with one of each on its tracks would have them.
+        if (auto i = args.indexOf ("--vst3-probe"); i >= 0 && i + 2 < args.size())
+        {
+            const auto target = File::getCurrentWorkingDirectory().getChildFile (args[i + 1].unquoted());
+            const auto report = File::getCurrentWorkingDirectory().getChildFile (args[i + 2].unquoted());
+            const auto pictures = i + 3 < args.size() ? File::getCurrentWorkingDirectory().getChildFile (args[i + 3].unquoted()) : File();
+            const bool many = target.isDirectory() && ! target.hasFileExtension ("vst3");
+            Array<File> files;
+            if (many) { files = target.findChildFiles (File::findFilesAndDirectories, false, "*.vst3"); files.sort(); pictures.createDirectory(); }
+            else files.add (target);
+            String all;
+            std::vector<std::unique_ptr<AudioPluginInstance>> kept;
+            for (auto& file : files)
+            {
+            String text = file.getFileName() + ": ";
+            report.replaceWithText (all + text + "loading (if this is all there is, the plugin took the probe down with it)");
+            VST3PluginFormat format;
+            OwnedArray<PluginDescription> found;
+            format.findAllTypesForFile (found, file.getFullPathName());
+            if (found.isEmpty()) text << "not recognised as a VST3 plugin";
+            else
+            {
+                auto& d = *found[0];
+                text << "\"" << d.name << "\" by " << d.manufacturerName << "; ";
+                String error;
+                if (auto inst = format.createInstanceFromDescription (d, 48000.0, 512, error))
+                {
+                    inst->enableAllBuses();
+                    inst->prepareToPlay (48000.0, 512);
+                    text << inst->getTotalNumInputChannels() << " in / " << inst->getTotalNumOutputChannels() << " out; ";
+                    const int chans = jmax (2, inst->getTotalNumInputChannels(), inst->getTotalNumOutputChannels());
+                    // a tone into the main input (and, where there is one, another level of it into the sidechain):
+                    // how loud it comes out, against how loud it went in
+                    auto run = [&] (double hz, float level = 0.1f, float keyLevel = 0.0f)
+                    {
+                        AudioBuffer<float> buf (chans, 512);
+                        float peak = 0.0f;
+                        for (int block = 0; block < 120; ++block)
+                        {
+                            MidiBuffer midi;
+                            for (int c = 0; c < chans; ++c)
+                                for (int n = 0; n < 512; ++n) buf.setSample (c, n, (c < 2 ? level : keyLevel) * (float) std::sin (MathConstants<double>::twoPi * hz * (block * 512 + n) / 48000.0));
+                            inst->processBlock (buf, midi);
+                            if (block >= 100) peak = jmax (peak, buf.getMagnitude (0, 0, 512));
+                        }
+                        return Decibels::gainToDecibels (peak, -200.0f) - Decibels::gainToDecibels (level);
+                    };
+                    auto& params = inst->getParameters();
+                    text << params.size() << " parameters, delay " << inst->getLatencySamples() << " samples; a 400 Hz tone comes out at " << String (run (400.0), 2) << " dB; ";
+                    // every setting whose name has "Gain" in it, turned three quarters up: what does the tone do?
+                    AudioProcessorParameter* moved = nullptr;
+                    for (auto* prm : params) if (prm->getName (64).contains ("Band 3 Gain")) moved = prm;
+                    if (moved == nullptr) for (auto* prm : params) if (prm->getName (64).containsIgnoreCase ("gain") || prm->getName (64).containsIgnoreCase ("output") || prm->getName (64).containsIgnoreCase ("drive")) { moved = prm; break; }
+                    if (moved == nullptr) for (auto* prm : params) if (! prm->isDiscrete()) { moved = prm; break; }
+                    if (moved != nullptr)
+                    {
+                        const float before = moved->getValue();
+                        moved->setValue (0.75f);
+                        text << "\"" << moved->getName (64) << "\" at " << moved->getText (0.75f, 32) << ": " << String (run (400.0), 2) << " dB; ";
+                        MemoryBlock state;
+                        inst->getStateInformation (state);
+                        moved->setValue (before);
+                        inst->setStateInformation (state.getData(), (int) state.getSize());
+                        text << "state " << (int) state.getSize() << " bytes, and after putting it back the setting reads " << moved->getText (moved->getValue(), 32) << "; ";
+                    }
+                    // a sidechain input: a loud tone in, keyed from itself, then from a silent sidechain, then from a loud one
+                    for (auto* prm : params)
+                        if (prm->getName (64) == "External Sidechain")
+                        {
+                            text << "sidechain: a -6 dB tone keyed from itself " << String (run (400.0, 0.5f), 2) << " dB, ";
+                            prm->setValue (1.0f);
+                            text << "from a silent sidechain " << String (run (400.0, 0.5f, 0.0f), 2) << " dB, from a full-level one " << String (run (400.0, 0.5f, 1.0f), 2) << " dB; ";
+                            prm->setValue (0.0f);
+                        }
+                    if (inst->hasEditor())
+                    {
+                        std::unique_ptr<AudioProcessorEditor> ed (inst->createEditorIfNeeded());
+                        if (ed != nullptr)
+                        {
+                            ed->addToDesktop (0);
+                            ed->setVisible (true);
+                            MessageManager::getInstance()->runDispatchLoopUntil (1200);
+                            text << "window " << ed->getWidth() << " x " << ed->getHeight();
+                            if (pictures != File())
+                            {
+                                auto img = CrashGuardWin::grabWindow (ed->getWindowHandle());   // (the plugin's window is its own, inside ours)
+                                auto png = many ? pictures.getChildFile (file.getFileNameWithoutExtension() + ".png") : pictures;
+                                png.deleteFile();
+                                if (auto os = png.createOutputStream()) { PNGImageFormat f; f.writeImageToStream (img, *os); }
+                            }
+                            ed->removeFromDesktop();
+                        }
+                    }
+                    else text << "no window";
+                    text << "; the tone a second later: " << String (run (400.0), 2) << " dB";   // (whatever is worked out in the background has had its time)
+                    if (many) kept.push_back (std::move (inst)); else inst->releaseResources();
+                }
+                else text << "could not be started: " << error;
+            }
+            all << text << newLine;
+            }
+            // all of them together, once more, now that every one is loaded
+            if (many)
+            {
+                int alive = 0;
+                for (auto& inst : kept)
+                {
+                    AudioBuffer<float> buf (jmax (2, inst->getTotalNumInputChannels(), inst->getTotalNumOutputChannels()), 512);
+                    MidiBuffer midi;
+                    bool sane = true;
+                    for (int block = 0; block < 40; ++block)
+                    {
+                        for (int c = 0; c < buf.getNumChannels(); ++c)
+                            for (int n = 0; n < 512; ++n) buf.setSample (c, n, 0.1f * (float) std::sin (MathConstants<double>::twoPi * 400.0 * (block * 512 + n) / 48000.0));
+                        inst->processBlock (buf, midi);
+                        for (int n = 0; n < 512; ++n) if (! std::isfinite (buf.getSample (0, n)) || std::abs (buf.getSample (0, n)) > 4.0f) sane = false;
+                    }
+                    if (sane) ++alive;
+                }
+                all << (int) kept.size() << " plugins loaded together; " << alive << " still give sane sound with all of them loaded" << newLine;
+                for (auto& inst : kept) inst->releaseResources();
+                kept.clear();
+            }
+            report.replaceWithText (all);
+            quit();
+            return;
         }
 
         // --vst2-probe <plugin.dll> <report.txt> : loads a VST2 plugin, plays a note through it, and says what happened, then exit
@@ -282,7 +413,9 @@ public:
         // crash reports + safe mode (--safe-mode, or hold Shift while starting)
         CrashGuard::install (profile);
         const bool safeRequested = args.contains ("--safe-mode") || ModifierKeys::getCurrentModifiersRealtime().isShiftDown();
-        CrashGuard::safeMode() = CrashGuard::askAfterCrash (safeRequested);
+        // (a test run that follows a crashed one must not stop at a question nobody is there to answer)
+        if (About::isCapturing()) { CrashGuard::takeLastCrash(); CrashGuard::safeMode() = safeRequested; }
+        else CrashGuard::safeMode() = CrashGuard::askAfterCrash (safeRequested);
 
         // a splash right away: opening the audio interface can take a couple of seconds
         if (! args.contains ("--snapshots") && ! args.contains ("--render"))

@@ -27,6 +27,8 @@ ISCC.exe installer\PulseStudio.iss
 
 The installer is written to `dist/`. Add `/DBuildDir=..\build-dev` to package a different build folder.
 
+The effects as VST3 plugins are not part of the ordinary build. `sh tools/build-plugins.sh` builds all of them into `dist/VST3` (about a minute and a half each, since each is a whole build of the engine; name targets to build only some: `sh tools/build-plugins.sh PulsePrismEQ`). The list is at the end of `CMakeLists.txt`; the plugin itself is `Source/PulseFxPlugin.cpp`. If `dist/VST3` exists when the installer is built, the plugins go into it as an optional part.
+
 ## First run
 
 **Built-in sounds:** the first time Pulse runs it renders a sound library from its own synths (about a second, nothing is downloaded) into *Documents/Pulse Studio/Factory Sounds*, which appears under *Places* in the browser: one-shots for five kit styles (Classic, 808, 909, Lo-fi, Electro), six two-bar drum loops (House, Hip Hop, Breakbeat, Techno, Trap, Electro) and multisampled Keys, Bass, Pad, Pluck, Bell and Organ. A new Simpler starts with the Keys multisample (a Simpler preset picks a matching one), *Drum Rack (sampled kit)* in the browser loads a sampled kit, and the Drum Rack's kit menu has *Load sampled kit*.
@@ -332,6 +334,11 @@ Pulse's own devices have compact cards: knobs stack in as many rows as the devic
 - **Templates:** *Save as template...* keeps your favourite setup (tracks, devices, routing, returns, even clips). *New Project...* then offers an empty project, the demo song or any of your templates. Templates live in `Documents/Pulse Studio/Templates`.
 
 ### Plugins
+- **Pulse's effects in other hosts (VST3):** thirty of Pulse's effects are also built as VST3 plugins, for Ableton Live or any other host: Prism EQ, Compressor, Glue Compressor, Multiband Dynamics, Limiter, Gate, Transient Shaper, De-esser, Saturator, EQ Six, Auto Filter, Reverb, Delay, Space, Chorus, Phaser-Flanger, Auto Pan, Frequency Shifter, Redux, Exciter, Amp, Resonators, Shimmer, Grain Delay, Beat Repeat, Spectral, Match EQ, Vocoder, Pitch Correction and Utility. Each is the same device with the same window as in Pulse (displays, presets, A/B, undo, gain match, typed values), named "Pulse ..." under the maker "Pulse".
+  - **Getting them into a host:** the installer has a box for it ("Pulse's effects as VST3 plugins for other hosts"), which puts them in the standard VST3 folder, in a *Pulse* subfolder. Or point the host at the folder they are built into, `dist/VST3` (in Live: *Settings > Plug-Ins > VST3 Plug-In Custom Folder*, then *Rescan*).
+  - **What the host gets:** every setting of the device as an automatable parameter with its real value text; the device's whole state saved in the host's project and in the host's own presets; the right delay reported for delay compensation (it changes when, say, Prism EQ goes into linear phase); tempo and song position from the host, so synced delays, pans and repeats land on the host's beats.
+  - **Sidechain:** Compressor, Glue Compressor, Gate, Match EQ and Vocoder have a sidechain input. Route a track to it in the host and switch on *Key from the host's sidechain input* at the bottom of the plugin's window (also a parameter, "External Sidechain").
+  - **Not there:** modulators and macros (they belong to a Pulse project), and the instruments, MIDI effects, Looper, Reference, Tuner, Spectrum and Loudness.
 - **Sandboxed plugins** (running in their own process) open in Pulse's device editor when you double-click their card: every parameter as knobs in groups of 16, *Presets* (save / load your own), **A/B**, *Randomise*, *Reset*, and *Plugin window* for the plugin's own interface (the card's *Edit* button opens that directly).
 - **Plugin frame:** a VST plugin's window has a Pulse header above the plugin's own editor: *Presets* (the plugin's programs, plus settings you save yourself, kept in *Documents/Pulse Studio/Presets/Plugin States*), **A/B** to compare two versions, *Randomise* / *Randomise a little* with *Undo randomise*, and *Parameters*: a strip of knobs for every parameter with a search box. The parameters you touched last come first.
 - **Background scan:** a few seconds after startup Pulse looks for VST3 plugins it hasn't seen yet (only new files, each one checked in a separate process so a crashing plugin can't take Pulse down). Progress shows in the top bar; click × to stop it. The *Plugins* button has *Plugin manager...*, *Scan for new plugins* and an on / off switch for the startup scan.
@@ -396,6 +403,7 @@ All of these can be changed in *File → Keyboard shortcuts*. New: **Ctrl+P** co
 
 - `--render out.wav` renders the last project offline and exits.
 - `--selftest report.txt` builds a scratch project and runs 333 checks (including a real Demucs separation when it's set up), including an audit of every built-in device, rendering audio to check the results, then writes a pass/fail report. The exit code is the number of failures.
+- `--vst3-probe plugin.vst3 report.txt [picture.png]` loads a VST3 plugin the way a host does: runs a tone through it, turns a setting, saves and restores its state, tries its sidechain, opens its window (and saves a picture of it). Given a folder instead of a file, it loads every plugin in it into one process and runs them all together. `--vst2-probe plugin.dll report.txt` is the short version for VST2.
 - `--dev-profile` uses separate settings and a separate projects folder, for testing builds without touching your real projects.
 
 ## Code layout

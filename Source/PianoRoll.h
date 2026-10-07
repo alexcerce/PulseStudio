@@ -156,6 +156,32 @@ public:
     {
         if (clip != nullptr && (clip->getTrack() == nullptr || ! clip->state.getParent().isValid()))
             setClip (nullptr);
+        dropNotesThatAreGone();
+    }
+
+    /** Notes that went away behind this view's back (an undo, an edit made somewhere else) are no longer
+        selected: the selection holds the notes themselves, and a note that is gone must not be touched. */
+    void dropNotesThatAreGone()
+    {
+        if (selected.isEmpty()) return;
+        if (clip == nullptr) { selected.clear(); return; }
+        auto& now = clip->getSequence().getNotes();
+        std::vector<const te::MidiNote*> there (now.begin(), now.end());
+        std::sort (there.begin(), there.end());
+        for (int i = selected.size(); --i >= 0;)
+            if (! std::binary_search (there.begin(), there.end(), (const te::MidiNote*) selected.getUnchecked (i))) selected.remove (i);
+    }
+    int numSelectedNotes() const { return selected.size(); }
+
+    /** Removes the selected notes. Each removal comes back here as a change (which tidies the selection), so the
+        list being walked must not be the selection itself: with enough notes that was a crash. */
+    void removeSelectedNotes()
+    {
+        if (clip == nullptr) return;
+        const auto doomed = selected;
+        selected.clear();
+        auto& seq = clip->getSequence();
+        for (auto* n : doomed) seq.removeNote (*n, &um());
     }
 
     //==============================================================================
@@ -521,7 +547,7 @@ public:
             {
                 if (selected.contains (n))
                 {
-                    for (auto* s : selected) seq.removeNote (*s, &um());
+                    removeSelectedNotes();
                     selected.clear();
                 }
                 else
@@ -775,8 +801,7 @@ public:
 
         if (k == KeyPress::deleteKey || k == KeyPress::backspaceKey)
         {
-            for (auto* n : selected) seq.removeNote (*n, &um());
-            selected.clear();
+            removeSelectedNotes();
         }
         else if (isCtrlKey (k, 'a'))
         {
