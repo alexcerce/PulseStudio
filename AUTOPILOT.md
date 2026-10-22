@@ -11,7 +11,8 @@ this work after usage-limit windows. **Read this whole file before doing anythin
   Never touch `build/` or the owner's installed copy. Test the app with `--dev-profile` only.
 - Self-test: `"build-dev/PulseStudio_artefacts/Release/Pulse Studio.exe" --selftest <report.txt>`
   (exit code = number of failures). Every feature gets self-test checks; all must pass before a commit.
-- Commit locally after each finished item (never push). End commit messages with
+- Commit after each finished item and push it to GitHub (`git push`, origin = github.com/alexcerce/PulseStudio,
+  private; owner, 2026-10-21: "remove the never push requirement"). End commit messages with
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Use `git commit -F <file>` (PowerShell 5.1 mangles quotes).
 - After each group: bump the version in `CMakeLists.txt` and `installer/PulseStudio.iss`, update `README.md`,
   build the installer: `"%LOCALAPPDATA%/Programs/Inno Setup 6/ISCC.exe" /DBuildDir=..\build-dev installer/PulseStudio.iss`.
